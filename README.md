@@ -50,9 +50,24 @@ The core engine drives the security operations, while our intelligent AI layer h
 
 ## 🏗️ System Architecture
 
-<div align="center">
-  <img src="https://drive.google.com/uc?export=view&id=17Vvhz9CNO_fVLpxJTH2eKSktByT3HnKt" alt="AstraGuard System Architecture" width="800">
-</div>
+
+```mermaid
+graph TD
+    A["🛰️ Telemetry Stream (Pathway)"] -->|Live Data| B["📊 Embedding Encoder"]
+    B -->|Vectors| C["🧠 Adaptive Memory Store"]
+    C -->|Context| D["🤖 Anomaly Reasoning Agent"]
+    B -->|Current Event| D
+    D -->|Decision| E["⚡ Response Orchestrator"]
+    E -->|Actions| F["🛰️ System Recovery"]
+    F -->|Feedback| C
+    
+    D -.->|Reasoning Trace| G["📊 Dashboard"]
+    C -.->|Memory State| G
+    E -.->|Action Status| G
+```
+
+### Modular Architecture
+
 
 AstraGuard AI is built on a **dual-engine architecture** that separates the heavy lifting of security operations from the intelligence of decision-making.
 
