@@ -198,7 +198,7 @@ class SystemHealthMonitor:
             component: Component name
         
         Returns:
-            ComponentHealth object (auto-registers if not found)
+            ComponentHealth object (auto-registers with UNKNOWN if not found)
         """
         with self._component_lock:
             # Auto-register if not found to ensure never-None contract
@@ -209,7 +209,7 @@ class SystemHealthMonitor:
                     last_updated=datetime.now(),
                     metadata={},
                 )
-                logger.debug(f"Auto-registered component: {component}")
+                logger.debug(f"Auto-registered component {component} with UNKNOWN status")
             return self._components[component]
     
     def get_all_health(self) -> Dict[str, Dict]:

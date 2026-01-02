@@ -147,6 +147,9 @@ def detect_anomaly(data: Dict) -> Tuple[bool, float]:
     global _USING_HEURISTIC_MODE
     health_monitor = get_health_monitor()
     
+    # Always ensure component is registered (safe: idempotent)
+    health_monitor.register_component("anomaly_detector")
+    
     # Ensure model is loaded once
     if not _MODEL_LOADED:
         load_model()
