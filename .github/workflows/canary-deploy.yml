@@ -89,13 +89,16 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
     
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+    
     - name: Build Docker images
       run: |
         docker build -t astraguard-ai:latest .
     
     - name: Deploy canary (10% traffic)
       run: |
-        docker-compose up -d --scale astra-guard=1
+        docker compose -f docker-compose.yml up -d
         sleep 10
     
     - name: Health check canary
@@ -134,17 +137,18 @@ jobs:
     - name: Promote canary to full deployment
       if: success()
       run: |
-        docker-compose up -d --scale astra-guard=3
+        docker compose -f docker-compose.yml down
+        docker compose -f docker-compose.yml up -d
         sleep 10
-        echo '✅ Canary promoted - full deployment (3 instances) healthy'
+        echo '✅ Canary promoted - full deployment healthy'
     
     - name: Rollback on failure
       if: failure()
       run: |
-        docker-compose down
+        docker compose -f docker-compose.yml down
         echo '❌ Canary failed - rollback complete'
     
     - name: Cleanup
       if: always()
       run: |
-        docker-compose down || true
+        docker compose -f docker-compose.yml down || true
