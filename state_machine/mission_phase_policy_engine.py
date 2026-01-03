@@ -184,11 +184,16 @@ class MissionPhasePolicyEngine:
         forbidden_actions = phase_config.get("forbidden_actions", [])
 
         # Evaluate against severity thresholds
-        thresholds = phase_config.get("severity_thresholds", {})
+        severity_thresholds = phase_config.get("severity_thresholds", {})
 
         # Determine if response is appropriate for this phase
         is_allowed = self._is_response_allowed(
-            mission_phase, phase_config, severity_level, anomaly_attributes
+            mission_phase,
+            phase_config,
+            severity_level,
+            anomaly_attributes,
+            severity_thresholds,
+            severity_score,
         )
 
         # Determine escalation
@@ -203,7 +208,7 @@ class MissionPhasePolicyEngine:
 
         # Select recommended action
         recommended_action = self._select_action(
-            phase_config, escalation_level, allowed_actions, anomaly_type
+            phase_config, escalation_level, allowed_actions, forbidden_actions, anomaly_type
         )
 
         # Build reasoning
@@ -266,6 +271,8 @@ class MissionPhasePolicyEngine:
         phase_config: Dict,
         severity_level: SeverityLevel,
         anomaly_attributes: Dict,
+        severity_thresholds: Dict = None,
+        severity_score: float = 0.0,
     ) -> bool:
         """
         Determine if automated response is allowed in this phase.
@@ -274,7 +281,19 @@ class MissionPhasePolicyEngine:
         - LAUNCH/DEPLOYMENT: Only allow critical responses
         - NOMINAL_OPS/PAYLOAD_OPS: Allow all appropriate responses
         - SAFE_MODE: Only allow logging/monitoring
+        
+        Also checks against phase-specific severity thresholds if configured.
         """
+        if severity_thresholds is None:
+            severity_thresholds = {}
+        
+        # Check severity against configured thresholds (skip if severity_score is None)
+        if severity_score is not None:
+            min_threshold = severity_thresholds.get("min_threshold", 0.0)
+            max_threshold = severity_thresholds.get("max_threshold", 1.0)
+            if not (min_threshold <= severity_score <= max_threshold):
+                # Severity outside configured threshold range
+                return False
         if mission_phase == MissionPhase.LAUNCH:
             # Launch: only respond to critical anomalies
             return severity_level == SeverityLevel.CRITICAL
@@ -347,10 +366,13 @@ class MissionPhasePolicyEngine:
         phase_config: Dict,
         escalation_level: EscalationLevel,
         allowed_actions: List[str],
+        forbidden_actions: List[str],
         anomaly_type: str,
     ) -> str:
         """
         Select the recommended action based on escalation level and allowed actions.
+        
+        Enforces forbidden actions by filtering them out from allowed actions.
         """
         if escalation_level == EscalationLevel.ESCALATE_SAFE_MODE:
             return "ENTER_SAFE_MODE"
@@ -361,9 +383,15 @@ class MissionPhasePolicyEngine:
         elif escalation_level == EscalationLevel.NO_ACTION:
             return "NO_ACTION"
         else:  # CONTROLLED_ACTION
-            # Return first allowed action, or log if none
-            if allowed_actions:
-                return allowed_actions[0]
+            # Filter out forbidden actions from allowed actions
+            safe_actions = [
+                action
+                for action in allowed_actions
+                if action not in forbidden_actions
+            ]
+            # Return first safe action, or log if none
+            if safe_actions:
+                return safe_actions[0]
             return "LOG_ONLY"
 
     def _build_reasoning(
