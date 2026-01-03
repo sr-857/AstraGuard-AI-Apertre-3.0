@@ -2,8 +2,10 @@ version: '3.8'
 
 services:
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v2.50.1
     container_name: astraguard-prometheus
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./prometheus/:/etc/prometheus/
       - prometheus_data:/prometheus
@@ -18,15 +20,15 @@ services:
       - astraguard-network
 
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:10.3.3
     container_name: astraguard-grafana
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning/:/etc/grafana/provisioning/
       - ./grafana/dashboards/:/var/lib/grafana/dashboards/
     environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin_secure}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-secure_password_change_me}
       - GF_USERS_ALLOW_SIGN_UP=false
     ports:
       - "3000:3000"

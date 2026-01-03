@@ -25,7 +25,7 @@
         {
             "datasource": {
                 "type": "prometheus",
-                "uid": "P1809F7CD0C7575E"
+                "uid": "${DS_PROMETHEUS}"
             },
             "fieldConfig": {
                 "defaults": {
@@ -102,7 +102,7 @@
                 {
                     "datasource": {
                         "type": "prometheus",
-                        "uid": "P1809F7CD0C7575E"
+                        "uid": "${DS_PROMETHEUS}"
                     },
                     "expr": "sum(rate(astraguard_anomalies_by_type_total[5m])) by (type)",
                     "refId": "A"
@@ -114,7 +114,7 @@
         {
             "datasource": {
                 "type": "prometheus",
-                "uid": "P1809F7CD0C7575E"
+                "uid": "${DS_PROMETHEUS}"
             },
             "fieldConfig": {
                 "defaults": {
@@ -161,9 +161,9 @@
                 {
                     "datasource": {
                         "type": "prometheus",
-                        "uid": "P1809F7CD0C7575E"
+                        "uid": "${DS_PROMETHEUS}"
                     },
-                    "expr": "astraguard_mission_phase",
+                    "expr": "max(astraguard_mission_phase) by (phase) == 1",
                     "refId": "A"
                 }
             ],
@@ -173,7 +173,7 @@
         {
             "datasource": {
                 "type": "prometheus",
-                "uid": "P1809F7CD0C7575E"
+                "uid": "${DS_PROMETHEUS}"
             },
             "fieldConfig": {
                 "defaults": {
@@ -214,7 +214,7 @@
                 {
                     "datasource": {
                         "type": "prometheus",
-                        "uid": "P1809F7CD0C7575E"
+                        "uid": "${DS_PROMETHEUS}"
                     },
                     "expr": "sum(increase(astraguard_recovery_actions_total[1h])) by (action)",
                     "refId": "A"
@@ -228,7 +228,22 @@
     "style": "dark",
     "tags": [],
     "templating": {
-        "list": []
+        "list": [
+            {
+                "description": "Prometheus Datasource",
+                "hide": 0,
+                "includeAll": false,
+                "label": "Datasource",
+                "multi": false,
+                "name": "DS_PROMETHEUS",
+                "options": [],
+                "query": "prometheus",
+                "refresh": 1,
+                "regex": "",
+                "skipUrlSync": false,
+                "type": "datasource"
+            }
+        ]
     },
     "time": {
         "from": "now-6h",
@@ -238,6 +253,6 @@
     "timezone": "",
     "title": "AstraGuard Mission Control",
     "uid": "ce7i4l0lq7x34e",
-    "version": 1,
+    "version": 2,
     "weekStart": ""
 }
