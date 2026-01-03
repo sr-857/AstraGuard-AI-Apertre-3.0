@@ -42,14 +42,21 @@ jobs:
     - name: Wait for Redis
       run: |
         python -c "
-        import redis, time, sys
+        import redis, time, sys, socket
         for i in range(30):
             try:
-                r = redis.Redis(host='localhost', port=6379, socket_connect_timeout=5)
-                r.ping()
-                sys.exit(0)
-            except:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                result = sock.connect_ex(('localhost', 6379))
+                sock.close()
+                if result == 0:
+                    r = redis.Redis(host='localhost', port=6379, socket_connect_timeout=5, decode_responses=True)
+                    r.ping()
+                    print('✅ Redis connection successful')
+                    sys.exit(0)
+            except Exception as e:
+                print(f'Attempt {i+1}/30: {str(e)}')
                 time.sleep(1)
+        print('❌ Redis connection failed after 30 attempts')
         sys.exit(1)
         "
     
@@ -108,14 +115,21 @@ jobs:
     - name: Wait for Redis
       run: |
         python -c "
-        import redis, time, sys
+        import redis, time, sys, socket
         for i in range(30):
             try:
-                r = redis.Redis(host='localhost', port=6379, socket_connect_timeout=5)
-                r.ping()
-                sys.exit(0)
-            except:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                result = sock.connect_ex(('localhost', 6379))
+                sock.close()
+                if result == 0:
+                    r = redis.Redis(host='localhost', port=6379, socket_connect_timeout=5, decode_responses=True)
+                    r.ping()
+                    print('✅ Redis connection successful')
+                    sys.exit(0)
+            except Exception as e:
+                print(f'Attempt {i+1}/30: {str(e)}')
                 time.sleep(1)
+        print('❌ Redis connection failed after 30 attempts')
         sys.exit(1)
         "
     
