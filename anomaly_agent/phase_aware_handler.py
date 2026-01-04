@@ -147,13 +147,12 @@ class PhaseAwareAnomalyHandler:
             'timestamp': datetime.now(),
             'decision_id': self._generate_decision_id()
         }
-                decision["explanation"] = build_explanation({
+        decision["explanation"] = build_explanation({
             "primary_factor": policy_decision.reasoning,
             "secondary_factors": [
-            f"Recurrence count: {recurrence_info.get('count')}",
-            f"Recent occurrences: {recurrence_info.get('total_in_window')}"
-           ],
-
+                f"Recurrence count: {recurrence_info.get('count')}",
+                f"Recent occurrences: {recurrence_info.get('total_in_window')}"
+            ],
             "mission_phase": current_phase.value,
             "confidence": confidence
         })
