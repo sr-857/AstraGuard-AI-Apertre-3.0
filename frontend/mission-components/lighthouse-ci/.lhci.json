@@ -1,0 +1,52 @@
+{
+    "ci": {
+        "collect": {
+            "url": [
+                "http://localhost:3000/dashboard"
+            ],
+            "numberOfRuns": 3,
+            "settings": {
+                "formFactor": "mobile",
+                "screenEmulation": {
+                    "mobile": true,
+                    "width": 375,
+                    "height": 667,
+                    "deviceScaleFactor": 0,
+                    "disabled": false
+                },
+                "throttling": {
+                    "rttMs": 40,
+                    "throughputKbps": 10240,
+                    "cpuSlowdownMultiplier": 4
+                },
+                "onlyCategories": [
+                    "performance",
+                    "accessibility",
+                    "best-practices"
+                ]
+            }
+        },
+        "assert": {
+            "assertions": {
+                "categories:performance": [
+                    "warn",
+                    {
+                        "minScore": 0.95
+                    }
+                ],
+                "categories:accessibility": [
+                    "error",
+                    {
+                        "minScore": 1.0
+                    }
+                ],
+                "categories:best-practices": [
+                    "warn",
+                    {
+                        "minScore": 0.95
+                    }
+                ]
+            }
+        }
+    }
+}
