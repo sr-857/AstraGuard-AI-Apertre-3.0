@@ -71,10 +71,10 @@ body {
     linear-gradient(90deg, rgba(0, 245, 255, 0.03) 1px, transparent 1px);
   background-size: 40px 40px;
   transform: perspective(500px) rotateX(60deg) translateY(-100px) translateZ(-200px);
-  opacity: 0.4;
+  opacity: 0.15;
   z-index: 0;
   pointer-events: none;
-  animation: grid-move 20s linear infinite;
+  animation: grid-move 60s linear infinite;
 }
 
 @keyframes grid-move {

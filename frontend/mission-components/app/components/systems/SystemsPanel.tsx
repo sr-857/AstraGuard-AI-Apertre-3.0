@@ -14,23 +14,27 @@ export const SystemsPanel: React.FC = () => {
     return (
         <div className="space-y-12 max-w-7xl mx-auto">
             {/* KPI Row */}
-            <section className="glow-magenta/50">
-                <h2 className="text-2xl font-bold mb-8 text-magenta-400 glow-magenta">System Health Overview</h2>
+            <section className="panel-holo rounded-2xl p-6 animate-slide-up delay-100">
+                <h2 className="text-2xl font-bold mb-8 text-magenta-400 glow-magenta flex items-center tracking-widest uppercase">
+                    System Health Overview
+                </h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
                     {kpis.map(kpi => <KPICard key={kpi.id} {...kpi} />)}
                 </div>
             </section>
 
             {/* Charts Grid */}
-            <section className="glow-teal/50">
-                <h2 className="text-2xl font-bold mb-8 text-teal-400 glow-teal">Telemetry Trends (Last 1h)</h2>
+            <section className="panel-holo rounded-2xl p-6 animate-slide-up delay-200">
+                <h2 className="text-2xl font-bold mb-8 text-teal-400 glow-teal tracking-widest uppercase">
+                    Telemetry Trends (Last 1h)
+                </h2>
                 <MetricsCharts data={charts} />
             </section>
 
             {/* Health Table */}
-            <section>
-                <h2 className="text-2xl font-bold mb-8 text-teal-400 glow-teal flex items-center">
-                    Component Health <span className="ml-3 text-sm bg-teal-500/0 px-3 py-1 rounded-full font-mono text-teal-300 border border-teal-500/30">
+            <section className="panel-holo rounded-2xl p-6 animate-slide-up delay-300">
+                <h2 className="text-2xl font-bold mb-8 text-teal-400 glow-teal flex items-center tracking-widest uppercase">
+                    Component Health <span className="ml-4 text-xs font-mono bg-teal-500/10 border border-teal-500/30 text-teal-300 px-3 py-1 rounded-sm">
                         {health.filter(h => h.status !== 'healthy').length} degraded
                     </span>
                 </h2>

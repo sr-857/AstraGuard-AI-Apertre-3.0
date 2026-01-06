@@ -553,3 +553,16 @@
 [00:24:35.780] Browser LOG     [WS] Connected
 [00:24:37.731] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
 [00:24:37.910] Browser LOG     [WS] Connected
+[00:27:50.571] Server  LOG      ✓ Compiled in 238ms
+[00:28:03.255] Server  LOG      ✓ Compiled in 66ms
+[00:28:26.843] Server  LOG      ✓ Compiled in 58ms
+[00:28:44.339] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[00:28:44.646] Browser LOG     [WS] Connected
+[01:07:15.929] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[01:07:16.192] Browser LOG     [WS] Connected
+[01:07:17.375] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[01:07:17.573] Browser LOG     [WS] Connected
+[01:07:18.639] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[01:07:18.793] Browser LOG     [WS] Connected
+[01:07:19.647] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[01:07:19.825] Browser LOG     [WS] Connected

@@ -58,20 +58,39 @@ export const OrbitMap: React.FC<Props> = ({ satellites, selectedSat, onSatClick,
           filter="url(#glow)"
         />
 
-        {/* Orbit Rings */}
-        {[1, 2, 3].map((ring) => (
-          <circle
-            key={`orbit-${ring}`}
-            cx="400"
-            cy="300"
-            r={180 + ring * 20}
-            fill="none"
-            stroke="#00f5ff"
-            strokeWidth="0.5"
-            opacity="0.2"
-            strokeDasharray="5,5"
-          />
-        ))}
+        {/* Tactical Radar Grid */}
+        <g className="radar-grid opacity-30">
+          {/* Crosshairs */}
+          <line x1="0" y1="300" x2="800" y2="300" stroke="#00f5ff" strokeWidth="0.5" />
+          <line x1="400" y1="0" x2="400" y2="600" stroke="#00f5ff" strokeWidth="0.5" />
+
+          {/* Range Rings */}
+          {[100, 200, 300, 400].map((r) => (
+            <circle
+              key={`range-${r}`}
+              cx="400"
+              cy="300"
+              r={r}
+              fill="none"
+              stroke="#00f5ff"
+              strokeWidth="0.5"
+              opacity={r % 200 === 0 ? "0.3" : "0.1"}
+            />
+          ))}
+
+          {/* Degree Ticks */}
+          {[0, 45, 90, 135, 180, 225, 270, 315].map((deg) => (
+            <line
+              key={`tick-${deg}`}
+              x1="400" y1="300"
+              x2={400 + Math.cos(deg * Math.PI / 180) * 400}
+              y2={300 + Math.sin(deg * Math.PI / 180) * 400}
+              stroke="#00f5ff"
+              strokeWidth="0.5"
+              opacity="0.1"
+            />
+          ))}
+        </g>
 
         {/* Satellites with Orbits */}
         {satellites.map((sat, idx) => {
@@ -149,10 +168,8 @@ export const OrbitMap: React.FC<Props> = ({ satellites, selectedSat, onSatClick,
                 y={y + 4}
                 fontSize="11"
                 fill="#00f5ff"
-                opacity="0.7"
-                fontFamily="monospace"
-                fontWeight="bold"
-                className="pointer-events-none"
+                opacity="0.8"
+                className="font-mono font-bold pointer-events-none tracking-wider"
               >
                 LEO-{sat.orbitSlot}
               </text>
@@ -200,10 +217,8 @@ export const OrbitMap: React.FC<Props> = ({ satellites, selectedSat, onSatClick,
                 fontSize="9"
                 fill={severityColor}
                 textAnchor="middle"
-                fontFamily="monospace"
-                fontWeight="bold"
-                opacity="0.8"
-                className="pointer-events-none"
+                opacity="0.9"
+                className="font-mono font-bold pointer-events-none"
               >
                 !
               </text>

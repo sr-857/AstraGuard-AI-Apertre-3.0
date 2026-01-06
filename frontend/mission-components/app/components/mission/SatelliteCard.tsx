@@ -43,12 +43,12 @@ export const SatelliteCard: React.FC<Props> = ({
   return (
     <div
       className={`
-        p-4 rounded-xl border-2 bg-black/30 backdrop-blur-sm cursor-pointer
-        group hover:scale-105 hover:-translate-y-2 hover:shadow-2xl
+        p-4 rounded-xl border bg-black/40 backdrop-blur-md cursor-pointer
+        group hover:scale-[1.02] hover:-translate-y-1 hover:shadow-xl
         transition-all duration-300 ease-out
         ${statusConfig.glowClass} ${statusConfig.borderClass}
         motion-safe:group-hover:[animation:lift-burst_0.6s_ease-out]
-        ${isSelected ? `ring-4 ${statusConfig.ringClass} scale-105` : ''}
+        ${isSelected ? `ring-2 ${statusConfig.ringClass} scale-[1.02]` : ''}
       `}
       onClick={onClick}
     >
