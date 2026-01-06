@@ -1,0 +1,8 @@
+{
+  "name": "Intelligent Border Surveillance System",
+  "description": "A React-based portfolio showcase and code generator for the SAM3 Computer Vision project. Includes a live webcam interface simulation and Gemini-powered analysis.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
