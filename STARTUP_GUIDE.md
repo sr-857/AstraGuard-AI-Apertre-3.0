@@ -10,20 +10,21 @@ This starts both backend and frontend simultaneously and opens the dashboard in 
 
 ### Option 2: Manual Startup
 
-**Terminal 1 - Start Backend API:**
+**Terminal 1 - Start Mock WebSocket Server (Required for Real-time Data):**
 ```bash
-python run_api.py
-# Or with options:
-python run_api.py --port 8000 --host 0.0.0.0
+cd frontend/mission-components
+npm run mock
 ```
 
-**Terminal 2 - Start Frontend:**
+**Terminal 2 - Start Frontend (Orbital Command Theme):**
 ```bash
-cd frontend/astraguard-ai.site
+cd frontend/mission-components
 npm run dev
 ```
 
-Then open: http://localhost:3000
+Then open: [http://localhost:3000](http://localhost:3000)
+
+> **Note**: The dashboard now features the "Orbital Command" aesthetic with a deep space starfield, holographic glass panels, and a HUD-style interface.
 
 ## 📍 Available Endpoints
 
