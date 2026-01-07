@@ -88,6 +88,7 @@ export const Earth = forwardRef<Group>((props, ref: React.ForwardedRef<Group>) =
     const startQuaternion = new Quaternion().copy(camera.quaternion);
 
     const tl = gsap.timeline({
+      onStart: () => console.debug("[Earth] Starting Earth Approach Animation"),
       onUpdate: function () {
         const earthPosition = new Vector3();
         if (ref && typeof ref !== 'function' && ref.current) {

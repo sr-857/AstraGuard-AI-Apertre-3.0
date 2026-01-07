@@ -1,14 +1,14 @@
 {
-  "[project]/components/sentient-sphere.tsx [app-client] (ecmascript, next/dynamic entry)": {
-    "id": "[project]/components/sentient-sphere.tsx [app-client] (ecmascript, next/dynamic entry)",
+  "[project]/frontend/mission-components/components/sentient-sphere.tsx [app-client] (ecmascript, next/dynamic entry)": {
+    "id": "[project]/frontend/mission-components/components/sentient-sphere.tsx [app-client] (ecmascript, next/dynamic entry)",
     "files": [
-      "static/chunks/node_modules_three_build_three_core_996ef05a.js",
-      "static/chunks/node_modules_three_build_three_module_0c59ee63.js",
-      "static/chunks/node_modules_three_build_three_module_f7d46d9b.js",
-      "static/chunks/node_modules_@react-three_fiber_dist_0629aedc._.js",
-      "static/chunks/node_modules_dcbb4583._.js",
-      "static/chunks/components_sentient-sphere_tsx_50b0db03._.js",
-      "static/chunks/components_sentient-sphere_tsx_28aaf1e1._.js"
+      "static/chunks/dad13_three_build_three_core_971108e2.js",
+      "static/chunks/dad13_three_build_three_module_309a9486.js",
+      "static/chunks/dad13_three_build_three_module_d550c9ba.js",
+      "static/chunks/dad13_@react-three_fiber_dist_c4c82358._.js",
+      "static/chunks/dad13_6c9f58a8._.js",
+      "static/chunks/frontend_mission-components_components_sentient-sphere_tsx_fb9af15d._.js",
+      "static/chunks/frontend_mission-components_components_sentient-sphere_tsx_3254c674._.js"
     ]
   }
 }

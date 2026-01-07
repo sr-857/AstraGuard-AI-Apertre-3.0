@@ -1,0 +1,47 @@
+.container {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: black;
+    color: white;
+    overflow: hidden;
+    position: relative;
+}
+
+.title {
+    position: absolute;
+    font-size: 4rem;
+    font-weight: bold;
+    z-index: 20;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+}
+
+.cosmos {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.cosmosItem {
+    position: absolute;
+    width: 100px;
+    height: 150px;
+    background: #333;
+    overflow: hidden;
+    opacity: 0;
+    /* Add animation here if needed or assume js handles some */
+}
+
+.cosmosItem img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}

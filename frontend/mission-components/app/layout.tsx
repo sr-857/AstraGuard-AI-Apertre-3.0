@@ -37,8 +37,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${inter.variable} ${playfair.variable} ${geistMono.variable}`}>
-      <body className="font-sans antialiased overflow-x-hidden bg-background text-foreground">
+    <html lang="en" className={`${inter.variable} ${playfair.variable} ${geistMono.variable}`} suppressHydrationWarning>
+      <body className="font-sans antialiased overflow-x-hidden bg-background text-foreground" suppressHydrationWarning>
         <div className="noise-overlay" />
         {children}
         <Analytics />

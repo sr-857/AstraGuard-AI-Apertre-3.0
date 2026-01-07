@@ -50,17 +50,27 @@ export function Hero() {
           initial={{ opacity: 0, scale: 0.8 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.8, delay: 0.6, ease: [0.25, 0.46, 0.45, 0.94] }}
-          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20"
+          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 flex flex-col md:flex-row gap-4 items-center"
         >
           <motion.a
             href="/experience"
             data-cursor-hover
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
-            className="relative px-8 py-4 border border-white/20 rounded-full font-mono text-sm tracking-widest uppercase bg-transparent backdrop-blur-sm hover:bg-white hover:text-black transition-colors duration-500"
+            className="relative px-8 py-4 border border-white/20 rounded-full font-mono text-sm tracking-widest uppercase bg-transparent backdrop-blur-sm hover:bg-white hover:text-black transition-colors duration-500 whitespace-nowrap"
           >
-            View AstraGuard AI
+            DIVE INTO ASTRAGUARD AI GALAXY
             <span className="absolute -top-1 -right-1 w-2 h-2 bg-[#22c55e] rounded-full animate-pulse" />
+          </motion.a>
+
+          <motion.a
+            href="/enter-ai"
+            data-cursor-hover
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            className="relative px-8 py-4 border border-white/20 rounded-full font-mono text-sm tracking-widest uppercase bg-white text-black hover:bg-transparent hover:text-white transition-colors duration-500 whitespace-nowrap"
+          >
+            ENTER ASTRAGUARD AI
           </motion.a>
         </motion.div>
 

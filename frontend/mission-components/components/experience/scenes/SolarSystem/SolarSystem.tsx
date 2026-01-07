@@ -60,6 +60,7 @@ export function SolarSystem() {
 
     const tl = gsap.timeline({
       onStart: () => {
+        console.debug("[SolarSystem] Starting SolarSystem Rotation Animation");
         initSolarSystemApproach();
       },
     });

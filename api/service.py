@@ -66,6 +66,7 @@ state_machine = None
 policy_loader = None
 phase_aware_handler = None
 memory_store = None
+latest_telemetry_data = None # Store latest telemetry for dashboard
 anomaly_history = deque(maxlen=MAX_ANOMALY_HISTORY_SIZE)  # Bounded deque prevents memory exhaustion
 start_time = time.time()
 
@@ -378,6 +379,13 @@ async def _process_telemetry(telemetry: TelemetryInput, request_start: float) ->
         "wheel_speed": telemetry.wheel_speed or 0.0,
     }
 
+    # Update global latest telemetry
+    global latest_telemetry_data
+    latest_telemetry_data = {
+        "data": data,
+        "timestamp": datetime.now()
+    }
+
     # Detect anomaly (uses heuristic if model not loaded)
     is_anomaly, anomaly_score = await detect_anomaly(data)
 
@@ -458,6 +466,14 @@ async def _process_telemetry(telemetry: TelemetryInput, request_start: float) ->
         DETECTION_LATENCY.observe(elapsed_ms / 1000.0)
 
     return response
+
+
+@app.get("/api/v1/telemetry/latest")
+async def get_latest_telemetry():
+    """Get the most recent telemetry data point."""
+    if latest_telemetry_data is None:
+        return {"data": None, "message": "No telemetry received yet"}
+    return latest_telemetry_data
 
 
 @app.post("/api/v1/telemetry/batch", response_model=BatchAnomalyResponse)

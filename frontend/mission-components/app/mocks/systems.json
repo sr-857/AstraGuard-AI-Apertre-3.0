@@ -1,52 +1,52 @@
 {
     "kpis": [
         {
-            "id": "uptime",
-            "label": "Uptime",
-            "value": "99.87%",
-            "trend": 0.02,
-            "progress": 99.87,
-            "unit": "%"
+            "id": "voltage",
+            "label": "Bus Voltage",
+            "value": "28.00V",
+            "trend": 0,
+            "progress": 93,
+            "unit": "V"
+        },
+        {
+            "id": "current",
+            "label": "Total Current",
+            "value": "4.20A",
+            "trend": 0,
+            "progress": 42,
+            "unit": "A"
+        },
+        {
+            "id": "temp",
+            "label": "Core Temp",
+            "value": "35.0°C",
+            "trend": 0,
+            "progress": 35,
+            "unit": "°C"
+        },
+        {
+            "id": "gyro",
+            "label": "Gyro Stability",
+            "value": "0.0001",
+            "trend": 0,
+            "progress": 99,
+            "unit": "rad/s"
+        },
+        {
+            "id": "wheel_speed",
+            "label": "Wheel Speed",
+            "value": "1200",
+            "trend": 0,
+            "progress": 60,
+            "unit": "rpm"
         },
         {
             "id": "latency",
-            "label": "Avg Latency",
-            "value": "142ms",
-            "trend": -3.2,
-            "progress": 71,
-            "unit": "ms"
-        },
-        {
-            "id": "errors",
-            "label": "Error Rate",
-            "value": "0.23%",
-            "trend": 0.01,
-            "progress": 23,
-            "unit": "%"
-        },
-        {
-            "id": "cpu",
-            "label": "CPU Load",
-            "value": "47%",
-            "trend": 2.1,
-            "progress": 47,
-            "unit": "%"
-        },
-        {
-            "id": "queue",
-            "label": "Queue Depth",
-            "value": "3/50",
-            "trend": -1,
-            "progress": 6,
-            "unit": ""
-        },
-        {
-            "id": "breakers",
-            "label": "Active Breakers",
-            "value": "2/12",
+            "label": "Comm Latency",
+            "value": "42ms",
             "trend": 0,
-            "progress": 17,
-            "unit": ""
+            "progress": 95,
+            "unit": "ms"
         }
     ],
     "services": [

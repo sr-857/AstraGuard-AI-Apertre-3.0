@@ -87,22 +87,25 @@ export function useNavigation({
             window.removeEventListener('touchmove', handleInitialTouchMove);
         };
 
-        // add event listeners
-        window.addEventListener('wheel', handleInitialWheel, { passive: false });
-        window.addEventListener('touchstart', handleInitialTouch, { passive: false });
-        window.addEventListener('touchmove', handleInitialTouchMove, { passive: false });
+        // add event listeners after a small delay to prevent accidental scrolling through the scene
+        const timeoutId = setTimeout(() => {
+            window.addEventListener('wheel', handleInitialWheel, { passive: false });
+            window.addEventListener('touchstart', handleInitialTouch, { passive: false });
+            window.addEventListener('touchmove', handleInitialTouchMove, { passive: false });
+        }, 1000);
 
         // adding inertia logic, otherwise movement (also animation & (moving) object tracking) would stop after switching the scene till you scroll again
-        if (zoomDirection === 'in') {
-            removeAllListeners();
-            cleanup = zoomFunction(false);
-        } else if (zoomDirection === 'out') {
-            removeAllListeners();
-            cleanup = zoomFunction(true);
-        }
+        // if (zoomDirection === 'in') {
+        //     removeAllListeners();
+        //     cleanup = zoomFunction(false);
+        // } else if (zoomDirection === 'out') {
+        //     removeAllListeners();
+        //     cleanup = zoomFunction(true);
+        // }
 
         // clean up
         return () => {
+            clearTimeout(timeoutId);
             removeAllListeners();
             if (cleanup) cleanup();
         };

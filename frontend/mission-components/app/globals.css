@@ -128,7 +128,7 @@
   /* Slate 600 */
 }
 
-::selection {
+::-selection {
   background: #3b82f6;
   /* Blue 500 */
   color: #ffffff;

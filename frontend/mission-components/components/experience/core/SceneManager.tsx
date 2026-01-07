@@ -83,6 +83,7 @@ export const useSceneStore = create<SceneState>((set, get) => ({
       const nextScene = SCENE_MANAGER.SCENE_ORDER[nextIndex] as SceneType;
 
       if (nextScene !== currentScene) { // end point, nowhere to go
+        console.debug(`[SceneManager] Extracting to next scene: ${currentScene} -> ${nextScene}`);
         set({
           currentScene: nextScene,
           zoomDirection: 'in',

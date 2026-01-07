@@ -7,7 +7,7 @@ import { useSceneStore } from '../../core/SceneManager'
 import { gsap } from 'gsap'
 import { createNavigationAnimation } from '../../utils/navigationAnimation';
 import { useNavigation } from '../../hooks/useNavigation'
-// import { useBloomComposer } from '../../hooks/usePostProcessing'
+import { useBloomComposer } from '../../hooks/usePostProcessing'
 import { setupZoomCamera } from '../../utils/setupZoomCamera'
 import { useMobile } from '../../contexts/MobileContext'
 import { Color, Group, MathUtils, Mesh, MeshBasicMaterial, PerspectiveCamera, PointsMaterial, TextureLoader, Vector3 } from 'three'
@@ -70,7 +70,7 @@ export function Galaxy() {
     return [positions, colors]
   }, [nodes])
 
-  // const composer = useBloomComposer(sceneVisible);
+  const composer = useBloomComposer(sceneVisible);
 
   // render
   useFrame(({ clock, camera }) => {
@@ -90,9 +90,9 @@ export function Galaxy() {
     }
 
     // render bloom
-    // if (composer) {
-    //   composer.render();
-    // }
+    if (composer) {
+      composer.render();
+    }
   })
 
   function zoomInGalaxyFunction(backwards: boolean = false) {

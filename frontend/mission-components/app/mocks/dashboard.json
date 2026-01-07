@@ -69,26 +69,32 @@
     ],
     "phases": [
       {
-        "name": "Launch",
+        "name": "LAUNCH",
         "status": "complete",
         "progress": 100,
         "isActive": false
       },
       {
-        "name": "Orbit Insertion",
+        "name": "DEPLOYMENT",
         "status": "complete",
         "progress": 100,
         "isActive": false
       },
       {
-        "name": "Stable Orbit",
+        "name": "NOMINAL_OPS",
         "status": "active",
-        "progress": 45,
-        "eta": "2h 30m",
+        "progress": 100,
+        "eta": "Ongoing",
         "isActive": true
       },
       {
-        "name": "Deorbit",
+        "name": "PAYLOAD_OPS",
+        "status": "pending",
+        "progress": 0,
+        "isActive": false
+      },
+      {
+        "name": "SAFE_MODE",
         "status": "pending",
         "progress": 0,
         "isActive": false
