@@ -4,6 +4,7 @@ import { KPICard } from './KPICard';
 import { BreakerMatrix } from './BreakerMatrix';
 import { MetricsCharts } from './MetricsCharts';
 import { HealthTable } from './HealthTable';
+import { PredictiveAnalysis } from './PredictiveAnalysis';
 import { useDashboard } from '../../context/DashboardContext';
 
 export const SystemsPanel: React.FC = () => {
@@ -22,6 +23,13 @@ export const SystemsPanel: React.FC = () => {
                     {kpis.map(kpi => <KPICard key={kpi.id} {...kpi} />)}
                 </div>
             </section>
+
+            {/* Predictive Analysis (Only visible if critical) */}
+            {(state.systems as any).prediction && (
+                <section className="animate-slide-up delay-150">
+                    <PredictiveAnalysis {...(state.systems as any).prediction} />
+                </section>
+            )}
 
             {/* Charts Grid */}
             <section className="panel-holo rounded-2xl p-6 animate-slide-up delay-200">

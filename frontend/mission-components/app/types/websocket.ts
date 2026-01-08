@@ -19,6 +19,13 @@ export interface TelemetryState {
         breakers: BreakerState[];
         charts: Record<string, ChartSeries>;
         health: HealthRow[];
+        prediction?: {
+            systemId: string;
+            label: string;
+            trend: 'stable' | 'increasing' | 'decreasing' | 'critical';
+            timeToFailure?: number;
+            confidence: number;
+        };
     };
     connection: 'connected' | 'connecting' | 'disconnected';
 }

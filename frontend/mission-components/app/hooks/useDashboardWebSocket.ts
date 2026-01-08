@@ -74,6 +74,20 @@ export const telemetryReducer = (state: TelemetryState, action: any): TelemetryS
                     )
                 }
             };
+        case 'CHART_UPDATE':
+            return {
+                ...state,
+                systems: {
+                    ...state.systems,
+                    charts: {
+                        ...state.systems.charts,
+                        [action.payload.id]: {
+                            ...state.systems.charts[action.payload.id],
+                            ...action.payload.data
+                        }
+                    }
+                }
+            };
         case 'CONNECTION_STATUS':
             return { ...state, connection: action.payload };
         default:
@@ -138,6 +152,17 @@ export const useDashboardWebSocket = () => {
         } catch (error) {
             console.warn('[Polling] Failed - using mockup');
             setConnected(true);
+
+            // Mock Fallback
+            // To test Predictive Health, set voltage < 45
+            const mockT = {
+                voltage: 48.0,
+                current: 2.1,
+                temperature: 35,
+                gyro: 0.001,
+                charts: telemetryData.charts
+            };
+            updateKPIs(mockT, dispatch);
         }
     }, [isReplayMode]);
 
@@ -186,4 +211,87 @@ const updateKPIs = (t: any, dispatch: any) => {
         { id: 'gyro', label: 'Gyro Stability', value: `${t.gyro.toFixed(4)}`, status: 'nominal', trend: 'stable' }
     ];
     kpiUpdates.forEach(kpi => dispatch({ type: 'KPI_UPDATE', payload: kpi }));
+
+    // AI Forecasting Logic (Simulated)
+    // If voltage is dropping (simulated by checking if it's below nominal 48V), project when it hits 0
+    const voltage = t.voltage;
+    if (voltage < 45) { // Threshold to trigger "Warning" / Prediction
+        const dropRate = 0.1; // Volts per second (assumed/calculated)
+        const timeToFailure = Math.floor(voltage / dropRate);
+
+        // Generate forecast points for chart
+        const currentChart = t.charts?.voltage || { data: [] };
+        // We'll just generate based on current value if chart data isn't directly in 't' (it might be separately updated)
+        // But here we rely on the reducer to merge. We need to construct the 'forecast' for the chart.
+
+        // Let's create a forecast array
+        const forecastPoints = [];
+        const now = new Date();
+        for (let i = 1; i <= 60; i += 10) { // Forecast next 60 seconds
+            const futureVal = Math.max(0, voltage - (dropRate * i));
+            const futureTime = new Date(now.getTime() + i * 1000);
+            const timeStr = `${futureTime.getHours().toString().padStart(2, '0')}:${futureTime.getMinutes().toString().padStart(2, '0')}`;
+
+            forecastPoints.push({
+                timestamp: timeStr,
+                value: futureVal
+            });
+        }
+
+        // Dispatch Prediction Update
+        dispatch({
+            type: 'TELEMETRY_UPDATE',
+            payload: {
+                systems: {
+                    prediction: {
+                        systemId: 'voltage',
+                        label: 'Main Bus Voltage',
+                        trend: 'critical',
+                        timeToFailure: timeToFailure,
+                        confidence: 0.94
+                    },
+                    // We also need to update the specific chart with forecast data.
+                    // This assumes the reducer merges deep enough or we handle it manually.
+                    // The reducer says: systems: { ...state.systems, ...action.payload.systems }
+                    // So we can send partial updates if we structure it right.
+                    // But charts is a Record, so we might need to send the whole charts object or modify the reducer.
+                    // Let's check the reducer again. It does shallow merge of systems.
+                    // So we should try to dispatch a chart update separately or include it here if we have the full charts object.
+                    // Since 't' doesn't have the full charts object usually (just telem), we might need to rely on the fact that 
+                    // this updateKPIs is called with 'telemetryDataRaw.data' which might NOT have charts.
+                    // Actually 'telemetryDataRaw' in pollBackend has 'data'.
+
+                    // Ideally we should dispatch a specific CHART_UPDATE or handle it in a smarter reducer.
+                    // For now, let's assume we can trigger a system update.
+                    // BUT, updating 'charts' might overwrite other charts if we are not careful.
+                    // The reducer: systems: action.payload.systems ? { ...state.systems, ...action.payload.systems } : state.systems
+                    // If we pass systems: { charts: { voltage: { ... } } }, it will REPLACE state.systems.charts with { voltage: ... }
+                    // causing other charts to disappear.
+                }
+            }
+        });
+
+        // Update Chart with Forecast
+        if (currentChart) {
+            dispatch({
+                type: 'CHART_UPDATE',
+                payload: {
+                    id: 'voltage',
+                    data: {
+                        forecast: forecastPoints
+                    }
+                }
+            });
+        }
+    } else {
+        // Clear prediction if healthy
+        dispatch({
+            type: 'TELEMETRY_UPDATE',
+            payload: {
+                systems: {
+                    prediction: null
+                }
+            }
+        });
+    }
 };

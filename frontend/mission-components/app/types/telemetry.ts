@@ -7,6 +7,7 @@ export interface ChartSeries {
     id: string;           // "cpu"
     label: string;        // "CPU Load"
     data: ChartDataPoint[]; // 60pts
+    forecast?: ChartDataPoint[]; // Predicted future points
     color: string;        // "#00f5ff"
 }
 

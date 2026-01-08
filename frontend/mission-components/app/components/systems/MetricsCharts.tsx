@@ -49,6 +49,19 @@ export const MetricsCharts: React.FC<Props> = ({ data }) => {
                                         dot={false}
                                         isAnimationActive={false} // Performance optimization for frequent updates
                                     />
+                                    {series.forecast && (
+                                        <SeriesComponent
+                                            type="monotone"
+                                            data={series.forecast}
+                                            dataKey="value"
+                                            stroke={stroke}
+                                            fill="none"
+                                            strokeDasharray="5 5"
+                                            strokeWidth={2}
+                                            dot={false}
+                                            isAnimationActive={false}
+                                        />
+                                    )}
                                 </ChartComponent>
                             </ResponsiveContainer>
                         </div>
