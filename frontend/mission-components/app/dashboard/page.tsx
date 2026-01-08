@@ -32,6 +32,7 @@ import { AchievementPanel } from '../components/dashboard/AchievementPanel';
 import { DiagnosticsPanel } from '../components/dashboard/DiagnosticsPanel';
 import { TimelineScrubber } from '../components/replay/TimelineScrubber';
 import { ReplayOverlay } from '../components/replay/ReplayOverlay';
+import { EncryptionSpectrogram } from '../components/security/EncryptionSpectrogram';
 
 const DashboardContent: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'mission' | 'systems' | 'chaos' | 'uplink' | 'vault' | 'diagnostics'>('mission');

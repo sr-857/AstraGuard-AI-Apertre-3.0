@@ -2534,6 +2534,12 @@ body {
   --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
 }
 
+.from-black\/80 {
+  --tw-gradient-from: #000c var(--tw-gradient-from-position);
+  --tw-gradient-to: #0000 var(--tw-gradient-to-position);
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+}
+
 .via-gray-800 {
   --tw-gradient-to: #1f293700 var(--tw-gradient-to-position);
   --tw-gradient-stops: var(--tw-gradient-from), #1f2937 var(--tw-gradient-via-position), var(--tw-gradient-to);
@@ -2583,6 +2589,14 @@ body {
 
 .to-yellow-600 {
   --tw-gradient-to: #ca8a04 var(--tw-gradient-to-position);
+}
+
+.to-blue-500 {
+  --tw-gradient-to: #3b82f6 var(--tw-gradient-to-position);
+}
+
+.to-blue-950\/20 {
+  --tw-gradient-to: #17255433 var(--tw-gradient-to-position);
 }
 
 .bg-\[length\:100\%_2px\,3px_100\%\] {
@@ -3224,6 +3238,10 @@ body {
   color: #f59e0b4d;
 }
 
+.text-red-400\/60 {
+  color: #f8717199;
+}
+
 .line-through {
   text-decoration-line: line-through;
 }
@@ -3493,6 +3511,12 @@ body {
 .shadow-\[0_0_20px_rgba\(6\,182\,212\,0\.3\)\] {
   --tw-shadow: 0 0 20px #06b6d44d;
   --tw-shadow-colored: 0 0 20px var(--tw-shadow-color);
+  box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
+}
+
+.shadow-\[0_0_30px_rgba\(6\,182\,212\,0\.2\)\] {
+  --tw-shadow: 0 0 30px #06b6d433;
+  --tw-shadow-colored: 0 0 30px var(--tw-shadow-color);
   box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
 }
 
@@ -4037,6 +4061,10 @@ body {
 
 .hover\:bg-red-500\/30:hover {
   background-color: #ef44444d;
+}
+
+.hover\:bg-white\/5:hover {
+  background-color: #ffffff0d;
 }
 
 .hover\:text-amber-300:hover {

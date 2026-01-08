@@ -5,6 +5,7 @@ import { TelemetryState, WSMessage } from '../types/websocket';
 import { useDashboardWebSocket } from '../hooks/useDashboardWebSocket';
 import { useStateBuffer } from '../hooks/useStateBuffer';
 import { GroundStation, RemediationScript, RemediationStep, AICognitiveState, HistoricalAnomaly, Achievement } from '../types/dashboard';
+import { EncryptionMetrics } from '../types/security';
 
 export interface Annotation {
     id: string;
@@ -64,6 +65,9 @@ interface ContextValue {
     unlockAchievement: (id: string) => void;
     registerChaosRun: () => void;
     chaosCount: number;
+    // Encryption Security
+    encryptionMetrics: EncryptionMetrics;
+    updateEncryptionMetrics: (metrics: Partial<EncryptionMetrics>) => void;
 }
 
 const DashboardContext = createContext<ContextValue | undefined>(undefined);
@@ -119,6 +123,14 @@ export const DashboardProvider: React.FC<{ children: ReactNode }> = ({ children 
     const [replayTimestamp, setReplayTimestamp] = useState<number | null>(null);
     const [replayPlaybackSpeed, setReplayPlaybackSpeed] = useState(1);
     const [replayState, setReplayState] = useState<TelemetryState | null>(null);
+
+    // Encryption Security State
+    const [encryptionMetrics, setEncryptionMetrics] = useState<EncryptionMetrics>({
+        entropy: 95,
+        strength: 98,
+        isCompromised: false,
+        attackType: null,
+    });
 
     const unlockAchievement = (id: string) => {
         setAchievements(prev => {
@@ -180,6 +192,53 @@ export const DashboardProvider: React.FC<{ children: ReactNode }> = ({ children 
     const getReplayTimeRange = () => {
         return stateBuffer.getTimeRange();
     };
+
+    // Encryption Metrics Management
+    const updateEncryptionMetrics = (metrics: Partial<EncryptionMetrics>) => {
+        setEncryptionMetrics(prev => ({ ...prev, ...metrics }));
+    };
+
+    // Simulate encryption entropy fluctuations
+    useEffect(() => {
+        const interval = setInterval(() => {
+            setEncryptionMetrics(prev => {
+                // Random chance of attack (5%)
+                if (Math.random() < 0.05 && !prev.isCompromised) {
+                    const attacks: Array<'MITM' | 'REPLAY' | 'BRUTE_FORCE'> = ['MITM', 'REPLAY', 'BRUTE_FORCE'];
+                    return {
+                        ...prev,
+                        entropy: Math.max(0, prev.entropy - 50),
+                        isCompromised: true,
+                        attackType: attacks[Math.floor(Math.random() * attacks.length)],
+                        lastAttackTime: new Date().toISOString(),
+                    };
+                }
+
+                // Recovery from compromise
+                if (prev.isCompromised && Math.random() < 0.3) {
+                    return {
+                        ...prev,
+                        entropy: 100,
+                        isCompromised: false,
+                        attackType: null,
+                    };
+                }
+
+                // Normal entropy fluctuation
+                if (!prev.isCompromised) {
+                    const change = (Math.random() - 0.5) * 10;
+                    return {
+                        ...prev,
+                        entropy: Math.max(70, Math.min(100, prev.entropy + change)),
+                        strength: Math.max(80, Math.min(100, prev.strength + (Math.random() - 0.5) * 5)),
+                    };
+                }
+
+                return prev;
+            });
+        }, 3000);
+        return () => clearInterval(interval);
+    }, []);
 
     // Simulate AI Cognitive Fluctuations
     useEffect(() => {
@@ -308,7 +367,9 @@ export const DashboardProvider: React.FC<{ children: ReactNode }> = ({ children 
         achievements,
         unlockAchievement,
         registerChaosRun,
-        chaosCount
+        chaosCount,
+        encryptionMetrics,
+        updateEncryptionMetrics,
     };
 
     return (
