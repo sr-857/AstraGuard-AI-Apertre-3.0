@@ -1,0 +1,18 @@
+{
+  "anomaly_id": "example-123",
+  "analysis": "Detected anomalous telemetry pattern consistent with RF interference and transient thermal spike.",
+  "recommendation": "1) Validate recent uplink commands.\n2) Schedule a telemetry capture window.\n3) Initiate graceful mode if counts persist.",
+  "confidence": 0.86,
+  "feature_importances": [
+    {"feature": "signal_strength", "importance": 0.45},
+    {"feature": "temperature", "importance": 0.28},
+    {"feature": "battery", "importance": 0.15},
+    {"feature": "latency", "importance": 0.08},
+    {"feature": "tx_rate", "importance": 0.04}
+  ],
+  "shap_values": {
+    "signal_strength": 0.321,
+    "temperature": -0.15,
+    "battery": 0.087
+  }
+}

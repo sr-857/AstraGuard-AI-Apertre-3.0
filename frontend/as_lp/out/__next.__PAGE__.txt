@@ -1,0 +1,16 @@
+1:"$Sreact.fragment"
+2:I[39439,["/_next/static/chunks/e29b62b71f334a94.js","/_next/static/chunks/1a42d07d769b8383.js"],"SmoothScroll"]
+3:I[27171,["/_next/static/chunks/e29b62b71f334a94.js","/_next/static/chunks/1a42d07d769b8383.js"],"CustomCursor"]
+4:I[21829,["/_next/static/chunks/e29b62b71f334a94.js","/_next/static/chunks/1a42d07d769b8383.js"],"Navbar"]
+5:I[38500,["/_next/static/chunks/e29b62b71f334a94.js","/_next/static/chunks/1a42d07d769b8383.js"],"Hero"]
+6:I[72058,["/_next/static/chunks/e29b62b71f334a94.js","/_next/static/chunks/1a42d07d769b8383.js"],"About"]
+7:I[40248,["/_next/static/chunks/e29b62b71f334a94.js","/_next/static/chunks/1a42d07d769b8383.js"],"Works"]
+8:I[82312,["/_next/static/chunks/e29b62b71f334a94.js","/_next/static/chunks/1a42d07d769b8383.js"],"FederatedLearningDemo"]
+9:I[63342,["/_next/static/chunks/e29b62b71f334a94.js","/_next/static/chunks/1a42d07d769b8383.js"],"FederatedLearningDashboard"]
+a:I[82024,["/_next/static/chunks/e29b62b71f334a94.js","/_next/static/chunks/1a42d07d769b8383.js"],"FederatedLearningVisualization"]
+b:I[73532,["/_next/static/chunks/e29b62b71f334a94.js","/_next/static/chunks/1a42d07d769b8383.js"],"TechMarquee"]
+c:I[89769,["/_next/static/chunks/e29b62b71f334a94.js","/_next/static/chunks/1a42d07d769b8383.js"],"Footer"]
+d:I[2784,["/_next/static/chunks/acd862814532ee2e.js"],"OutletBoundary"]
+e:"$Sreact.suspense"
+0:{"buildId":"gXI1vx1wvFxjRXtZrcvfW","rsc":["$","$1","c",{"children":[["$","$L2",null,{"children":[["$","$L3",null,{}],["$","$L4",null,{}],["$","main",null,{"children":[["$","$L5",null,{}],["$","div",null,{"className":"relative h-40 -mt-20 z-10 pointer-events-none","children":[["$","div",null,{"className":"absolute inset-0 h-1/2","style":{"background":"linear-gradient(to bottom, transparent, #050505)"}}],["$","div",null,{"className":"absolute inset-0 top-1/2 h-1/2","style":{"background":"linear-gradient(to bottom, #050505, transparent)"}}]]}],["$","$L6",null,{}],["$","$L7",null,{}],["$","section",null,{"id":"federated-learning","className":"py-20 bg-gray-50 dark:bg-gray-900","children":["$","div",null,{"className":"container mx-auto px-4","children":[["$","div",null,{"className":"text-center mb-16","children":[["$","h2",null,{"className":"text-4xl font-bold text-gray-900 dark:text-white mb-4","children":"Federated Learning"}],["$","p",null,{"className":"text-xl text-gray-600 dark:text-gray-300 max-w-3xl mx-auto","children":"Experience privacy-preserving distributed AI training. Train anomaly detection models across multiple nodes without sharing sensitive telemetry data."}]]}],["$","div",null,{"className":"space-y-16","children":[["$","$L8",null,{}],["$","$L9",null,{}],["$","$La",null,{"metrics":[],"participants":[]}]]}]]}]}],["$","$Lb",null,{}],["$","$Lc",null,{}]]}]]}],[["$","script","script-0",{"src":"/_next/static/chunks/1a42d07d769b8383.js","async":true}]],["$","$Ld",null,{"children":["$","$e",null,{"name":"Next.MetadataOutlet","children":"$@f"}]}]]}],"loading":null,"isPartial":false}
+f:null
