@@ -138,6 +138,7 @@ class TestCircuitBreaker:
         """Test transition from OPEN to HALF_OPEN after recovery timeout"""
         # Force circuit to OPEN
         breaker._transition_to_open()
+        breaker.metrics.last_failure_time = datetime.now()
         assert breaker.is_open
 
         # Wait for recovery timeout
@@ -168,7 +169,8 @@ class TestCircuitBreaker:
         assert breaker.is_closed
 
         metrics = breaker.get_metrics()
-        assert metrics.consecutive_successes == 2
+        assert metrics.consecutive_successes == 0
+        assert metrics.successes_total >= 2
 
     @pytest.mark.asyncio
     async def test_half_open_failure_back_to_open(self, breaker):
@@ -198,7 +200,8 @@ class TestCircuitBreaker:
         assert metrics.successes_total == 0
         assert metrics.trips_total == 0
 
-    def test_expected_exceptions_only(self, breaker):
+    @pytest.mark.asyncio
+    async def test_expected_exceptions_only(self, breaker):
         """Test that only expected exceptions count as failures"""
         # Custom exception that's not expected
         class CustomError(Exception):

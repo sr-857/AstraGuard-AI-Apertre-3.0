@@ -66,3 +66,13 @@ Fixed persistent build errors related to dependency file paths.
     - `docker/Dockerfile`
 - **Test Requirements**: Updated `config/requirements-test.txt` in workflows.
 - **Result**: Build pipelines now correctly locate all dependency files in the `config/` directory.
+
+## 6. Unit Test Fixes
+Resolved syntax and logic errors in the circuit breaker test suite.
+
+### Fixes
+- **Async Syntax**: Fixed `SyntaxError: 'await' outside async function` in `test_expected_exceptions_only` by converting it to `async def` and adding `@pytest.mark.asyncio`.
+- **Logic Errors**:
+    - Corrected `test_half_open_success_recovery` assertion for `consecutive_successes` (resets to 0 on close).
+    - Fixed `test_recovery_timeout_transition_to_half_open` by manually setting `last_failure_time` to properly simulate timeout expiration.
+- **Result**: All 19 tests in `tests/test_core_circuit_breaker.py` now pass.
