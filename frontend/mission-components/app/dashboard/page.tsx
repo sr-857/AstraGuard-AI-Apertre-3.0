@@ -25,6 +25,7 @@ import { useSoundEffects } from '../hooks/useSoundEffects';
 import { CopilotChat } from '../components/dashboard/CopilotChat';
 import { ThemeSwitcher } from '../components/ui/ThemeSwitcher';
 import { CommandHUD } from '../components/ui/CommandHUD';
+import { RemediationDrawer } from '../components/mission/RemediationDrawer';
 
 const DashboardContent: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'mission' | 'systems' | 'chaos' | 'uplink'>('mission');
@@ -91,6 +92,7 @@ const DashboardContent: React.FC = () => {
         onClose={() => setShowPalette(false)}
         onNav={setActiveTab}
       />
+      <RemediationDrawer />
       <DashboardHeader data={mission} />
 
       <div className="flex min-h-screen pt-[100px] lg:pt-[80px] flex-col">

@@ -5,7 +5,7 @@ import { AnalysisResult, FeatureImportance } from '../../types/analysis';
 import { AIService } from '../../../services/ai-service';
 import { useDashboard } from '../../context/DashboardContext';
 import { AnnotationCard } from '../ui/AnnotationCard';
-import { MessageSquare, Send } from 'lucide-react';
+import { MessageSquare, Send, ShieldAlert } from 'lucide-react';
 
 interface Props {
     anomaly: AnomalyEvent;
@@ -17,7 +17,7 @@ export const AnomalyInvestigator: React.FC<Props> = ({ anomaly, onClose }) => {
     const [result, setResult] = useState<AnalysisResult | null>(null);
     const [newNote, setNewNote] = useState('');
     const { generateReport } = useReportExport();
-    const { annotations, addAnnotation } = useDashboard();
+    const { annotations, addAnnotation, proposeRemediation, activeRemediation } = useDashboard();
 
     const anomalyNotes = annotations.filter(a => a.targetId === anomaly.id);
 
@@ -205,6 +205,15 @@ export const AnomalyInvestigator: React.FC<Props> = ({ anomaly, onClose }) => {
                             <div className="text-sm text-emerald-100/90 leading-relaxed whitespace-pre-line bg-emerald-500/5 p-4 rounded-lg border border-emerald-500/10 font-mono text-xs">
                                 {result.recommendation}
                             </div>
+
+                            {!activeRemediation && (
+                                <button
+                                    onClick={() => proposeRemediation(anomaly.id)}
+                                    className="w-full py-2 bg-red-600 hover:bg-red-500 text-white rounded text-[10px] font-bold uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-2 group shadow-[0_0_15px_rgba(220,38,38,0.3)]"
+                                >
+                                    <ShieldAlert size={14} className="group-hover:animate-pulse" /> AUTHORIZE_TACTICAL_FIX
+                                </button>
+                            )}
                         </div>
 
                         <div className="space-y-3">

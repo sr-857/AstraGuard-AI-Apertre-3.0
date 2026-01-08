@@ -19,6 +19,21 @@ export interface Operator {
     activePanel: string;
 }
 
+export interface RemediationStep {
+    id: string;
+    command: string;
+    description: string;
+    status: 'pending' | 'executing' | 'completed' | 'failed';
+}
+
+export interface RemediationScript {
+    id: string;
+    anomalyId: string;
+    steps: RemediationStep[];
+    status: 'proposed' | 'authorized' | 'executing' | 'completed';
+    createdAt: string;
+}
+
 interface ContextValue {
     state: TelemetryState;
     isConnected: boolean;
@@ -37,6 +52,11 @@ interface ContextValue {
     addAnnotation: (note: Omit<Annotation, 'id' | 'timestamp'>) => void;
     removeAnnotation: (id: string) => void;
     presence: Operator[];
+    // Remediation
+    activeRemediation: RemediationScript | null;
+    proposeRemediation: (anomalyId: string) => void;
+    authorizeRemediation: (id: string) => void;
+    cancelRemediation: () => void;
 }
 
 const DashboardContext = createContext<ContextValue | undefined>(undefined);
@@ -50,6 +70,7 @@ export const DashboardProvider: React.FC<{ children: ReactNode }> = ({ children 
         { id: '2', name: 'ALPHA', avatar: 'A', activePanel: 'Systems' },
         { id: '3', name: 'KAPPA', avatar: 'K', activePanel: 'Chaos Engine' },
     ]);
+    const [activeRemediation, setActiveRemediation] = useState<RemediationScript | null>(null);
 
     // Add Annotation
     const addAnnotation = (note: Omit<Annotation, 'id' | 'timestamp'>) => {
@@ -64,6 +85,64 @@ export const DashboardProvider: React.FC<{ children: ReactNode }> = ({ children 
     // Remove Annotation
     const removeAnnotation = (id: string) => {
         setAnnotations(prev => prev.filter(a => a.id !== id));
+    };
+
+    // Propose Remediation (Mock logic)
+    const proposeRemediation = (anomalyId: string) => {
+        const steps: RemediationStep[] = [
+            { id: 's1', command: 'REBOOT_TRANSCEIVER_01', description: 'Hard reset on signal transceiver primary loop', status: 'pending' },
+            { id: 's2', command: 'RECALIBRATE_PHASE_ARRAY', description: 'Adjusting phase array to ±0.04° alignment', status: 'pending' },
+            { id: 's3', command: 'CLEAR_CACHE_MCR', description: 'Clearing local MCR mission persistent cache', status: 'pending' }
+        ];
+
+        setActiveRemediation({
+            id: Math.random().toString(36).substr(2, 9),
+            anomalyId,
+            steps,
+            status: 'proposed',
+            createdAt: new Date().toLocaleTimeString()
+        });
+    };
+
+    // Authorize Remediation
+    const authorizeRemediation = (id: string) => {
+        if (!activeRemediation || activeRemediation.id !== id) return;
+
+        setActiveRemediation(prev => prev ? { ...prev, status: 'authorized' } : null);
+
+        // Mock execution sequence
+        setTimeout(() => {
+            setActiveRemediation(prev => {
+                if (!prev) return null;
+                const newSteps = [...prev.steps];
+                newSteps[0].status = 'executing';
+                return { ...prev, status: 'executing', steps: newSteps };
+            });
+        }, 1000);
+
+        setTimeout(() => {
+            setActiveRemediation(prev => {
+                if (!prev) return null;
+                const newSteps = [...prev.steps];
+                newSteps[0].status = 'completed';
+                newSteps[1].status = 'executing';
+                return { ...prev, steps: newSteps };
+            });
+        }, 3000);
+
+        setTimeout(() => {
+            setActiveRemediation(prev => {
+                if (!prev) return null;
+                const newSteps = [...prev.steps];
+                newSteps[1].status = 'completed';
+                newSteps[2].status = 'completed';
+                return { ...prev, status: 'completed', steps: newSteps };
+            });
+        }, 6000);
+    };
+
+    const cancelRemediation = () => {
+        setActiveRemediation(null);
     };
 
     // Auto-trigger Battle Mode on Critical Anomalies
@@ -83,7 +162,11 @@ export const DashboardProvider: React.FC<{ children: ReactNode }> = ({ children 
         annotations,
         addAnnotation,
         removeAnnotation,
-        presence
+        presence,
+        activeRemediation,
+        proposeRemediation,
+        authorizeRemediation,
+        cancelRemediation
     };
 
     return (
