@@ -13,6 +13,8 @@ import { useDebrisTracking } from '../hooks/useDebrisTracking';
 import { IncidentPlaybook, StepStatus } from '../types/playbook';
 import { BiometricData } from '../types/biometric';
 import { useBiometricTracking } from '../hooks/useBiometricTracking';
+import { GroundStation } from '../types/groundStation';
+import { useGroundStations } from '../hooks/useGroundStations';
 
 export interface Annotation {
     id: string;
@@ -97,6 +99,10 @@ interface ContextValue {
     isAutoPilotActive: boolean;
     enableAutoPilot: () => void;
     disableAutoPilot: () => void;
+    // Ground Stations
+    groundStations: GroundStation[];
+    activeStation: GroundStation | null;
+    switchStation: (stationId: string) => void;
 }
 
 const DashboardContext = createContext<ContextValue | undefined>(undefined);
@@ -193,6 +199,9 @@ export const DashboardProvider: React.FC<{ children: ReactNode }> = ({ children 
         setIsAutoPilotActive(false);
         console.log('Auto-pilot disabled');
     };
+
+    // Ground Station State
+    const { groundStations, activeStation, switchStation } = useGroundStations();
 
     const unlockAchievement = (id: string) => {
         setAchievements(prev => {
@@ -449,6 +458,9 @@ export const DashboardProvider: React.FC<{ children: ReactNode }> = ({ children 
         isAutoPilotActive,
         enableAutoPilot,
         disableAutoPilot,
+        groundStations,
+        activeStation,
+        switchStation,
     };
 
     return (
