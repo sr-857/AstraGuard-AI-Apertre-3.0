@@ -27,3 +27,17 @@ Implemented a Web Speech API-based voice assistant for the Uplink Terminal.
     - Click microphone.
     - Speak "Status".
     - Confirm terminal executes command and AI speaks response.
+
+## 3. Battle Mode (Red Alert View)
+Implemented a high-contrast "Battle Mode" for critical situations.
+
+### Features
+- **Auto-Trigger**: Activates automatically when a **Critical** anomaly is detected.
+- **Red Alert Overlay**: Visual warning with pulsing vignette and scan lines.
+- **Focused Layout**: Hides standard navigation. Maximizes the Command Terminal and Anomaly Investigator.
+- **Manual Toggle**: "🛡️ BATTLE" button in header for testing/override.
+
+### Verification
+- **Test**: Click "Shield/Battle" icon in header.
+- **Result**: View switches to red high-contrast mode with large terminal.
+- **Exit**: Click "⚠️ BATTLE" to return to normal.

@@ -19,13 +19,14 @@ import { TransitionWrapper } from '../components/ui/TransitionWrapper';
 import { MobileNavHamburger } from '../components/ui/MobileNavHamburger';
 import { DesktopTabNav } from '../components/dashboard/DesktopTabNav';
 import { CommandPalette } from '../components/ui/CommandPalette';
+import { BattleModeOverlay } from '../components/ui/BattleModeOverlay';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { useSoundEffects } from '../hooks/useSoundEffects';
 
 const DashboardContent: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'mission' | 'systems' | 'chaos' | 'uplink'>('mission');
   const [selectedAnomalyForAnalysis, setSelectedAnomalyForAnalysis] = useState<AnomalyEvent | null>(null);
-  const { isConnected, togglePlay, isReplayMode } = useDashboard();
+  const { isConnected, togglePlay, isReplayMode, isBattleMode, setBattleMode } = useDashboard();
   const mission = dashboardData.mission as MissionState;
   const [showPalette, setShowPalette] = useState(false);
 
@@ -107,38 +108,76 @@ const DashboardContent: React.FC = () => {
             >
               {activeAudio ? '🔊 Sonic' : '🔇 Mute'}
             </button>
+            <button
+              onClick={() => setBattleMode(!isBattleMode)}
+              className={`flex items-center gap-2 px-3 py-1 rounded border transition-all text-xs uppercase tracking-wider ${isBattleMode
+                ? 'border-red-500 bg-red-500/20 text-red-300 animate-pulse shadow-[0_0_15px_rgba(255,0,0,0.5)]'
+                : 'border-slate-700 bg-slate-900 text-slate-500 hover:text-red-400'
+                }`}
+            >
+              {isBattleMode ? '⚠️ BATTLE' : '🛡️ BATTLE'}
+            </button>
             <ReplayControls />
           </div>
         </nav>
 
         <main className="flex-1 px-6 pb-8 relative">
+          <BattleModeOverlay active={isBattleMode} />
+
           {!isConnected ? (
             <LoadingSkeleton type="chart" count={6} />
           ) : (
             <>
-              {activeTab === 'mission' && (
-                <TransitionWrapper isActive={activeTab === 'mission'}>
-                  <MissionPanel onInvestigate={setSelectedAnomalyForAnalysis} />
-                </TransitionWrapper>
-              )}
-              {activeTab === 'systems' && (
-                <TransitionWrapper isActive={activeTab === 'systems'}>
-                  <SystemsPanel />
-                </TransitionWrapper>
-              )}
-              {activeTab === 'chaos' && (
-                <TransitionWrapper isActive={activeTab === 'chaos'}>
-                  <ChaosPanel className="max-w-4xl mx-auto mt-4" />
-                </TransitionWrapper>
-              )}
-              {activeTab === 'uplink' && (
-                <TransitionWrapper isActive={activeTab === 'uplink'}>
-                  <CommandTerminal />
-                </TransitionWrapper>
+              {/* NORMAL MODE Layout */}
+              {!isBattleMode && (
+                <>
+                  {activeTab === 'mission' && (
+                    <TransitionWrapper isActive={activeTab === 'mission'}>
+                      <MissionPanel onInvestigate={setSelectedAnomalyForAnalysis} />
+                    </TransitionWrapper>
+                  )}
+                  {activeTab === 'systems' && (
+                    <TransitionWrapper isActive={activeTab === 'systems'}>
+                      <SystemsPanel />
+                    </TransitionWrapper>
+                  )}
+                  {activeTab === 'chaos' && (
+                    <TransitionWrapper isActive={activeTab === 'chaos'}>
+                      <ChaosPanel className="max-w-4xl mx-auto mt-4" />
+                    </TransitionWrapper>
+                  )}
+                  {activeTab === 'uplink' && (
+                    <TransitionWrapper isActive={activeTab === 'uplink'}>
+                      <CommandTerminal />
+                    </TransitionWrapper>
+                  )}
+                </>
               )}
 
-              {/* AI Investigator Overlay */}
-              {selectedAnomalyForAnalysis && (
+              {/* BATTLE MODE Layout */}
+              {isBattleMode && (
+                <div className="flex flex-col lg:flex-row gap-6 h-[calc(100vh-140px)]">
+                  {/* Priority 1: Anomaly Analysis (if selected) or Mission Overview */}
+                  <div className="flex-1 lg:max-w-[40%] flex flex-col gap-4">
+                    {selectedAnomalyForAnalysis ? (
+                      <AnomalyInvestigator
+                        anomaly={selectedAnomalyForAnalysis}
+                        onClose={() => setSelectedAnomalyForAnalysis(null)}
+                      />
+                    ) : (
+                      <MissionPanel onInvestigate={setSelectedAnomalyForAnalysis} />
+                    )}
+                  </div>
+
+                  {/* Priority 2: Command Terminal (Maximized) */}
+                  <div className="flex-1 border-2 border-red-500/50 shadow-[0_0_30px_rgba(255,0,0,0.2)] rounded-lg overflow-hidden">
+                    <CommandTerminal />
+                  </div>
+                </div>
+              )}
+
+              {/* Anomaly Modal (Overlay for Normal Mode) */}
+              {!isBattleMode && selectedAnomalyForAnalysis && (
                 <AnomalyInvestigator
                   anomaly={selectedAnomalyForAnalysis}
                   onClose={() => setSelectedAnomalyForAnalysis(null)}
