@@ -11,6 +11,8 @@ import { useSpaceWeather } from '../hooks/useSpaceWeather';
 import { DebrisObject, ProximityLevel } from '../types/debris';
 import { useDebrisTracking } from '../hooks/useDebrisTracking';
 import { IncidentPlaybook, StepStatus } from '../types/playbook';
+import { BiometricData } from '../types/biometric';
+import { useBiometricTracking } from '../hooks/useBiometricTracking';
 
 export interface Annotation {
     id: string;
@@ -88,6 +90,13 @@ interface ContextValue {
     // Incident Playbook
     activePlaybook: IncidentPlaybook | null;
     setActivePlaybook: (playbook: IncidentPlaybook | null) => void;
+    // Biometric Tracking
+    biometricData: BiometricData;
+    incrementMissedAlerts: () => void;
+    resetMissedAlerts: () => void;
+    isAutoPilotActive: boolean;
+    enableAutoPilot: () => void;
+    disableAutoPilot: () => void;
 }
 
 const DashboardContext = createContext<ContextValue | undefined>(undefined);
@@ -170,6 +179,20 @@ export const DashboardProvider: React.FC<{ children: ReactNode }> = ({ children 
 
     // Incident Playbook State
     const [activePlaybook, setActivePlaybook] = useState<IncidentPlaybook | null>(null);
+
+    // Biometric Tracking State
+    const { biometricData, incrementMissedAlerts, resetMissedAlerts } = useBiometricTracking();
+    const [isAutoPilotActive, setIsAutoPilotActive] = useState(false);
+
+    const enableAutoPilot = () => {
+        setIsAutoPilotActive(true);
+        console.log('Auto-pilot enabled');
+    };
+
+    const disableAutoPilot = () => {
+        setIsAutoPilotActive(false);
+        console.log('Auto-pilot disabled');
+    };
 
     const unlockAchievement = (id: string) => {
         setAchievements(prev => {
@@ -420,6 +443,12 @@ export const DashboardProvider: React.FC<{ children: ReactNode }> = ({ children 
         criticalDebrisCount,
         activePlaybook,
         setActivePlaybook,
+        biometricData,
+        incrementMissedAlerts,
+        resetMissedAlerts,
+        isAutoPilotActive,
+        enableAutoPilot,
+        disableAutoPilot,
     };
 
     return (
