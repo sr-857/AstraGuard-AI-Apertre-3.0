@@ -38,14 +38,17 @@ import { SpaceWeatherAlert } from '../components/effects/SpaceWeatherAlert';
 import { RedPhoneReset } from '../components/controls/RedPhoneReset';
 import { DashboardDimOverlay } from '../components/effects/DashboardDimOverlay';
 import { ProximityAlertPanel } from '../components/radar/ProximityAlertPanel';
+import { IncidentPlaybook } from '../components/playbook/IncidentPlaybook';
+import { PanelHighlight } from '../components/playbook/PanelHighlight';
 
 const DashboardContent: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'mission' | 'systems' | 'chaos' | 'uplink' | 'vault' | 'diagnostics'>('mission');
   const [selectedAnomalyForAnalysis, setSelectedAnomalyForAnalysis] = useState<AnomalyEvent | null>(null);
-  const { isConnected, togglePlay, isReplayMode, isBattleMode, setBattleMode, spaceWeather, distortionIntensity, isGeomagneticStorm, executeSystemReset, debrisObjects, closestDebris, proximityLevel } = useDashboard();
+  const { isConnected, togglePlay, isReplayMode, isBattleMode, setBattleMode, spaceWeather, distortionIntensity, isGeomagneticStorm, executeSystemReset, debrisObjects, closestDebris, proximityLevel, activePlaybook, setActivePlaybook } = useDashboard();
   const [showSpaceWeatherAlert, setShowSpaceWeatherAlert] = useState(false);
   const [isRedPhoneCoverOpen, setIsRedPhoneCoverOpen] = useState(false);
   const [showProximityAlert, setShowProximityAlert] = useState(true);
+  const [highlightedPanel, setHighlightedPanel] = useState<string | null>(null);
   const mission = { ...dashboardData.mission, aiHealth: (dashboardData as any).aiHealth, achievements: (dashboardData as any).achievements } as MissionState;
   const [showPalette, setShowPalette] = useState(false);
 
@@ -175,6 +178,17 @@ const DashboardContent: React.FC = () => {
           onDismiss={() => setShowProximityAlert(false)}
         />
       )}
+
+      {/* Incident Playbook Overlay */}
+      <IncidentPlaybook
+        playbook={activePlaybook}
+        onDismiss={() => setActivePlaybook(null)}
+        onStepComplete={(stepId) => console.log('Step completed:', stepId)}
+        onHighlightPanel={setHighlightedPanel}
+      />
+
+      {/* Panel Highlighting */}
+      <PanelHighlight targetPanelId={highlightedPanel} />
 
       <div className="flex min-h-screen pt-[100px] lg:pt-[80px] flex-col">
         <nav className="sticky top-[100px] lg:top-[80px] z-20 bg-black/80 backdrop-blur-xl border-b border-teal-500/30 px-6 flex flex-col md:flex-row md:items-center justify-between flex-shrink-0 mb-4" role="tablist">

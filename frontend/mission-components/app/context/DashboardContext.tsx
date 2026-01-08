@@ -10,6 +10,7 @@ import { SpaceWeatherData } from '../types/spaceWeather';
 import { useSpaceWeather } from '../hooks/useSpaceWeather';
 import { DebrisObject, ProximityLevel } from '../types/debris';
 import { useDebrisTracking } from '../hooks/useDebrisTracking';
+import { IncidentPlaybook, StepStatus } from '../types/playbook';
 
 export interface Annotation {
     id: string;
@@ -84,6 +85,9 @@ interface ContextValue {
     closestDebris: DebrisObject | null;
     proximityLevel: ProximityLevel;
     criticalDebrisCount: number;
+    // Incident Playbook
+    activePlaybook: IncidentPlaybook | null;
+    setActivePlaybook: (playbook: IncidentPlaybook | null) => void;
 }
 
 const DashboardContext = createContext<ContextValue | undefined>(undefined);
@@ -163,6 +167,9 @@ export const DashboardProvider: React.FC<{ children: ReactNode }> = ({ children 
             window.location.reload();
         }, 2000);
     };
+
+    // Incident Playbook State
+    const [activePlaybook, setActivePlaybook] = useState<IncidentPlaybook | null>(null);
 
     const unlockAchievement = (id: string) => {
         setAchievements(prev => {
@@ -411,6 +418,8 @@ export const DashboardProvider: React.FC<{ children: ReactNode }> = ({ children 
         closestDebris,
         proximityLevel,
         criticalDebrisCount,
+        activePlaybook,
+        setActivePlaybook,
     };
 
     return (
