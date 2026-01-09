@@ -24,6 +24,15 @@ from fastapi import FastAPI, Depends, HTTPException, status, Header
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
+# Import structured logging
+from astraguard.logging_config import (
+    setup_json_logging,
+    get_logger,
+    log_error,
+    log_performance_metric,
+    LogContext,
+)
+
 # Import modules
 from backend.health_monitor import (
     router as health_router,
@@ -41,13 +50,22 @@ from core.circuit_breaker import get_all_circuit_breakers
 # (Must happen before health_monitor initialization)
 import anomaly.anomaly_detector  # noqa: F401
 
-# Configure logging
-log_level = os.getenv("LOG_LEVEL", "INFO").upper()
-logging.basicConfig(
-    level=getattr(logging, log_level),
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
-logger = logging.getLogger(__name__)
+# Configure structured logging
+enable_json = os.getenv("ENABLE_JSON_LOGGING", "false").lower() == "true"
+if enable_json:
+    setup_json_logging(
+        log_level=os.getenv("LOG_LEVEL", "INFO"),
+        service_name="astra-guard-backend",
+        environment=os.getenv("ENVIRONMENT", "development")
+    )
+else:
+    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+    logging.basicConfig(
+        level=getattr(logging, log_level),
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+
+logger = get_logger(__name__)
 
 # ============================================================================
 # SECURITY CONFIGURATION
@@ -72,9 +90,13 @@ async def verify_chaos_admin_access(x_chaos_admin_key: str = Header(None)) -> No
         HTTPException: 403 if chaos is disabled, 401 if auth fails
     """
     if not CHAOS_ENABLED:
-        logger.warning(
-            "🚫 Unauthorized chaos injection attempt - feature disabled. "
-            "Set ENABLE_CHAOS=true to enable."
+        log_error(
+            logger,
+            HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Chaos engineering is disabled"),
+            "chaos_access_denied",
+            reason="chaos_disabled",
+            chaos_enabled=CHAOS_ENABLED,
+            admin_key_provided=bool(x_chaos_admin_key)
         )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -82,9 +104,13 @@ async def verify_chaos_admin_access(x_chaos_admin_key: str = Header(None)) -> No
         )
     
     if not CHAOS_ADMIN_KEY:
-        logger.error(
-            "🚫 Chaos engineering enabled but CHAOS_ADMIN_KEY not configured. "
-            "Set CHAOS_ADMIN_KEY environment variable for security."
+        log_error(
+            logger,
+            HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Chaos endpoint not properly configured"),
+            "chaos_config_error",
+            reason="missing_admin_key",
+            chaos_enabled=CHAOS_ENABLED,
+            admin_key_set=bool(CHAOS_ADMIN_KEY)
         )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -92,8 +118,13 @@ async def verify_chaos_admin_access(x_chaos_admin_key: str = Header(None)) -> No
         )
     
     if not x_chaos_admin_key or x_chaos_admin_key != CHAOS_ADMIN_KEY:
-        logger.warning(
-            "🚫 Unauthorized chaos injection attempt - invalid admin key"
+        log_error(
+            logger,
+            HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or missing admin API key"),
+            "chaos_auth_failed",
+            reason="invalid_admin_key",
+            key_provided=bool(x_chaos_admin_key),
+            key_matches=x_chaos_admin_key == CHAOS_ADMIN_KEY if x_chaos_admin_key else False
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -243,7 +274,14 @@ async def lifespan(app: FastAPI):
         logger.info("✅ Cleanup complete")
 
     except Exception as e:
-        logger.error(f"❌ Startup error: {e}", exc_info=True)
+        log_error(
+            logger,
+            e,
+            "startup_failure",
+            component="backend_main",
+            startup_phase="initialization",
+            redis_url=redis_url if 'redis_url' in locals() else None
+        )
         raise
 
 
@@ -285,7 +323,13 @@ async def background_health_polling():
             logger.info("Background health polling stopped")
             break
         except Exception as e:
-            logger.error(f"Error in background health polling: {e}", exc_info=True)
+            log_error(
+                logger,
+                e,
+                "background_health_polling_error",
+                component="health_monitor",
+                poll_interval=poll_interval
+            )
 
 
 # ============================================================================
@@ -324,8 +368,9 @@ def create_app() -> FastAPI:
     # Root endpoint
     @app.get("/")
     async def root():
-        """Root endpoint."""
-        return {
+        """Root endpoint with performance logging."""
+        start_time = asyncio.get_event_loop().time()
+        result = {
             "message": "AstraGuard AI Backend",
             "version": "1.0.0",
             "docs": "/docs",
@@ -333,6 +378,15 @@ def create_app() -> FastAPI:
             "metrics": "/health/metrics",
             "recovery": "/recovery/status",
         }
+        duration_ms = (asyncio.get_event_loop().time() - start_time) * 1000
+        log_performance_metric(
+            logger,
+            "root_endpoint_response_time",
+            duration_ms,
+            unit="ms",
+            threshold=100.0
+        )
+        return result
 
     # Status endpoint
     @app.get("/status")
@@ -478,15 +532,30 @@ def create_app() -> FastAPI:
                     "error": "Injection did not recover within timeout",
                 }
         except Exception as e:
-            logger.error(f"❌ Chaos injection error: {e}", exc_info=True)
+            log_error(
+                logger,
+                e,
+                "chaos_injection_error",
+                component="chaos_engine",
+                fault_type=fault_type,
+                duration_seconds=30
+            )
             return {"status": "error", "fault_type": fault_type, "error": str(e)}
 
     # ========== ERROR HANDLERS ==========
 
     @app.exception_handler(Exception)
     async def general_exception_handler(request, exc):
-        """Handle general exceptions."""
-        logger.error(f"Unhandled exception: {exc}", exc_info=True)
+        """Handle general exceptions with detailed logging."""
+        log_error(
+            logger,
+            exc,
+            "unhandled_exception",
+            component="fastapi_app",
+            endpoint=str(request.url),
+            method=request.method,
+            client_ip=request.client.host if request.client else None
+        )
         return {
             "error": "Internal server error",
             "detail": str(exc),
