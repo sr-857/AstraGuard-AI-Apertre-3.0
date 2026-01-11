@@ -207,6 +207,7 @@ def _detect_anomaly_heuristic(data: Dict) -> Tuple[bool, float]:
     return is_anomalous, min(score, 1.0)  # Cap at 1.0
 
 
+@async_timeout(seconds=10.0, operation_name="anomaly_detection")
 async def detect_anomaly(data: Dict) -> Tuple[bool, float]:
     """
     Detect anomaly in telemetry data with resource-aware execution.

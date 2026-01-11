@@ -11,6 +11,7 @@ import pickle
 import os
 import logging
 
+from core.timeout_handler import with_timeout
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,7 @@ class AdaptiveMemoryStore:
         self.memory: List[MemoryEvent] = []
         self.storage_path = "memory_engine/memory_store.pkl"
 
+    @with_timeout(seconds=3.0, operation_name="memory_write")
     def write(
         self,
         embedding: np.ndarray,
@@ -92,6 +94,7 @@ class AdaptiveMemoryStore:
         if len(self.memory) > self.max_capacity:
             self.prune(keep_critical=True)
 
+    @with_timeout(seconds=5.0, operation_name="memory_retrieve")
     def retrieve(
         self, query_embedding: np.ndarray, top_k: int = 5
     ) -> List[Tuple[float, Dict, datetime]]:
