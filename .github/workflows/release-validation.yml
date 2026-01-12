@@ -124,7 +124,7 @@ jobs:
       
       - name: 'Upload Artifacts'
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: integration-results
           path: |
@@ -357,7 +357,7 @@ jobs:
       
       - name: 'Upload Stress Test Results'
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: stress-test-results
           path: |
