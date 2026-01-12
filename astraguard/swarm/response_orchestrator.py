@@ -409,6 +409,30 @@ class SwarmResponseOrchestrator:
                 self.metrics.safety_gate_blocks += 1
                 return False
             
+            # Safety simulation validation (#413) - CHECK BEFORE CONSENSUS
+            if self.simulator:
+                try:
+                    is_safe = await self.simulator.validate_action(
+                        action=decision.action,
+                        params=getattr(decision, 'params', {}),
+                        decision_id=decision.decision_id,
+                        scope=ActionScope.CONSTELLATION.value,
+                    )
+                    
+                    if not is_safe:
+                        logger.warning(
+                            f"CONSTELLATION action blocked by safety simulator: "
+                            f"{decision.action}"
+                        )
+                        self.metrics.safety_gate_blocks += 1
+                        return False
+                        
+                except Exception as sim_error:
+                    logger.warning(
+                        f"Safety simulator error (proceeding with caution): {sim_error}"
+                    )
+                    # Log but don't block - simulator not critical yet
+            
             # Propose to consensus (quorum voting)
             if not self.consensus:
                 logger.error(
@@ -431,29 +455,6 @@ class SwarmResponseOrchestrator:
                 )
                 self.metrics.safety_gate_blocks += 1
                 return False
-            
-            # Safety simulation validation (#413 prep)
-            if self.simulator:
-                try:
-                    is_safe = await self.simulator.validate_action(
-                        action=decision.action,
-                        params=getattr(decision, 'params', {}),
-                        decision_id=decision.decision_id,
-                    )
-                    
-                    if not is_safe:
-                        logger.warning(
-                            f"CONSTELLATION action blocked by safety check: "
-                            f"{decision.action}"
-                        )
-                        self.metrics.safety_gate_blocks += 1
-                        return False
-                        
-                except Exception as sim_error:
-                    logger.warning(
-                        f"Safety simulator error (proceeding with caution): {sim_error}"
-                    )
-                    # Log but don't block - simulator not yet available in #413
             
             # Propagate to constellation
             if not self.propagator:
