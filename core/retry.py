@@ -314,3 +314,6 @@ def get_retry_metrics() -> dict:
         'attempts_total': RETRY_ATTEMPTS_TOTAL._metrics,
         'exhaustions_total': RETRY_EXHAUSTIONS_TOTAL._metrics,
     }
+
+# merge coflicts
+
