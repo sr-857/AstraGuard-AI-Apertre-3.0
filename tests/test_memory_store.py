@@ -124,13 +124,81 @@ class TestAdaptiveMemoryStore:
             embedding = np.random.rand(384)
             metadata = {'severity': 0.5, 'critical': i == 0}
             self.memory.write(embedding, metadata)
-        
+
         stats = self.memory.get_stats()
-        
+
         assert stats['total_events'] == 3
         assert stats['critical_events'] == 1
         assert 'avg_age_hours' in stats
         assert 'max_recurrence' in stats
+
+    def test_concurrent_file_access(self):
+        """Test that concurrent save/load operations don't corrupt the file"""
+        import multiprocessing as mp
+        import tempfile
+        import os
+
+        # Create a temporary directory for testing
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create a memory store with a temporary file path
+            temp_store_path = os.path.join(temp_dir, "test_memory.pkl")
+            test_memory = AdaptiveMemoryStore(decay_lambda=0.1, max_capacity=100)
+            test_memory.storage_path = temp_store_path
+
+            # Add some test data
+            for i in range(10):
+                embedding = np.random.rand(384)
+                metadata = {'severity': 0.5, 'type': f'event_{i}'}
+                test_memory.write(embedding, metadata)
+
+            # Save the initial state
+            test_memory.save()
+
+            def worker_process(process_id):
+                """Worker function for concurrent access testing"""
+                try:
+                    # Create a new memory store instance for this process
+                    worker_memory = AdaptiveMemoryStore(decay_lambda=0.1, max_capacity=100)
+                    worker_memory.storage_path = temp_store_path
+
+                    # Load existing data
+                    worker_memory.load()
+
+                    # Add a new event
+                    embedding = np.random.rand(384)
+                    metadata = {'severity': 0.5, 'type': f'process_{process_id}_event'}
+                    worker_memory.write(embedding, metadata)
+
+                    # Save the updated data
+                    worker_memory.save()
+
+                    return True
+                except Exception as e:
+                    print(f"Process {process_id} failed: {e}")
+                    return False
+
+            # Start multiple processes to test concurrent access
+            num_processes = 4
+            with mp.Pool(processes=num_processes) as pool:
+                results = pool.map(worker_process, range(num_processes))
+
+            # All processes should succeed
+            assert all(results), "Some processes failed during concurrent access"
+
+            # Load the final state and verify integrity
+            final_memory = AdaptiveMemoryStore(decay_lambda=0.1, max_capacity=100)
+            final_memory.storage_path = temp_store_path
+            success = final_memory.load()
+
+            assert success, "Failed to load final memory state"
+            assert len(final_memory.memory) > 10, "Memory should contain more than initial events"
+
+            # Verify no corruption by checking that all events have valid data
+            for event in final_memory.memory:
+                assert hasattr(event, 'embedding'), "Event missing embedding"
+                assert hasattr(event, 'metadata'), "Event missing metadata"
+                assert hasattr(event, 'timestamp'), "Event missing timestamp"
+                assert isinstance(event.metadata, dict), "Metadata should be a dictionary"
 
 
 if __name__ == '__main__':

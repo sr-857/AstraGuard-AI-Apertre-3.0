@@ -16,6 +16,7 @@ from typing import List, Dict, Tuple, Optional, Union, Any, TYPE_CHECKING
 import pickle
 import os
 import logging
+import fasteners
 
 if TYPE_CHECKING:
     import numpy as np
@@ -279,7 +280,7 @@ class AdaptiveMemoryStore:
     @with_timeout(seconds=60.0)
     @monitor_operation_resources()
     def load(self) -> bool:
-        """Load memory from disk with validation and error handling."""
+        """Load memory from disk with validation, error handling, and file locking."""
         with self._lock:
             try:
                 # Security: Validate storage path is within base directory (prevents path traversal)
@@ -293,8 +294,11 @@ class AdaptiveMemoryStore:
                     )
 
                 if os.path.exists(resolved_path):
-                    with open(resolved_path, "rb") as f:
-                        self.memory = pickle.load(f)  # nosec B301 - trusted internal persistence format
+                    # Use inter-process file lock to prevent concurrent access corruption
+                    lock_path = resolved_path + ".lock"
+                    with fasteners.InterProcessLock(lock_path):
+                        with open(resolved_path, "rb") as f:
+                            self.memory = pickle.load(f)  # nosec B301 - trusted internal persistence format
                     logger.debug(f"Memory store loaded from {resolved_path}")
                     return True
                 return False

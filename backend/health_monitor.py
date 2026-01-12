@@ -124,8 +124,8 @@ class HealthMonitor:
                 "retry": self._get_retry_metrics(),
                 "resources": self._get_resource_health(),
                 "fallback": {
-                    "mode": self.fallback_mode.value,
-                    "cascade_log": self._fallback_cascade_log[-10:],  # Last 10 entries
+                    "mode": self._get_fallback_mode_safe(),
+                    "cascade_log": self._get_cascade_log_safe(),  # Last 10 entries
                 },
                 "components": self._get_components_health(),
                 "uptime_seconds": self._get_uptime_seconds(),
@@ -274,6 +274,16 @@ class HealthMonitor:
         with self._lock:
             self._retry_failures.append(datetime.utcnow())
 
+    def _get_fallback_mode_safe(self) -> str:
+        """Thread-safe access to fallback mode."""
+        with self._fallback_lock:
+            return self.fallback_mode.value
+
+    def _get_cascade_log_safe(self) -> List[Dict[str, Any]]:
+        """Thread-safe access to cascade log."""
+        with self._lock:
+            return self._fallback_cascade_log[-10:]  # Last 10 entries
+
     async def cascade_fallback(
         self, state: Optional[Dict[str, Any]] = None
     ) -> FallbackMode:
@@ -335,7 +345,8 @@ class HealthMonitor:
             FallbackMode.HEURISTIC: 1,
             FallbackMode.SAFE: 2,
         }
-        FALLBACK_MODE_GAUGE.set(mode_to_value.get(self.fallback_mode, 0))
+        with self._fallback_lock:
+            FALLBACK_MODE_GAUGE.set(mode_to_value.get(self.fallback_mode, 0))
 
         return self.fallback_mode
 

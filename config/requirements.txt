@@ -46,6 +46,7 @@ pytz==2024.2
 protobuf>=4.25.8,<5.0.0
 loguru==0.7.2
 psutil>=6.0.0  # For resource monitoring
+fasteners>=0.19.0  # For cross-process file locking
 
 PyYAML>=6.0
 jsonschema>=4.0.0,<5.0
