@@ -159,32 +159,33 @@ class AdaptiveMemoryStore:
             raise ValueError("Query embedding cannot be empty")
         if top_k <= 0:
             raise ValueError("top_k must be positive")
-        if not self.memory:
-            return []
+        with self._lock:
+            if not self.memory:
+                return []
 
-        scores = []
-        for event in self.memory:
-            # Calculate similarity
-            similarity = self._cosine_similarity(query_embedding, event.embedding)
+            scores = []
+            for event in self.memory:
+                # Calculate similarity
+                similarity = self._cosine_similarity(query_embedding, event.embedding)
 
-            # Apply temporal weighting
-            temporal_weight = self._temporal_weight(event)
+                # Apply temporal weighting
+                temporal_weight = self._temporal_weight(event)
 
-            # Apply recurrence boost
-            recurrence_boost = 1 + RECURRENCE_BOOST_FACTOR * (np.log(1 + event.recurrence_count) if np is not None else math.log(1 + event.recurrence_count))
+                # Apply recurrence boost
+                recurrence_boost = 1 + RECURRENCE_BOOST_FACTOR * (np.log(1 + event.recurrence_count) if np is not None else math.log(1 + event.recurrence_count))
 
-            # Combined weighted score
-            weighted_score = (
-                SIMILARITY_WEIGHT * similarity +
-                TEMPORAL_WEIGHT * temporal_weight +
-                RECURRENCE_WEIGHT * recurrence_boost
-            )
+                # Combined weighted score
+                weighted_score = (
+                    SIMILARITY_WEIGHT * similarity +
+                    TEMPORAL_WEIGHT * temporal_weight +
+                    RECURRENCE_WEIGHT * recurrence_boost
+                )
 
-            scores.append((weighted_score, event.metadata, event.timestamp))
+                scores.append((weighted_score, event.metadata, event.timestamp))
 
-        # Sort by weighted score and return top_k
-        scores.sort(reverse=True, key=lambda x: x[0])
-        return scores[:top_k]
+            # Sort by weighted score and return top_k
+            scores.sort(reverse=True, key=lambda x: x[0])
+            return scores[:top_k]
 
     @with_timeout(seconds=60.0)
     @monitor_operation_resources()
