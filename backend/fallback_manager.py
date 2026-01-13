@@ -128,3 +128,32 @@ class FallbackManager:
     def current_mode(self, value):
         """Set the current mode in implementation."""
         self._impl.current_mode = value
+    @property
+    def anomaly_detector(self):
+        """Get anomaly detector from implementation."""
+        return self._impl.anomaly_detector
+
+    @anomaly_detector.setter
+    def anomaly_detector(self, value):
+        """Set anomaly detector in implementation."""
+        self._impl.anomaly_detector = value
+
+    @property
+    def heuristic_detector(self):
+        """Get heuristic detector from implementation."""
+        return self._impl.heuristic_detector
+
+    @heuristic_detector.setter
+    def heuristic_detector(self, value):
+        """Set heuristic detector in implementation."""
+        self._impl.heuristic_detector = value
+
+    @property
+    def circuit_breaker(self):
+        """Get circuit breaker from implementation."""
+        return self._impl.circuit_breaker
+
+    @circuit_breaker.setter
+    def circuit_breaker(self, value):
+        """Set circuit breaker in implementation."""
+        self._impl.circuit_breaker = value

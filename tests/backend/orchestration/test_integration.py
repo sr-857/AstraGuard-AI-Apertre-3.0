@@ -457,11 +457,8 @@ class TestOrchestratorStressTest:
             }
             await orchestrator.handle_event(event)
         
-        # Orchestrator should have processed events efficiently
-        # (may not call health_monitor directly for every event if using caching)
-        assert orchestrator.metrics.events_processed >= 0  # Events were handled
-        
-        # Cooldowns should prevent excessive actions
+        # Orchestrator should have processed events - check that actions are throttled
+        # (Cooldowns should prevent excessive actions)
         assert orchestrator.metrics.total_actions_executed < 50
     
     @pytest.mark.asyncio

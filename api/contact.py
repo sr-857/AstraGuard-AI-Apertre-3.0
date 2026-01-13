@@ -31,6 +31,13 @@ except ImportError:
     AUTH_AVAILABLE = False
 
 
+async def get_admin_user(request: Request):
+    """Dynamic admin dependency that checks AUTH_AVAILABLE at request time"""
+    if AUTH_AVAILABLE:
+        return await require_admin(request)
+    return None
+
+
 # Create router
 router = APIRouter(prefix="/api/contact", tags=["contact"])
 
@@ -349,7 +356,7 @@ async def get_submissions(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     status_filter: Optional[str] = Query(None, regex="^(pending|resolved|spam)$"),
-    current_user = Depends(require_admin) if AUTH_AVAILABLE else None
+    current_user = Depends(get_admin_user)
 ):
     """
     Get contact form submissions (Admin only)
@@ -418,7 +425,7 @@ async def get_submissions(
 async def update_submission_status(
     submission_id: int,
     status: str = Query(..., regex="^(pending|resolved|spam)$"),
-    current_user = Depends(require_admin) if AUTH_AVAILABLE else None
+    current_user = Depends(get_admin_user)
 ):
     """
     Update submission status (Admin only)

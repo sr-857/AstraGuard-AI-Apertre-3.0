@@ -314,6 +314,7 @@ def test_get_submissions_admin(client, setup_test_db, monkeypatch):
 def test_get_submissions_with_pagination(client, setup_test_db, monkeypatch):
     """Test pagination of submissions"""
     monkeypatch.setattr("api.contact.AUTH_AVAILABLE", False)
+    monkeypatch.setattr("api.contact.RATE_LIMIT_SUBMISSIONS", 100)  # Increase rate limit for testing
     
     # Create 10 submissions
     for i in range(10):
