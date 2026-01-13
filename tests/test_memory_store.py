@@ -124,13 +124,44 @@ class TestAdaptiveMemoryStore:
             embedding = np.random.rand(384)
             metadata = {'severity': 0.5, 'critical': i == 0}
             self.memory.write(embedding, metadata)
-        
+
         stats = self.memory.get_stats()
-        
+
         assert stats['total_events'] == 3
         assert stats['critical_events'] == 1
         assert 'avg_age_hours' in stats
         assert 'max_recurrence' in stats
+
+    def test_load_failure_clears_memory(self):
+        """Test that load failure clears memory to prevent stale data"""
+        # Add some events to memory
+        for i in range(3):
+            embedding = np.random.rand(384)
+            metadata = {'severity': 0.5, 'type': f'event_{i}'}
+            self.memory.write(embedding, metadata)
+
+        assert len(self.memory.memory) == 3
+
+        # Create a corrupted file to simulate load failure
+        import tempfile
+        import os
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pkl') as f:
+            f.write(b'corrupted data')
+            corrupted_path = f.name
+
+        # Temporarily change storage path to corrupted file
+        original_path = self.memory.storage_path
+        self.memory.storage_path = corrupted_path
+
+        try:
+            # Attempt to load, should fail and clear memory
+            result = self.memory.load()
+            assert result is False
+            assert len(self.memory.memory) == 0  # Memory should be cleared
+        finally:
+            # Restore original path and clean up
+            self.memory.storage_path = original_path
+            os.unlink(corrupted_path)
 
 
 if __name__ == '__main__':

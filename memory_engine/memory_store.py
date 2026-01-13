@@ -305,9 +305,11 @@ class AdaptiveMemoryStore:
                 return False
             except (pickle.UnpicklingError, EOFError, ValueError) as e:
                 logger.error(f"Failed to load memory store: {e}", exc_info=True)
+                self.memory = []
                 return False
             except Exception as e:
                 logger.error(f"Unexpected error loading memory store: {e}", exc_info=True)
+                self.memory = []
                 return False
 
     def get_stats(self) -> Dict:
