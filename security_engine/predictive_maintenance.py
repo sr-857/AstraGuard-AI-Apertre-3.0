@@ -244,6 +244,7 @@ class PredictiveMaintenanceEngine:
             self.health_monitor.mark_failed("predictive_maintenance", str(e))
             return {"error": str(e)}
 
+    @async_timeout(seconds=15.0, operation_name="predictive_failure_prediction")
     async def predict_failures(self, current_data: TimeSeriesData) -> List[PredictionResult]:
         """
         Predict potential failures based on current system state.
@@ -278,6 +279,7 @@ class PredictiveMaintenanceEngine:
             logger.error(f"Failure prediction failed: {e}")
             return []
 
+    @async_timeout(seconds=20.0, operation_name="preventive_actions_trigger")
     async def trigger_preventive_actions(self, predictions: List[PredictionResult]) -> List[str]:
         """
         Trigger preventive recovery actions based on predictions.

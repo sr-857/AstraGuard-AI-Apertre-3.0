@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Contact Submissions - AstraGuard Admin</title>
+  <link rel="icon" type="image/x-icon" href="./favicon.ico">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    :root {
+      --bg-primary: #0a0e1a;
+      --bg-secondary: #14182b;
+      --text-primary: #ffffff;
+      --text-secondary: #b8b8d1;
+      --accent: #3b82f6;
+      --glass-bg: rgba(255, 255, 255, 0.05);
+      --glass-border: rgba(255, 255, 255, 0.1);
+    }
+    
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      padding: 2rem;
+      line-height: 1.6;
+    }
+    
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    
+    h1 {
+      margin-bottom: 2rem;
+      color: var(--accent);
+    }
+    
+    .filters {
+      background: var(--glass-bg);
+      backdrop-filter: blur(20px);
+      padding: 1.5rem;
+      border-radius: 12px;
+      border: 1px solid var(--glass-border);
+      margin-bottom: 2rem;
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    
+    .filters label {
+      font-weight: 600;
+      margin-right: 0.5rem;
+    }
+    
+    .filters select, .filters input {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--glass-border);
+      color: var(--text-primary);
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      font-size: 0.9rem;
+    }
+    
+    .filters button {
+      background: var(--accent);
+      color: white;
+      border: none;
+      padding: 0.5rem 1.5rem;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: opacity 0.2s;
+    }
+    
+    .filters button:hover {
+      opacity: 0.8;
+    }
+    
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+    
+    .stat-card {
+      background: var(--glass-bg);
+      backdrop-filter: blur(20px);
+      padding: 1.5rem;
+      border-radius: 12px;
+      border: 1px solid var(--glass-border);
+    }
+    
+    .stat-value {
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 0.25rem;
+    }
+    
+    .stat-label {
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+    }
+    
+    .submissions-table {
+      background: var(--glass-bg);
+      backdrop-filter: blur(20px);
+      border-radius: 12px;
+      border: 1px solid var(--glass-border);
+      overflow: hidden;
+    }
+    
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    
+    th {
+      background: var(--bg-secondary);
+      padding: 1rem;
+      text-align: left;
+      font-weight: 600;
+      border-bottom: 1px solid var(--glass-border);
+    }
+    
+    td {
+      padding: 1rem;
+      border-bottom: 1px solid var(--glass-border);
+    }
+    
+    tr:hover {
+      background: rgba(255, 255, 255, 0.03);
+    }
+    
+    .status-badge {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      border-radius: 12px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    
+    .status-pending {
+      background: rgba(251, 191, 36, 0.2);
+      color: #fbbf24;
+    }
+    
+    .status-resolved {
+      background: rgba(16, 185, 129, 0.2);
+      color: #10b981;
+    }
+    
+    .status-spam {
+      background: rgba(239, 68, 68, 0.2);
+      color: #ef4444;
+    }
+    
+    .action-btn {
+      background: rgba(59, 130, 246, 0.2);
+      color: var(--accent);
+      border: none;
+      padding: 0.375rem 0.75rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.75rem;
+      margin-right: 0.5rem;
+      transition: background 0.2s;
+    }
+    
+    .action-btn:hover {
+      background: rgba(59, 130, 246, 0.3);
+    }
+    
+    .pagination {
+      display: flex;
+      justify-content: center;
+      gap: 0.5rem;
+      margin-top: 2rem;
+    }
+    
+    .pagination button {
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      color: var(--text-primary);
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .pagination button:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.1);
+    }
+    
+    .pagination button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    
+    .pagination button.active {
+      background: var(--accent);
+    }
+    
+    .loading {
+      text-align: center;
+      padding: 3rem;
+      color: var(--text-secondary);
+    }
+    
+    .error {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #ef4444;
+      padding: 1rem;
+      border-radius: 12px;
+      margin-bottom: 2rem;
+    }
+    
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.8);
+      backdrop-filter: blur(5px);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+    }
+    
+    .modal.show {
+      display: flex;
+    }
+    
+    .modal-content {
+      background: var(--bg-secondary);
+      border: 1px solid var(--glass-border);
+      border-radius: 16px;
+      padding: 2rem;
+      max-width: 600px;
+      width: 90%;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+    
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+    }
+    
+    .modal-close {
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      font-size: 1.5rem;
+      cursor: pointer;
+    }
+    
+    .modal-close:hover {
+      color: var(--text-primary);
+    }
+    
+    .detail-row {
+      margin-bottom: 1rem;
+    }
+    
+    .detail-label {
+      font-weight: 600;
+      color: var(--text-secondary);
+      font-size: 0.875rem;
+      margin-bottom: 0.25rem;
+    }
+    
+    .detail-value {
+      color: var(--text-primary);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>📧 Contact Form Submissions</h1>
+    
+    <div id="errorMessage" class="error" style="display: none;"></div>
+    
+    <div class="stats">
+      <div class="stat-card">
+        <div class="stat-value" id="totalCount">-</div>
+        <div class="stat-label">Total Submissions</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="pendingCount">-</div>
+        <div class="stat-label">Pending</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="resolvedCount">-</div>
+        <div class="stat-label">Resolved</div>
+      </div>
+    </div>
+    
+    <div class="filters">
+      <div>
+        <label for="statusFilter">Status:</label>
+        <select id="statusFilter">
+          <option value="">All</option>
+          <option value="pending">Pending</option>
+          <option value="resolved">Resolved</option>
+          <option value="spam">Spam</option>
+        </select>
+      </div>
+      <div>
+        <label for="limitSelect">Show:</label>
+        <select id="limitSelect">
+          <option value="25">25</option>
+          <option value="50" selected>50</option>
+          <option value="100">100</option>
+        </select>
+      </div>
+      <button onclick="loadSubmissions()">Refresh</button>
+    </div>
+    
+    <div class="submissions-table">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Date</th>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Subject</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="submissionsBody">
+          <tr>
+            <td colspan="7" class="loading">Loading submissions...</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    
+    <div class="pagination" id="pagination"></div>
+  </div>
+  
+  <!-- Detail Modal -->
+  <div id="detailModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Submission Details</h2>
+        <button class="modal-close" onclick="closeModal()">&times;</button>
+      </div>
+      <div id="modalBody"></div>
+    </div>
+  </div>
+  
+  <script>
+    let currentPage = 0;
+    let currentLimit = 50;
+    let currentStatus = '';
+    let totalPages = 0;
+    
+    function formatDate(dateString) {
+      const date = new Date(dateString);
+      return date.toLocaleString();
+    }
+    
+    async function loadSubmissions() {
+      currentLimit = parseInt(document.getElementById('limitSelect').value);
+      currentStatus = document.getElementById('statusFilter').value;
+      const offset = currentPage * currentLimit;
+      
+      try {
+        let url = `http://localhost:8000/api/contact/submissions?limit=${currentLimit}&offset=${offset}`;
+        if (currentStatus) {
+          url += `&status_filter=${currentStatus}`;
+        }
+        
+        const response = await fetch(url);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        
+        displaySubmissions(data.submissions);
+        updateStats(data);
+        updatePagination(data.total, data.limit, data.offset);
+        
+        document.getElementById('errorMessage').style.display = 'none';
+      } catch (error) {
+        console.error('Error loading submissions:', error);
+        document.getElementById('errorMessage').textContent = 
+          `Failed to load submissions: ${error.message}`;
+        document.getElementById('errorMessage').style.display = 'block';
+      }
+    }
+    
+    function displaySubmissions(submissions) {
+      const tbody = document.getElementById('submissionsBody');
+      
+      if (submissions.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 2rem;">No submissions found</td></tr>';
+        return;
+      }
+      
+      tbody.innerHTML = submissions.map(sub => `
+        <tr>
+          <td>${sub.id}</td>
+          <td>${formatDate(sub.submitted_at)}</td>
+          <td>${sub.name}</td>
+          <td>${sub.email}</td>
+          <td>${sub.subject}</td>
+          <td><span class="status-badge status-${sub.status}">${sub.status}</span></td>
+          <td>
+            <button class="action-btn" onclick="viewDetails(${sub.id})">View</button>
+            ${sub.status === 'pending' ? `
+              <button class="action-btn" onclick="updateStatus(${sub.id}, 'resolved')">Resolve</button>
+              <button class="action-btn" onclick="updateStatus(${sub.id}, 'spam')">Spam</button>
+            ` : ''}
+          </td>
+        </tr>
+      `).join('');
+    }
+    
+    function updateStats(data) {
+      document.getElementById('totalCount').textContent = data.total;
+      // Note: For accurate counts per status, you'd need a separate API endpoint
+      // For now, showing total
+    }
+    
+    function updatePagination(total, limit, offset) {
+      totalPages = Math.ceil(total / limit);
+      currentPage = Math.floor(offset / limit);
+      
+      const pagination = document.getElementById('pagination');
+      
+      if (totalPages <= 1) {
+        pagination.innerHTML = '';
+        return;
+      }
+      
+      let html = `
+        <button ${currentPage === 0 ? 'disabled' : ''} onclick="goToPage(${currentPage - 1})">Previous</button>
+      `;
+      
+      for (let i = 0; i < totalPages; i++) {
+        if (i < 3 || i >= totalPages - 3 || Math.abs(i - currentPage) <= 1) {
+          html += `<button class="${i === currentPage ? 'active' : ''}" onclick="goToPage(${i})">${i + 1}</button>`;
+        } else if (i === 3 || i === totalPages - 4) {
+          html += '<span style="padding: 0.5rem;">...</span>';
+        }
+      }
+      
+      html += `
+        <button ${currentPage >= totalPages - 1 ? 'disabled' : ''} onclick="goToPage(${currentPage + 1})">Next</button>
+      `;
+      
+      pagination.innerHTML = html;
+    }
+    
+    function goToPage(page) {
+      currentPage = page;
+      loadSubmissions();
+    }
+    
+    async function viewDetails(id) {
+      try {
+        const response = await fetch(`http://localhost:8000/api/contact/submissions?limit=1&offset=0`);
+        const data = await response.json();
+        const submission = data.submissions.find(s => s.id === id);
+        
+        if (!submission) {
+          alert('Submission not found');
+          return;
+        }
+        
+        const modalBody = document.getElementById('modalBody');
+        modalBody.innerHTML = `
+          <div class="detail-row">
+            <div class="detail-label">ID</div>
+            <div class="detail-value">${submission.id}</div>
+          </div>
+          <div class="detail-row">
+            <div class="detail-label">Submitted</div>
+            <div class="detail-value">${formatDate(submission.submitted_at)}</div>
+          </div>
+          <div class="detail-row">
+            <div class="detail-label">Name</div>
+            <div class="detail-value">${submission.name}</div>
+          </div>
+          <div class="detail-row">
+            <div class="detail-label">Email</div>
+            <div class="detail-value"><a href="mailto:${submission.email}" style="color: var(--accent)">${submission.email}</a></div>
+          </div>
+          ${submission.phone ? `
+          <div class="detail-row">
+            <div class="detail-label">Phone</div>
+            <div class="detail-value">${submission.phone}</div>
+          </div>
+          ` : ''}
+          <div class="detail-row">
+            <div class="detail-label">Subject</div>
+            <div class="detail-value">${submission.subject}</div>
+          </div>
+          <div class="detail-row">
+            <div class="detail-label">Message</div>
+            <div class="detail-value" style="white-space: pre-wrap;">${submission.message}</div>
+          </div>
+          <div class="detail-row">
+            <div class="detail-label">Status</div>
+            <div class="detail-value"><span class="status-badge status-${submission.status}">${submission.status}</span></div>
+          </div>
+          <div class="detail-row">
+            <div class="detail-label">IP Address</div>
+            <div class="detail-value">${submission.ip_address || 'N/A'}</div>
+          </div>
+          <div class="detail-row">
+            <div class="detail-label">User Agent</div>
+            <div class="detail-value" style="font-size: 0.75rem; color: var(--text-secondary);">${submission.user_agent || 'N/A'}</div>
+          </div>
+        `;
+        
+        document.getElementById('detailModal').classList.add('show');
+      } catch (error) {
+        alert('Failed to load submission details');
+        console.error(error);
+      }
+    }
+    
+    function closeModal() {
+      document.getElementById('detailModal').classList.remove('show');
+    }
+    
+    async function updateStatus(id, newStatus) {
+      if (!confirm(`Mark this submission as ${newStatus}?`)) {
+        return;
+      }
+      
+      try {
+        const response = await fetch(`http://localhost:8000/api/contact/submissions/${id}/status?status=${newStatus}`, {
+          method: 'PATCH'
+        });
+        
+        if (!response.ok) {
+          throw new Error('Failed to update status');
+        }
+        
+        loadSubmissions();
+      } catch (error) {
+        alert(`Failed to update status: ${error.message}`);
+        console.error(error);
+      }
+    }
+    
+    // Load submissions on page load
+    document.addEventListener('DOMContentLoaded', () => {
+      loadSubmissions();
+      
+      // Auto-refresh every 30 seconds
+      setInterval(loadSubmissions, 30000);
+    });
+    
+    // Close modal when clicking outside
+    document.getElementById('detailModal').addEventListener('click', (e) => {
+      if (e.target.id === 'detailModal') {
+        closeModal();
+      }
+    });
+  </script>
+</body>
+</html>

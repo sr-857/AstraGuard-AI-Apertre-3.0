@@ -7,11 +7,38 @@ import numpy as np
 from datetime import datetime, timedelta
 import sys
 import os
+import multiprocessing as mp
 
 # Add parent directory to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from memory_engine.memory_store import AdaptiveMemoryStore, MemoryEvent
+
+
+# Module-level worker function for multiprocessing (must be at module level to be picklable)
+def _worker_concurrent_access(args):
+    """Worker function for concurrent access testing"""
+    process_id, temp_store_path = args
+    try:
+        # Create a new memory store instance for this process
+        worker_memory = AdaptiveMemoryStore(decay_lambda=0.1, max_capacity=100)
+        worker_memory.storage_path = temp_store_path
+
+        # Load existing data
+        worker_memory.load()
+
+        # Add a new event
+        embedding = np.random.rand(384)
+        metadata = {'severity': 0.5, 'type': f'process_{process_id}_event'}
+        worker_memory.write(embedding, metadata)
+
+        # Save the updated data
+        worker_memory.save()
+
+        return True
+    except Exception as e:
+        print(f"Process {process_id} failed: {e}")
+        return False
 
 
 class TestAdaptiveMemoryStore:

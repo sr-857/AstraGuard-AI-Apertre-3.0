@@ -1,0 +1,20 @@
+name: "nominal_formation"
+description: "Baseline formation flying with no faults - multi-satellite constellation"
+duration_s: 900
+
+satellites:
+  - id: "ASTRA-001"
+    initial_position_km: [0, 0, 420]
+    neighbors: ["ASTRA-002"]
+  
+  - id: "ASTRA-002"
+    initial_position_km: [1.2, 0, 420]
+    neighbors: ["ASTRA-001"]
+
+fault_sequence: []
+
+success_criteria:
+  max_nadir_error_deg: 2.0
+  min_battery_soc: 0.7
+  max_temperature_c: 45.0
+  max_packet_loss: 0.02

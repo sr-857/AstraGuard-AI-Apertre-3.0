@@ -110,7 +110,7 @@ At its core, AstraGuard AI is:
 - **📊 A Monitoring Dashboard**: Provides real-time visualization of security posture and system health
 - **🎓 A Training Ground**: Designed to help learners bridge the gap between theoretical knowledge and real-world security workflows
 
-### Why AstraGuard AI?
+# Why AstraGuard AI?
 
 Traditional security tools often fall into two categories:
 1. **Theoretical frameworks** that are great for learning but disconnected from reality

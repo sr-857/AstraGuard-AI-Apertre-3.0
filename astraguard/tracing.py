@@ -26,8 +26,8 @@ logger = logging.getLogger(__name__)
 
 def initialize_tracing(
     service_name: str = "astra-guard",
-    jaeger_host: str = get_secret("jaeger_host", "localhost"),
-    jaeger_port: int = get_secret("jaeger_port", 6831),
+    jaeger_host: str = "localhost",
+    jaeger_port: int = 6831,
     enabled: bool = True
 ) -> TracerProvider:
     """

@@ -44,6 +44,73 @@ python_version = "3.9"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false
+ignore_missing_imports = true
+show_error_codes = true
+pretty = true
+
+[[tool.mypy.overrides]]
+module = ["backend.*", "api.*"]
+disallow_untyped_defs = false
+warn_unused_ignores = true
+
+[tool.black]
+line-length = 100
+target-version = ["py39", "py310", "py311", "py312"]
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  \.eggs
+  | \.git
+  | \.mypy_cache
+  | \.venv
+  | build
+  | dist
+  | __pycache__
+  | \.next
+  | frontend
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 100
+skip_gitignore = true
+skip = [".venv", "frontend", ".next", "__pycache__"]
+known_first_party = ["backend", "api", "config", "core", "anomaly", "classifier"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+exclude = [
+  ".eggs",
+  ".git",
+  ".mypy_cache",
+  ".venv",
+  "build",
+  "dist",
+  "__pycache__",
+  ".next",
+  "frontend",
+]
+
+[tool.ruff.lint]
+select = [
+  "E",   # pycodestyle errors
+  "W",   # pycodestyle warnings
+  "F",   # pyflakes
+  "I",   # isort
+  "B",   # flake8-bugbear
+  "C4",  # flake8-comprehensions
+  "UP",  # pyupgrade
+]
+ignore = [
+  "E501",  # line too long (handled by black)
+  "B008",  # do not perform function calls in argument defaults
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"tests/*" = ["B", "C4"]
 
 [tool.pytest.ini_options]
 minversion = "6.0"
@@ -51,5 +118,6 @@ addopts = "-ra -q"
 testpaths = [
     "tests",
 ]
+pythonpath = ["."]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"

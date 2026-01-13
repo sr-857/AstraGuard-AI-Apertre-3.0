@@ -1,0 +1,112 @@
+# Prometheus Configuration for Swarm Simulator
+# Issue #414: Multi-agent Docker swarm simulator metrics
+
+global:
+  scrape_interval: 15s      # Scrape agents every 15s
+  evaluation_interval: 15s  # Evaluate rules every 15s
+  external_labels:
+    monitor: 'astraguard-swarm'
+    mission: 'leo-constellation'
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+  
+  # Agent-1 (Primary leader candidate)
+  - job_name: 'agent-1'
+    static_configs:
+      - targets: ['agent-1:9091']
+        labels:
+          agent_id: 'SAT-001-A'
+          role: 'PRIMARY'
+          is_leader: 'true'
+    scrape_interval: 10s
+    scrape_timeout: 5s
+    metrics_path: '/metrics'
+  
+  # Agent-2
+  - job_name: 'agent-2'
+    static_configs:
+      - targets: ['agent-2:9092']
+        labels:
+          agent_id: 'SAT-002-A'
+          role: 'SECONDARY'
+          is_leader: 'false'
+    scrape_interval: 10s
+    scrape_timeout: 5s
+    metrics_path: '/metrics'
+  
+  # Agent-3 (Anomaly injection target)
+  - job_name: 'agent-3'
+    static_configs:
+      - targets: ['agent-3:9093']
+        labels:
+          agent_id: 'SAT-003-A'
+          role: 'SECONDARY'
+          is_leader: 'false'
+    scrape_interval: 10s
+    scrape_timeout: 5s
+    metrics_path: '/metrics'
+  
+  # Agent-4
+  - job_name: 'agent-4'
+    static_configs:
+      - targets: ['agent-4:9094']
+        labels:
+          agent_id: 'SAT-004-A'
+          role: 'SECONDARY'
+          is_leader: 'false'
+    scrape_interval: 10s
+    scrape_timeout: 5s
+    metrics_path: '/metrics'
+  
+  # Agent-5
+  - job_name: 'agent-5'
+    static_configs:
+      - targets: ['agent-5:9095']
+        labels:
+          agent_id: 'SAT-005-A'
+          role: 'SECONDARY'
+          is_leader: 'false'
+    scrape_interval: 10s
+    scrape_timeout: 5s
+    metrics_path: '/metrics'
+  
+  # Redis registry
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:6379']
+  
+  # RabbitMQ event bus
+  - job_name: 'rabbitmq'
+    static_configs:
+      - targets: ['event-bus:15672']
+    metrics_path: '/api/metrics'
+    basic_auth:
+      username: guest
+      password: guest
+
+# Recording rules for aggregated metrics
+rule_files:
+  - '/etc/prometheus/swarm-rules.yml'
+
+# Alerting rules
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+# Remote storage (optional)
+# remote_write:
+#   - url: "http://remote-storage:9009/api/v1/write"
+#     queue_config:
+#       capacity: 10000
+#       max_shards: 200
+#       min_shards: 1
+#       max_samples_per_send: 10000
+#       batch_send_wait: 5s
+#       min_backoff: 30ms
+#       max_backoff: 100ms

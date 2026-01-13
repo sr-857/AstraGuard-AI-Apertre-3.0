@@ -1,0 +1,381 @@
+version: '3.8'
+
+# Multi-Agent Docker Swarm Simulator for AstraGuard v3.0
+# Issue #414: Testing infrastructure for complete swarm intelligence pipeline
+# 
+# 5-satellite constellation with realistic ISL network emulation
+# - 120ms average latency (LEO inter-satellite link)
+# - 20ms jitter (packet propagation variance)
+# - 5% packet loss (realistic space conditions)
+#
+# Validates complete pipeline: #397 Config → #413 Safety → Swarm coordination
+
+services:
+  # ==================== LEADER CANDIDATE ====================
+  agent-1:
+    image: astraguard:swarm-v3.0
+    container_name: astra-agent-1
+    hostname: astra-agent-1
+    environment:
+      # Core configuration
+      - SWARM_MODE_ENABLED=true
+      - AGENT_ID=SAT-001-A
+      - AGENT_SERIAL=001
+      - ROLE=PRIMARY
+      - IS_LEADER=true
+      
+      # Swarm coordination (#397-413)
+      - SWARM_CONFIG_PATH=/etc/astraguard/swarm-config.json
+      - REGISTRY_SERVICE=redis://redis:6379
+      - BUS_HOST=event-bus
+      - BUS_PORT=5672
+      
+      # Health and anomaly detection
+      - HEALTH_CHECK_INTERVAL=5
+      - ANOMALY_THRESHOLD=0.15
+      - MEMORY_POOL_SIZE=512
+      
+      # Logging and telemetry
+      - LOG_LEVEL=INFO
+      - PROMETHEUS_PORT=9090
+      - TELEMETRY_ENABLED=true
+      
+      # Feature flags
+      - FEATURE_CONSENSUS_ENABLED=true
+      - FEATURE_SAFETY_SIM_ENABLED=true
+      - FEATURE_ROLE_REASSIGNMENT_ENABLED=true
+    
+    ports:
+      - "8001:8000"      # REST API
+      - "9091:9090"      # Prometheus metrics
+      - "5001:5000"      # Debug port
+    
+    volumes:
+      - ./config/astraguard/swarm-config.json:/etc/astraguard/swarm-config.json:ro
+      - ./logs/agent-1:/var/log/astraguard
+      - ./data/agent-1:/var/lib/astraguard
+    
+    networks:
+      isl-net:
+        ipv4_address: 10.0.1.1
+    
+    depends_on:
+      redis:
+        condition: service_healthy
+      event-bus:
+        condition: service_started
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    
+    restart: unless-stopped
+
+  # ==================== FOLLOWER AGENTS ====================
+  agent-2:
+    image: astraguard:swarm-v3.0
+    container_name: astra-agent-2
+    hostname: astra-agent-2
+    environment:
+      - SWARM_MODE_ENABLED=true
+      - AGENT_ID=SAT-002-A
+      - AGENT_SERIAL=002
+      - ROLE=SECONDARY
+      - IS_LEADER=false
+      - SWARM_CONFIG_PATH=/etc/astraguard/swarm-config.json
+      - REGISTRY_SERVICE=redis://redis:6379
+      - BUS_HOST=event-bus
+      - BUS_PORT=5672
+      - LOG_LEVEL=INFO
+      - PROMETHEUS_PORT=9090
+      - TELEMETRY_ENABLED=true
+      - FEATURE_CONSENSUS_ENABLED=true
+      - FEATURE_SAFETY_SIM_ENABLED=true
+    
+    ports:
+      - "8002:8000"
+      - "9092:9090"
+      - "5002:5000"
+    
+    volumes:
+      - ./config/astraguard/swarm-config.json:/etc/astraguard/swarm-config.json:ro
+      - ./logs/agent-2:/var/log/astraguard
+      - ./data/agent-2:/var/lib/astraguard
+    
+    networks:
+      isl-net:
+        ipv4_address: 10.0.1.2
+    
+    depends_on:
+      redis:
+        condition: service_healthy
+      event-bus:
+        condition: service_started
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    
+    restart: unless-stopped
+
+  agent-3:
+    image: astraguard:swarm-v3.0
+    container_name: astra-agent-3
+    hostname: astra-agent-3
+    environment:
+      - SWARM_MODE_ENABLED=true
+      - AGENT_ID=SAT-003-A
+      - AGENT_SERIAL=003
+      - ROLE=SECONDARY
+      - IS_LEADER=false
+      - SWARM_CONFIG_PATH=/etc/astraguard/swarm-config.json
+      - REGISTRY_SERVICE=redis://redis:6379
+      - BUS_HOST=event-bus
+      - BUS_PORT=5672
+      - LOG_LEVEL=INFO
+      - PROMETHEUS_PORT=9090
+      - TELEMETRY_ENABLED=true
+      - FEATURE_CONSENSUS_ENABLED=true
+      - FEATURE_SAFETY_SIM_ENABLED=true
+    
+    ports:
+      - "8003:8000"
+      - "9093:9090"
+      - "5003:5000"
+    
+    volumes:
+      - ./config/astraguard/swarm-config.json:/etc/astraguard/swarm-config.json:ro
+      - ./logs/agent-3:/var/log/astraguard
+      - ./data/agent-3:/var/lib/astraguard
+    
+    networks:
+      isl-net:
+        ipv4_address: 10.0.1.3
+    
+    depends_on:
+      redis:
+        condition: service_healthy
+      event-bus:
+        condition: service_started
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    
+    restart: unless-stopped
+
+  agent-4:
+    image: astraguard:swarm-v3.0
+    container_name: astra-agent-4
+    hostname: astra-agent-4
+    environment:
+      - SWARM_MODE_ENABLED=true
+      - AGENT_ID=SAT-004-A
+      - AGENT_SERIAL=004
+      - ROLE=SECONDARY
+      - IS_LEADER=false
+      - SWARM_CONFIG_PATH=/etc/astraguard/swarm-config.json
+      - REGISTRY_SERVICE=redis://redis:6379
+      - BUS_HOST=event-bus
+      - BUS_PORT=5672
+      - LOG_LEVEL=INFO
+      - PROMETHEUS_PORT=9090
+      - TELEMETRY_ENABLED=true
+      - FEATURE_CONSENSUS_ENABLED=true
+      - FEATURE_SAFETY_SIM_ENABLED=true
+    
+    ports:
+      - "8004:8000"
+      - "9094:9090"
+      - "5004:5000"
+    
+    volumes:
+      - ./config/astraguard/swarm-config.json:/etc/astraguard/swarm-config.json:ro
+      - ./logs/agent-4:/var/log/astraguard
+      - ./data/agent-4:/var/lib/astraguard
+    
+    networks:
+      isl-net:
+        ipv4_address: 10.0.1.4
+    
+    depends_on:
+      redis:
+        condition: service_healthy
+      event-bus:
+        condition: service_started
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    
+    restart: unless-stopped
+
+  agent-5:
+    image: astraguard:swarm-v3.0
+    container_name: astra-agent-5
+    hostname: astra-agent-5
+    environment:
+      - SWARM_MODE_ENABLED=true
+      - AGENT_ID=SAT-005-A
+      - AGENT_SERIAL=005
+      - ROLE=SECONDARY
+      - IS_LEADER=false
+      - SWARM_CONFIG_PATH=/etc/astraguard/swarm-config.json
+      - REGISTRY_SERVICE=redis://redis:6379
+      - BUS_HOST=event-bus
+      - BUS_PORT=5672
+      - LOG_LEVEL=INFO
+      - PROMETHEUS_PORT=9090
+      - TELEMETRY_ENABLED=true
+      - FEATURE_CONSENSUS_ENABLED=true
+      - FEATURE_SAFETY_SIM_ENABLED=true
+    
+    ports:
+      - "8005:8000"
+      - "9095:9090"
+      - "5005:5000"
+    
+    volumes:
+      - ./config/astraguard/swarm-config.json:/etc/astraguard/swarm-config.json:ro
+      - ./logs/agent-5:/var/log/astraguard
+      - ./data/agent-5:/var/lib/astraguard
+    
+    networks:
+      isl-net:
+        ipv4_address: 10.0.1.5
+    
+    depends_on:
+      redis:
+        condition: service_healthy
+      event-bus:
+        condition: service_started
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    
+    restart: unless-stopped
+
+  # ==================== INFRASTRUCTURE SERVICES ====================
+  
+  redis:
+    image: redis:7-alpine
+    container_name: astra-redis
+    hostname: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      isl-net:
+        ipv4_address: 10.0.1.100
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  event-bus:
+    image: rabbitmq:3.12-management-alpine
+    container_name: astra-event-bus
+    hostname: event-bus
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+    ports:
+      - "5672:5672"    # AMQP
+      - "15672:15672"  # Management UI
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      isl-net:
+        ipv4_address: 10.0.1.101
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: astra-prometheus
+    hostname: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      isl-net:
+        ipv4_address: 10.0.1.102
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=24h'
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: astra-grafana
+    hostname: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=redis-datasource
+    volumes:
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    networks:
+      isl-net:
+        ipv4_address: 10.0.1.103
+    depends_on:
+      prometheus:
+        condition: service_started
+    restart: unless-stopped
+
+# ==================== NETWORKS ====================
+
+networks:
+  isl-net:
+    driver: bridge
+    driver_opts:
+      # ISL network emulation: 120ms latency, 20ms jitter, 5% loss
+      # These are applied per interface via tc (traffic control)
+      com.docker.network.driver.mtu: 1500
+    ipam:
+      config:
+        - subnet: 10.0.1.0/24
+          gateway: 10.0.1.254
+
+# ==================== VOLUMES ====================
+
+volumes:
+  redis-data:
+    driver: local
+  rabbitmq-data:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local

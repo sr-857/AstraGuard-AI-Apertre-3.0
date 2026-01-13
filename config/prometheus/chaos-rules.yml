@@ -1,0 +1,197 @@
+groups:
+  - name: chaos_engineering
+    interval: 15s
+    rules:
+      # ============================================================================
+      # CONSENSUS RATE METRICS
+      # ============================================================================
+      
+      - record: chaos:consensus_rate:avg
+        expr: avg(rate(astraguard_consensus_rate[5m]))
+        
+      - record: chaos:consensus_rate:avg_by_scenario
+        expr: avg by (scenario) (rate(astraguard_consensus_rate[5m]))
+        
+      - record: chaos:consensus_rate:min_by_scenario
+        expr: min by (scenario) (astraguard_consensus_rate)
+        
+      - record: chaos:consensus_rate:max_by_scenario
+        expr: max by (scenario) (astraguard_consensus_rate)
+      
+      # ============================================================================
+      # LEADER FAILOVER METRICS
+      # ============================================================================
+      
+      - record: chaos:leader_failover_time:avg_seconds
+        expr: avg(increase(astraguard_leader_failover_time_seconds[5m]))
+        
+      - record: chaos:leader_failover_time:p95_seconds
+        expr: histogram_quantile(0.95, rate(astraguard_leader_failover_time_bucket[5m]))
+        
+      - record: chaos:leader_failover_time:p99_seconds
+        expr: histogram_quantile(0.99, rate(astraguard_leader_failover_time_bucket[5m]))
+        
+      - record: chaos:leader_failover_time:max_seconds
+        expr: max(astraguard_leader_failover_time_seconds)
+      
+      # ============================================================================
+      # MESSAGE DELIVERY METRICS
+      # ============================================================================
+      
+      - record: chaos:message_delivery_rate:avg
+        expr: avg(rate(astraguard_message_delivery_rate[5m]))
+        
+      - record: chaos:message_delivery_rate:min
+        expr: min(astraguard_message_delivery_rate)
+        
+      - record: chaos:message_delivery_rate:by_packet_loss
+        expr: avg by (packet_loss_percent) (astraguard_message_delivery_rate)
+      
+      # ============================================================================
+      # CASCADING FAILURE METRICS
+      # ============================================================================
+      
+      - record: chaos:cascading_failure_count:total
+        expr: sum(astraguard_cascading_failure_count)
+        
+      - record: chaos:cascading_failure_count:by_scenario
+        expr: sum by (scenario) (astraguard_cascading_failure_count)
+        
+      - record: chaos:has_cascading_failures
+        expr: clamp_max(sum(astraguard_cascading_failure_count), 1)
+      
+      # ============================================================================
+      # ROLE COMPLIANCE METRICS
+      # ============================================================================
+      
+      - record: chaos:role_compliance_rate:avg
+        expr: avg(rate(astraguard_role_compliance_rate[5m]))
+        
+      - record: chaos:role_compliance_rate:min_by_scenario
+        expr: min by (scenario) (astraguard_role_compliance_rate)
+        
+      - record: chaos:role_compliance_rate:by_agent
+        expr: avg by (agent_id) (astraguard_role_compliance_rate)
+      
+      # ============================================================================
+      # DECISION LATENCY METRICS
+      # ============================================================================
+      
+      - record: chaos:decision_latency:p50_ms
+        expr: histogram_quantile(0.50, rate(astraguard_decision_latency_bucket[5m])) * 1000
+        
+      - record: chaos:decision_latency:p95_ms
+        expr: histogram_quantile(0.95, rate(astraguard_decision_latency_bucket[5m])) * 1000
+        
+      - record: chaos:decision_latency:p99_ms
+        expr: histogram_quantile(0.99, rate(astraguard_decision_latency_bucket[5m])) * 1000
+        
+      - record: chaos:decision_latency:max_ms
+        expr: max(astraguard_decision_latency_seconds) * 1000
+      
+      # ============================================================================
+      # NETWORK PARTITION METRICS
+      # ============================================================================
+      
+      - record: chaos:partition_detected:count
+        expr: sum(increase(astraguard_partition_detected[5m]))
+        
+      - record: chaos:partition_healed:count
+        expr: sum(increase(astraguard_partition_healed[5m]))
+        
+      - record: chaos:partition_detected:by_size
+        expr: sum by (partition_size) (increase(astraguard_partition_detected[5m]))
+      
+      # ============================================================================
+      # PACKET LOSS METRICS
+      # ============================================================================
+      
+      - record: chaos:packet_loss_rate:avg
+        expr: avg(astraguard_packet_loss_rate)
+        
+      - record: chaos:packet_loss_retries:total
+        expr: sum(increase(astraguard_packet_loss_retries[5m]))
+        
+      - record: chaos:packet_loss_retries:by_severity
+        expr: sum by (loss_percent) (increase(astraguard_packet_loss_retries[5m]))
+      
+      # ============================================================================
+      # BANDWIDTH EXHAUSTION METRICS
+      # ============================================================================
+      
+      - record: chaos:bandwidth_exhaustion:active
+        expr: sum(astraguard_bandwidth_exhaustion_active)
+        
+      - record: chaos:qos_governor_activated:count
+        expr: sum(increase(astraguard_qos_governor_activated[5m]))
+        
+      - record: chaos:qos_governor_backpressure:rate
+        expr: avg(rate(astraguard_qos_governor_backpressure[5m]))
+      
+      # ============================================================================
+      # AGENT CHURN METRICS
+      # ============================================================================
+      
+      - record: chaos:agent_churn_events:total
+        expr: sum(increase(astraguard_agent_churn_events[5m]))
+        
+      - record: chaos:agent_recovery_time:p95_seconds
+        expr: histogram_quantile(0.95, rate(astraguard_agent_recovery_time_bucket[5m]))
+        
+      - record: chaos:agent_recovery_time:max_seconds
+        expr: max(astraguard_agent_recovery_time_seconds)
+        
+      - record: chaos:agents_healthy:ratio
+        expr: sum(astraguard_agents_healthy) / sum(astraguard_agents_total)
+      
+      # ============================================================================
+      # TEST RESULT METRICS
+      # ============================================================================
+      
+      - record: chaos:test_pass_count:total
+        expr: sum(increase(astraguard_chaos_test_pass[5m]))
+        
+      - record: chaos:test_fail_count:total
+        expr: sum(increase(astraguard_chaos_test_fail[5m]))
+        
+      - record: chaos:test_pass_rate
+        expr: |
+          sum(increase(astraguard_chaos_test_pass[5m])) / 
+          (sum(increase(astraguard_chaos_test_pass[5m])) + sum(increase(astraguard_chaos_test_fail[5m])))
+        
+      - record: chaos:test_duration:avg_seconds
+        expr: avg(astraguard_chaos_test_duration_seconds)
+        
+      - record: chaos:test_duration:max_seconds
+        expr: max(astraguard_chaos_test_duration_seconds)
+        
+      - record: chaos:test_pass_rate:by_scenario
+        expr: |
+          sum by (scenario) (increase(astraguard_chaos_test_pass[5m])) / 
+          (sum by (scenario) (increase(astraguard_chaos_test_pass[5m])) + 
+           sum by (scenario) (increase(astraguard_chaos_test_fail[5m])))
+      
+      # ============================================================================
+      # COMBINED HEALTH METRICS
+      # ============================================================================
+      
+      - record: chaos:test_success:consensus_and_delivery
+        expr: |
+          (chaos:consensus_rate:avg > 0.95) and 
+          (chaos:message_delivery_rate:avg > 0.99)
+        
+      - record: chaos:test_success:no_cascading_and_quick_failover
+        expr: |
+          (chaos:cascading_failure_count:total == 0) and 
+          (chaos:leader_failover_time:p95_seconds < 10)
+        
+      - record: chaos:test_success:all_criteria
+        expr: |
+          (chaos:consensus_rate:avg > 0.95) and
+          (chaos:message_delivery_rate:avg > 0.99) and
+          (chaos:cascading_failure_count:total == 0) and
+          (chaos:leader_failover_time:p95_seconds < 10) and
+          (chaos:role_compliance_rate:avg > 0.90)
+        
+      - record: chaos:campaign_health
+        expr: chaos:test_success:all_criteria

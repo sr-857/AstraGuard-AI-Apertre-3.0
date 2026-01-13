@@ -4,7 +4,7 @@
 
 # Core data processing
 numpy==1.26.4
-pandas==2.1.4
+pandas>=2.2.0  # 2.1.4 doesn't support Python 3.13; use 2.2+ for 3.13 compatibility
 scikit-learn==1.5.2
 
 # Web framework & async
@@ -29,6 +29,7 @@ python-dateutil==2.8.2
 pytz==2024.1
 protobuf>=4.25.8,<5.0.0
 loguru==0.7.2
+lz4==4.0.2
 
 # Test dependencies
 pytest==8.3.2
@@ -36,3 +37,4 @@ pytest-cov==7.0.0
 pytest-mock==3.15.1
 pytest-timeout==2.1.0
 pytest-asyncio==0.24.0
+jsonschema==4.22.0

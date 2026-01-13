@@ -27,6 +27,7 @@ def mock_psutil(monkeypatch):
 
 
 from api.auth import get_api_key, APIKey
+from core.auth import get_current_user, User, UserRole
 
 @pytest.fixture
 def client():
@@ -41,7 +42,19 @@ def client():
             rate_limit=10000
         )
     
+    # Mock current user with OPERATOR role (has SUBMIT_TELEMETRY permission)
+    def mock_get_current_user():
+        return User(
+            id="test-user-id",
+            username="test-operator",
+            email="operator@test.local",
+            role=UserRole.OPERATOR,
+            created_at=datetime.now(),
+            is_active=True
+        )
+    
     app.dependency_overrides[get_api_key] = mock_get_api_key
+    app.dependency_overrides[get_current_user] = mock_get_current_user
     with TestClient(app) as c:
         yield c
     # Clean up

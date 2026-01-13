@@ -121,17 +121,17 @@ def with_timeout(seconds: float, operation_name: Optional[str] = None):
 def async_timeout(seconds: float, operation_name: Optional[str] = None):
     """
     Decorator to enforce timeout on asynchronous functions.
-    
-    Uses asyncio.wait_for for async operations.
+
+    Uses custom implementation with asyncio.create_task and asyncio.wait for proper cancellation.
     When timeout is reached, raises TimeoutError.
-    
+
     Args:
         seconds: Maximum execution time in seconds
         operation_name: Optional name for logging (defaults to function name)
-    
+
     Returns:
         Decorated async function that raises TimeoutError on timeout
-    
+
     Example:
         @async_timeout(seconds=5.0)
         async def fetch_data():
@@ -143,21 +143,39 @@ def async_timeout(seconds: float, operation_name: Optional[str] = None):
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
             op_name = operation_name or func.__name__
             start_time = datetime.now()
-            
-            try:
-                return await asyncio.wait_for(
-                    func(*args, **kwargs),
-                    timeout=seconds
-                )
-            except asyncio.TimeoutError:
+
+            # Create task for the function
+            task = asyncio.create_task(func(*args, **kwargs))
+
+            # Create timeout task
+            timeout_task = asyncio.create_task(asyncio.sleep(seconds))
+
+            # Wait for first to complete
+            done, pending = await asyncio.wait(
+                {task, timeout_task}, return_when=asyncio.FIRST_COMPLETED
+            )
+
+            # Cancel pending tasks
+            for p in pending:
+                p.cancel()
+
+            # Handle results
+            if task in done:
+                # Function completed
+                try:
+                    return task.result()
+                except Exception as e:
+                    raise e
+            else:
+                # Timeout occurred
                 elapsed = (datetime.now() - start_time).total_seconds()
                 logger.warning(
                     f"Async timeout: {op_name} exceeded {seconds}s (elapsed: {elapsed:.2f}s)"
                 )
                 raise TimeoutError(op_name, seconds, start_time)
-        
+
         return wrapper
-    
+
     return decorator
 
 
@@ -223,10 +241,10 @@ class TimeoutConfig:
         import os
         
         # Load from environment or use defaults
-        self.model_load_timeout = get_secret('timeout_model_load')
-        self.inference_timeout = get_secret('timeout_inference')
-        self.redis_timeout = get_secret('timeout_redis')
-        self.file_io_timeout = get_secret('timeout_file_io')
+        self.model_load_timeout = float(get_secret('timeout_model_load', default='300') or '300')
+        self.inference_timeout = float(get_secret('timeout_inference', default='60') or '60')
+        self.redis_timeout = float(get_secret('timeout_redis', default='5') or '5')
+        self.file_io_timeout = float(get_secret('timeout_file_io', default='30') or '30')
         
         logger.info(
             f"Timeout config loaded: model={self.model_load_timeout}s, "

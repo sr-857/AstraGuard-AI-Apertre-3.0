@@ -47,3 +47,8 @@ node_modules/
 .next/
 .turbo/
 !**/.vscode/settings.json
+
+#contact feature runtime
+/data/
+/*.log
+*.db

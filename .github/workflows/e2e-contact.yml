@@ -1,0 +1,180 @@
+# E2E Contact Flow Tests
+#
+# Runs end-to-end tests for the contact form submission flow.
+# Tests the complete path: API → Backend → Storage → Notifications
+#
+# Triggered on:
+# - Push to main/develop branches
+# - Pull requests to main/develop branches
+#
+# This workflow is gated (continue-on-error) to avoid flakiness blocking merges.
+
+name: E2E Contact Flow Tests
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'api/contact*.py'
+      - 'tests/e2e/contact_flow/**'
+      - '.github/workflows/e2e-contact.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'api/contact*.py'
+      - 'tests/e2e/contact_flow/**'
+      - '.github/workflows/e2e-contact.yml'
+  workflow_dispatch:  # Allow manual trigger
+
+concurrency:
+  group: e2e-contact-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e-contact-tests:
+    name: E2E Contact Flow
+    runs-on: ubuntu-latest
+    continue-on-error: true  # Gated to avoid blocking merges
+    
+    steps:
+    - name: Free up disk space
+      run: |
+        echo "Freeing up disk space before checkout..."
+        sudo rm -rf /usr/local/lib/android || true
+        sudo rm -rf /usr/share/dotnet || true
+        df -h
+    
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip setuptools wheel
+        pip install -r config/requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
+        pip install -r config/requirements-test.txt
+    
+    - name: Create test data directory
+      run: mkdir -p data
+    
+    - name: Run E2E Contact Flow Tests
+      id: e2e_tests
+      run: |
+        pytest tests/e2e/contact_flow/ \
+          -v \
+          --tb=short \
+          --timeout=30 \
+          --junitxml=e2e-contact-results.xml \
+          2>&1 | tee e2e-contact-output.log
+      continue-on-error: true
+      env:
+        PYTHONPATH: ${{ github.workspace }}
+    
+    - name: Upload test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: e2e-contact-test-results
+        path: |
+          e2e-contact-results.xml
+          e2e-contact-output.log
+        retention-days: 14
+    
+    - name: Upload test logs on failure
+      uses: actions/upload-artifact@v4
+      if: failure()
+      with:
+        name: e2e-contact-failure-logs
+        path: |
+          data/
+          *.log
+        retention-days: 14
+    
+    - name: Check test results
+      run: |
+        if [ -f e2e-contact-results.xml ]; then
+          echo "Test results available in artifacts"
+          # Parse results for summary
+          python -c "
+          import xml.etree.ElementTree as ET
+          tree = ET.parse('e2e-contact-results.xml')
+          root = tree.getroot()
+          testsuite = root.find('testsuite') or root
+          tests = int(testsuite.get('tests', 0))
+          failures = int(testsuite.get('failures', 0))
+          errors = int(testsuite.get('errors', 0))
+          skipped = int(testsuite.get('skipped', 0))
+          passed = tests - failures - errors - skipped
+          print(f'Tests: {tests}, Passed: {passed}, Failed: {failures}, Errors: {errors}, Skipped: {skipped}')
+          if failures > 0 or errors > 0:
+              print('::warning::Some E2E tests failed or had errors')
+          "
+        fi
+    
+    - name: Clean up pip cache
+      if: always()
+      run: pip cache purge
+
+  e2e-contact-with-redis:
+    name: E2E Contact Flow (with Redis)
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'push' && 
+      github.ref == 'refs/heads/main'
+    needs: e2e-contact-tests
+    continue-on-error: true
+    
+    services:
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip setuptools wheel
+        pip install -r config/requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
+        pip install -r config/requirements-test.txt
+    
+    - name: Wait for Redis
+      run: |
+        for i in {1..30}; do
+          if redis-cli -h localhost ping; then
+            echo "Redis is ready!"
+            break
+          fi
+          echo "Waiting for Redis... ($i/30)"
+          sleep 1
+        done
+    
+    - name: Run E2E Contact Flow Tests with Redis
+      run: |
+        pytest tests/e2e/contact_flow/ \
+          -v \
+          --tb=short \
+          --timeout=30
+      env:
+        REDIS_URL: redis://localhost:6379
+        PYTHONPATH: ${{ github.workspace }}
+    
+    - name: Clean up pip cache
+      if: always()
+      run: pip cache purge
