@@ -118,8 +118,7 @@ class AdaptiveMemoryStore:
         Raises:
             ValueError: If embedding is empty or metadata is not a dict
         """
-        # Check if embedding is None or empty (handle numpy arrays properly)
-        if embedding is None or (hasattr(embedding, 'size') and embedding.size == 0):
+        if embedding is None or len(embedding) == 0:
             raise ValueError("Embedding cannot be empty")
         if not isinstance(metadata, dict):
             raise ValueError("Metadata must be a dictionary")
@@ -181,8 +180,10 @@ class AdaptiveMemoryStore:
             recurrence_boost = 1 + RECURRENCE_BOOST_FACTOR * (np.log(1 + event.recurrence_count) if np is not None else math.log(1 + event.recurrence_count))
 
             # Combined weighted score
-            weighted_score = similarity * (
-                SIMILARITY_WEIGHT + TEMPORAL_WEIGHT * temporal_weight + RECURRENCE_WEIGHT * recurrence_boost
+            weighted_score = (
+                SIMILARITY_WEIGHT * similarity +
+                TEMPORAL_WEIGHT * temporal_weight +
+                RECURRENCE_WEIGHT * recurrence_boost
             )
 
             scores.append((weighted_score, event.metadata, event.timestamp))
@@ -355,13 +356,8 @@ class AdaptiveMemoryStore:
 
     def _cosine_similarity(self, a: Union[List[float], "np.ndarray"], b: Union[List[float], "np.ndarray"]) -> float:
         """Calculate cosine similarity between vectors."""
-        # Ensure both vectors have the same shape
-        a_len = len(a) if isinstance(a, list) else a.size
-        b_len = len(b) if isinstance(b, list) else b.size
-        if a_len != b_len:
-            # Dimension mismatch - return 0 (completely different)
-            return 0.0
-        
+        if len(a) != len(b):
+            raise ValueError("Embeddings must have the same length for cosine similarity")
         if np is not None:
             return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-10)
         else:
