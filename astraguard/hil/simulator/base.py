@@ -16,6 +16,7 @@ from ..schemas.telemetry import (
     OrbitData,
 )
 from .attitude import AttitudeSimulator
+from .power import PowerSimulator
 
 
 class SatelliteSimulator(ABC):
@@ -108,12 +109,15 @@ class StubSatelliteSimulator(SatelliteSimulator):
         # Attitude dynamics simulator
         self.attitude_sim = AttitudeSimulator(sat_id)
         self._tumble_injected = False
+        
+        # Power system simulator
+        self.power_sim = PowerSimulator(sat_id)
     
     async def generate_telemetry(self) -> TelemetryPacket:
         """
         Generate LEO satellite telemetry with production schemas.
         
-        Returns telemetry with voltage/SOC drop and thermal warning when fault is active.
+        Returns telemetry with realistic attitude and power dynamics.
         """
         import random
         
@@ -121,6 +125,11 @@ class StubSatelliteSimulator(SatelliteSimulator):
         
         # Update attitude dynamics (1Hz telemetry)
         self.attitude_sim.update(dt=1.0)
+        
+        # Update power dynamics - attitude affects solar panel exposure
+        nadir_error = self.attitude_sim.get_attitude_data().nadir_pointing_error_deg
+        sun_exposure = max(0.0, 1.0 - (nadir_error / 90.0))  # Degrades with pointing error
+        self.power_sim.update(dt=1.0, sun_exposure=sun_exposure)
         
         # Inject attitude fault if needed
         if self._fault_active and self._fault_type == "attitude_desync" and not self._tumble_injected:
@@ -135,29 +144,20 @@ class StubSatelliteSimulator(SatelliteSimulator):
         # Get current attitude data
         attitude = self.attitude_sim.get_attitude_data()
         
-        # Simulate fault effects across multiple subsystems
-        if self._fault_active and self._fault_type == "power_brownout":
-            battery_voltage = 6.2
-            battery_soc = 0.45
-            thermal_status = "warning"
-            battery_temp = 25.2  # Raised during fault
-        else:
-            battery_voltage = 8.4  # Nominal LiIon voltage
-            battery_soc = 0.87
-            thermal_status = "nominal"
-            battery_temp = 15.2
+        # Get power data
+        power = self.power_sim.get_power_data()
         
-        # Power: battery + solar
-        power = PowerData(
-            battery_voltage=battery_voltage,
-            battery_soc=battery_soc,
-            solar_current=0.8,
-            load_current=0.3
-        )
+        # Thermal dynamics affected by power state
+        if self._fault_active and self._fault_type == "power_brownout":
+            thermal_status = "warning"
+            battery_temp = 25.2 + power.battery_soc * 10  # Hotter with low SOC
+        else:
+            thermal_status = "nominal"
+            battery_temp = 15.2 + power.battery_soc * 5
         
         # Thermal: battery + EPS temps
         thermal = ThermalData(
-            battery_temp=battery_temp,
+            battery_temp=round(battery_temp, 1),
             eps_temp=22.1,
             status=thermal_status
         )
@@ -201,7 +201,9 @@ class StubSatelliteSimulator(SatelliteSimulator):
         self._fault_active = True
         self._fault_type = fault_type
         
-        if fault_type == "attitude_desync":
+        if fault_type == "power_brownout":
+            self.power_sim.inject_brownout_fault(severity)
+        elif fault_type == "attitude_desync":
             # Attitude fault will be injected on next telemetry generation
             pass
         
