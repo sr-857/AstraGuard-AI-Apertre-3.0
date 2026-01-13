@@ -302,7 +302,7 @@ class TestTelemetryPacket:
     
     def test_get_orbit_data_format(self):
         """Orbit data converts to valid OrbitData packet."""
-        orbit = OrbitSimulator("TELEMETRY-TEST")
+        orbit = OrbitSimulator("TLM-TEST")
         orbit._true_anomaly_deg = 45.5
         
         data = orbit.get_orbit_data()
@@ -315,7 +315,7 @@ class TestTelemetryPacket:
     
     def test_orbit_data_validation(self):
         """OrbitData respects schema constraints."""
-        orbit = OrbitSimulator("VALIDATION-TEST")
+        orbit = OrbitSimulator("VAL-TEST")
         
         # Test altitude bounds
         orbit.altitude_m = 100000

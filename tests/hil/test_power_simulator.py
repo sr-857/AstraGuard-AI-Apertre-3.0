@@ -142,29 +142,19 @@ class TestBatteryDynamics:
 
 
 class TestBrownoutFault:
-    """Tests for power brownout fault injection."""
+    """Tests for power brownout fault injection (deprecated - see test_power_brownout.py)."""
     
     def test_brownout_fault_injection(self):
         """Test brownout fault activates."""
-        sim = PowerSimulator("BROWNOUT-TEST")
+        sim = PowerSimulator("BRN-TEST")
         sim.inject_brownout_fault(severity=0.8)
         
-        assert sim._fault_active is True
-        assert sim._fault_type == "power_brownout"
-    
-    def test_brownout_reduces_panel_efficiency(self):
-        """Test brownout degrades solar panels."""
-        sim = PowerSimulator("BROWNOUT-EFFICIENCY")
-        
-        initial_degradation = sim._panel_degradation
-        sim.inject_brownout_fault(severity=0.8)
-        
-        # Panel degradation should decrease
-        assert sim._panel_degradation < initial_degradation
+        assert sim._brownout_fault is not None
+        assert sim._brownout_fault.active is True
     
     def test_brownout_voltage_drop(self):
         """Test brownout causes voltage drop."""
-        sim = PowerSimulator("BROWNOUT-VOLTAGE")
+        sim = PowerSimulator("BRN-VOLTAGE")
         sim._orbit_phase = 45.0  # Sunlight phase
         
         # Measure voltage without fault
@@ -172,7 +162,6 @@ class TestBrownoutFault:
             sim.update(dt=1.0, sun_exposure=1.0)
         
         normal_voltage = sim.battery_voltage
-        normal_soc = sim.battery_soc
         
         # Inject fault
         sim.inject_brownout_fault(severity=0.8)
@@ -182,21 +171,9 @@ class TestBrownoutFault:
             sim.update(dt=1.0, sun_exposure=1.0)
         
         fault_voltage = sim.battery_voltage
-        fault_soc = sim.battery_soc
         
-        # With degraded panels and higher loads, voltage and SOC will vary
-        # Brownout affects load and solar generation, but effects depend on orbital phase
+        # Brownout affects load and solar generation
         assert 5 < fault_voltage < 10
-        assert 0 <= fault_soc <= 1
-    
-    def test_brownout_recovery(self):
-        """Test recovery from brownout fault."""
-        sim = PowerSimulator("BROWNOUT-RECOVERY")
-        sim.inject_brownout_fault(severity=0.8)
-        assert sim._fault_active is True
-        
-        sim.recover_power_system()
-        assert sim._fault_active is False
 
 
 class TestPowerDataOutput:

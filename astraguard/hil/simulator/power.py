@@ -8,6 +8,7 @@ battery charging/discharging, and orbital eclipse cycles typical of LEO operatio
 import numpy as np
 from typing import Optional
 from datetime import datetime
+from .faults.power_brownout import PowerBrownoutFault
 
 
 class PowerSimulator:
@@ -58,6 +59,7 @@ class PowerSimulator:
         # Fault state
         self._fault_active = False
         self._fault_type = None
+        self._brownout_fault: Optional[PowerBrownoutFault] = None
     
     def update(self, dt: float = 1.0, sun_exposure: float = 1.0) -> None:
         """
@@ -93,11 +95,27 @@ class PowerSimulator:
         # Select appropriate load
         load_w = self.eclipse_load_w if in_eclipse else self.nominal_load_w
         
-        # Apply fault effects
-        if self._fault_active and self._fault_type == "power_brownout":
-            # Brownout: degraded panels + increased safe-mode loads
-            solar_power_w *= 0.5  # Panels partially damaged
-            load_w *= 1.3  # Increased safe-mode consumption
+        # Apply brownout fault if active
+        if self._brownout_fault and self._brownout_fault.active:
+            fault_state = self._brownout_fault.get_fault_state()
+            
+            if fault_state["active"]:
+                # Phase 1: Solar panel degradation
+                solar_power_w *= fault_state["panel_damage_factor"]
+                
+                # Phase 2: Battery discharge acceleration
+                # Increased nominal/eclipse loads
+                if fault_state["phase"] == "battery_stress":
+                    load_w *= fault_state["discharge_multiplier"]
+                
+                # Phase 3: Safe-mode load spike
+                if fault_state["phase"] == "safe_mode":
+                    load_w = fault_state["safe_mode_load"]
+                
+                # Check if fault expired
+                if self._brownout_fault.is_expired():
+                    self._brownout_fault.active = False
+                    self._panel_degradation = 1.0  # Recovery
         
         # Battery charge/discharge dynamics
         net_power_w = solar_power_w - load_w
@@ -209,3 +227,27 @@ class PowerSimulator:
             "fault_active": self._fault_active,
             "elapsed_time": round(self.elapsed_time, 1)
         }
+    
+    def inject_brownout_fault(self, severity: float = 1.0, duration: float = 300.0):
+        """Inject configurable power brownout fault.
+        
+        Creates a multi-phase brownout fault:
+        - Phase 1 (0-60s): Solar panel damage
+        - Phase 2 (60-180s): Battery discharge acceleration
+        - Phase 3 (180s+): Safe-mode load spike
+        
+        Args:
+            severity: Fault severity (0.1-1.0)
+                - 0.1: Minor (60% panel loss)
+                - 0.5: Medium (75% panel loss)
+                - 0.9: Severe (90% panel loss)
+            duration: Total fault duration in seconds (default 300s = 5min)
+        """
+        self._brownout_fault = PowerBrownoutFault(self.sat_id, severity, duration)
+        self._brownout_fault.inject()
+        self._fault_active = True
+        self._fault_type = "power_brownout"
+        
+        # Apply initial degradation from fault
+        fault_state = self._brownout_fault.get_fault_state()
+        self._panel_degradation = fault_state["panel_damage_factor"]
