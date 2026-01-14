@@ -56,8 +56,8 @@ def monitor_operation_resources(operation_name: Optional[str] = None):
             op_name = operation_name or func.__name__
             monitor = get_resource_monitor()
 
-            # Get initial metrics (without adding to history)
-            initial_metrics = monitor.get_current_metrics_no_history()
+            # Get initial metrics
+            initial_metrics = monitor.get_current_metrics()
 
             logger.debug(
                 f"Starting operation '{op_name}' - "
@@ -70,7 +70,7 @@ def monitor_operation_resources(operation_name: Optional[str] = None):
                 # Execute the function
                 result = func(*args, **kwargs)
 
-                # Get final metrics (adds to history)
+                # Get final metrics
                 final_metrics = monitor.get_current_metrics()
 
                 # Calculate resource usage during operation
@@ -99,7 +99,7 @@ def monitor_operation_resources(operation_name: Optional[str] = None):
                 return result
 
             except Exception as e:
-                # Log resource usage even on failure (adds to history)
+                # Log resource usage even on failure
                 final_metrics = monitor.get_current_metrics()
                 cpu_used = final_metrics.cpu_percent - initial_metrics.cpu_percent
                 memory_used = final_metrics.process_memory_mb - initial_metrics.process_memory_mb
@@ -243,23 +243,26 @@ class ResourceMonitor:
 
             # Memory usage
             memory = psutil.virtual_memory()
-            memory_percent = memory.percent
-            memory_available_mb = memory.available / (1024 * 1024)
+            memory_percent = memory.percent if memory.percent is not None else 0.0
+            memory_available_mb = memory.available / (1024 * 1024) if memory.available is not None else 0.0
 
-            # Disk usage
-            disk = psutil.disk_usage('/')
-            disk_usage_percent = disk.percent
+            # Disk usage - with fallback for CI environments
+            try:
+                disk = psutil.disk_usage('/')
+                disk_usage_percent = disk.percent if disk.percent is not None else 0.0
+            except (OSError, PermissionError):
+                disk_usage_percent = 0.0
 
             # Process memory
             process_info = self._process.memory_info()
-            process_memory_mb = process_info.rss / (1024 * 1024)
+            process_memory_mb = process_info.rss / (1024 * 1024) if process_info.rss is not None else 0.0
 
             metrics = ResourceMetrics(
-                cpu_percent=cpu_percent,
-                memory_percent=memory_percent,
-                memory_available_mb=memory_available_mb,
-                disk_usage_percent=disk_usage_percent,
-                process_memory_mb=process_memory_mb,
+                cpu_percent=float(cpu_percent) if cpu_percent is not None else 0.0,
+                memory_percent=float(memory_percent) if memory_percent is not None else 0.0,
+                memory_available_mb=float(memory_available_mb) if memory_available_mb is not None else 0.0,
+                disk_usage_percent=float(disk_usage_percent) if disk_usage_percent is not None else 0.0,
+                process_memory_mb=float(process_memory_mb) if process_memory_mb is not None else 0.0,
                 timestamp=datetime.now()
             )
 
@@ -369,43 +372,46 @@ class ResourceMonitor:
             'overall': ResourceStatus.HEALTHY
         }
         
-        # Check CPU
-        if metrics.cpu_percent >= self.thresholds.cpu_critical:
-            status['cpu'] = ResourceStatus.CRITICAL
-            logger.warning(
-                f"CPU critical: {metrics.cpu_percent:.1f}% "
-                f"(threshold: {self.thresholds.cpu_critical}%)"
-            )
-        elif metrics.cpu_percent >= self.thresholds.cpu_warning:
-            status['cpu'] = ResourceStatus.WARNING
-            logger.info(
-                f"CPU warning: {metrics.cpu_percent:.1f}% "
-                f"(threshold: {self.thresholds.cpu_warning}%)"
-            )
+        # Check CPU (handle None values)
+        if metrics.cpu_percent is not None:
+            if metrics.cpu_percent >= self.thresholds.cpu_critical:
+                status['cpu'] = ResourceStatus.CRITICAL
+                logger.warning(
+                    f"CPU critical: {metrics.cpu_percent:.1f}% "
+                    f"(threshold: {self.thresholds.cpu_critical}%)"
+                )
+            elif metrics.cpu_percent >= self.thresholds.cpu_warning:
+                status['cpu'] = ResourceStatus.WARNING
+                logger.info(
+                    f"CPU warning: {metrics.cpu_percent:.1f}% "
+                    f"(threshold: {self.thresholds.cpu_warning}%)"
+                )
         
-        # Check Memory
-        if metrics.memory_percent >= self.thresholds.memory_critical:
-            status['memory'] = ResourceStatus.CRITICAL
-            logger.warning(
-                f"Memory critical: {metrics.memory_percent:.1f}% "
-                f"(threshold: {self.thresholds.memory_critical}%)"
-            )
-        elif metrics.memory_percent >= self.thresholds.memory_warning:
-            status['memory'] = ResourceStatus.WARNING
-            logger.info(
-                f"Memory warning: {metrics.memory_percent:.1f}% "
-                f"(threshold: {self.thresholds.memory_warning}%)"
-            )
+        # Check Memory (handle None values)
+        if metrics.memory_percent is not None:
+            if metrics.memory_percent >= self.thresholds.memory_critical:
+                status['memory'] = ResourceStatus.CRITICAL
+                logger.warning(
+                    f"Memory critical: {metrics.memory_percent:.1f}% "
+                    f"(threshold: {self.thresholds.memory_critical}%)"
+                )
+            elif metrics.memory_percent >= self.thresholds.memory_warning:
+                status['memory'] = ResourceStatus.WARNING
+                logger.info(
+                    f"Memory warning: {metrics.memory_percent:.1f}% "
+                    f"(threshold: {self.thresholds.memory_warning}%)"
+                )
         
-        # Check Disk
-        if metrics.disk_usage_percent >= self.thresholds.disk_critical:
-            status['disk'] = ResourceStatus.CRITICAL
-            logger.warning(
-                f"Disk critical: {metrics.disk_usage_percent:.1f}% "
-                f"(threshold: {self.thresholds.disk_critical}%)"
-            )
-        elif metrics.disk_usage_percent >= self.thresholds.disk_warning:
-            status['disk'] = ResourceStatus.WARNING
+        # Check Disk (handle None values)
+        if metrics.disk_usage_percent is not None:
+            if metrics.disk_usage_percent >= self.thresholds.disk_critical:
+                status['disk'] = ResourceStatus.CRITICAL
+                logger.warning(
+                    f"Disk critical: {metrics.disk_usage_percent:.1f}% "
+                    f"(threshold: {self.thresholds.disk_critical}%)"
+                )
+            elif metrics.disk_usage_percent >= self.thresholds.disk_warning:
+                status['disk'] = ResourceStatus.WARNING
         
         # Determine overall status (worst status wins)
         if any(s == ResourceStatus.CRITICAL for s in status.values()):
@@ -521,12 +527,25 @@ def get_resource_monitor() -> ResourceMonitor:
             if _resource_monitor is None:
                 import os
 
-                # Load configuration from environment
+                # Load configuration from environment, with fallback defaults
+                # Convert to float if get_secret returns a value, with direct os.environ fallback
+                cpu_warning = get_secret('resource_cpu_warning') or os.environ.get('RESOURCE_CPU_WARNING')
+                cpu_warning = float(cpu_warning) if cpu_warning else 70.0
+                
+                cpu_critical = get_secret('resource_cpu_critical') or os.environ.get('RESOURCE_CPU_CRITICAL')
+                cpu_critical = float(cpu_critical) if cpu_critical else 90.0
+                
+                memory_warning = get_secret('resource_memory_warning') or os.environ.get('RESOURCE_MEMORY_WARNING')
+                memory_warning = float(memory_warning) if memory_warning else 75.0
+                
+                memory_critical = get_secret('resource_memory_critical') or os.environ.get('RESOURCE_MEMORY_CRITICAL')
+                memory_critical = float(memory_critical) if memory_critical else 90.0
+
                 thresholds = ResourceThresholds(
-                    cpu_warning=get_secret('resource_cpu_warning'),
-                    cpu_critical=get_secret('resource_cpu_critical'),
-                    memory_warning=get_secret('resource_memory_warning'),
-                    memory_critical=get_secret('resource_memory_critical'),
+                    cpu_warning=cpu_warning,
+                    cpu_critical=cpu_critical,
+                    memory_warning=memory_warning,
+                    memory_critical=memory_critical,
                 )
 
                 monitoring_enabled = get_secret('resource_monitoring_enabled')

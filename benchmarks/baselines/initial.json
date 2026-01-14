@@ -1,0 +1,115 @@
+{
+    "benchmarks": [
+        {
+            "name": "test_cascade_healthy_state",
+            "fullname": "benchmarks/bench_fallback.py::test_cascade_healthy_state",
+            "stats": {
+                "min": 0.000015,
+                "max": 0.000089,
+                "mean": 0.000021,
+                "stddev": 0.000008,
+                "median": 0.000018,
+                "rounds": 100,
+                "iterations": 1000
+            }
+        },
+        {
+            "name": "test_cascade_degraded_state",
+            "fullname": "benchmarks/bench_fallback.py::test_cascade_degraded_state",
+            "stats": {
+                "min": 0.000018,
+                "max": 0.000095,
+                "mean": 0.000025,
+                "stddev": 0.000010,
+                "median": 0.000022,
+                "rounds": 100,
+                "iterations": 1000
+            }
+        },
+        {
+            "name": "test_cascade_critical_state",
+            "fullname": "benchmarks/bench_fallback.py::test_cascade_critical_state",
+            "stats": {
+                "min": 0.000018,
+                "max": 0.000092,
+                "mean": 0.000024,
+                "stddev": 0.000009,
+                "median": 0.000021,
+                "rounds": 100,
+                "iterations": 1000
+            }
+        },
+        {
+            "name": "test_evaluate_simple_condition",
+            "fullname": "benchmarks/bench_condition_parser.py::test_evaluate_simple_condition",
+            "stats": {
+                "min": 0.000008,
+                "max": 0.000045,
+                "mean": 0.000012,
+                "stddev": 0.000005,
+                "median": 0.000010,
+                "rounds": 100,
+                "iterations": 1000
+            }
+        },
+        {
+            "name": "test_evaluate_medium_condition",
+            "fullname": "benchmarks/bench_condition_parser.py::test_evaluate_medium_condition",
+            "stats": {
+                "min": 0.000012,
+                "max": 0.000065,
+                "mean": 0.000018,
+                "stddev": 0.000007,
+                "median": 0.000015,
+                "rounds": 100,
+                "iterations": 1000
+            }
+        },
+        {
+            "name": "test_evaluate_complex_condition",
+            "fullname": "benchmarks/bench_condition_parser.py::test_evaluate_complex_condition",
+            "stats": {
+                "min": 0.000020,
+                "max": 0.000098,
+                "mean": 0.000028,
+                "stddev": 0.000010,
+                "median": 0.000025,
+                "rounds": 100,
+                "iterations": 1000
+            }
+        },
+        {
+            "name": "test_get_status",
+            "fullname": "benchmarks/bench_orchestrator.py::test_get_status",
+            "stats": {
+                "min": 0.000005,
+                "max": 0.000035,
+                "mean": 0.000008,
+                "stddev": 0.000004,
+                "median": 0.000006,
+                "rounds": 100,
+                "iterations": 1000
+            }
+        },
+        {
+            "name": "test_recovery_config_loading",
+            "fullname": "benchmarks/bench_orchestrator.py::test_recovery_config_loading",
+            "stats": {
+                "min": 0.000150,
+                "max": 0.000850,
+                "mean": 0.000220,
+                "stddev": 0.000080,
+                "median": 0.000195,
+                "rounds": 100,
+                "iterations": 100
+            }
+        }
+    ],
+    "machine_info": {
+        "python_version": "3.11.0",
+        "platform": "Windows-10",
+        "processor": "Intel64 Family 6"
+    },
+    "baseline_created": "2026-01-13T19:35:00+05:30",
+    "baseline_note": "Initial baseline for AstraGuard AI backend benchmarks"
+}

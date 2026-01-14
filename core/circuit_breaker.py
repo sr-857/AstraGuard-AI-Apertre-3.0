@@ -168,10 +168,15 @@ class CircuitBreaker:
             result = await func(*args, **kwargs)
             self._record_success()
             return result
-            
-        except self.expected_exceptions as e:
-            self._record_failure()
-            raise
+
+        except BaseException as e:
+            if isinstance(e, (KeyboardInterrupt, SystemExit)):
+                raise
+            if isinstance(e, self.expected_exceptions):
+                self._record_failure()
+                raise
+            else:
+                raise
     
     def _record_success(self):
         """Record successful call"""

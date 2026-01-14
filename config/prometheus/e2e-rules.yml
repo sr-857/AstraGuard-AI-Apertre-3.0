@@ -1,0 +1,167 @@
+groups:
+  - name: e2e_recovery_pipeline
+    interval: 15s
+    rules:
+      # ============================================================================
+      # MTTR (Mean Time To Recovery) METRICS
+      # ============================================================================
+      
+      - record: e2e:mttr:mean_seconds
+        expr: avg(e2e_mttr_seconds)
+        
+      - record: e2e:mttr:p95_seconds
+        expr: histogram_quantile(0.95, rate(e2e_mttr_seconds_bucket[5m]))
+        
+      - record: e2e:mttr:p99_seconds
+        expr: histogram_quantile(0.99, rate(e2e_mttr_seconds_bucket[5m]))
+        
+      - record: e2e:mttr:max_seconds
+        expr: max(e2e_mttr_seconds)
+        
+      - record: e2e:mttr:by_scenario
+        expr: avg by (scenario) (e2e_mttr_seconds)
+      
+      # ============================================================================
+      # PIPELINE STAGE LATENCY METRICS
+      # ============================================================================
+      
+      - record: e2e:pipeline:telemetry_latency:p95_ms
+        expr: histogram_quantile(0.95, rate(e2e_stage_latency_bucket{stage="telemetry"}[5m])) * 1000
+        
+      - record: e2e:pipeline:health_latency:p95_ms
+        expr: histogram_quantile(0.95, rate(e2e_stage_latency_bucket{stage="health"}[5m])) * 1000
+        
+      - record: e2e:pipeline:registry_latency:p95_ms
+        expr: histogram_quantile(0.95, rate(e2e_stage_latency_bucket{stage="registry"}[5m])) * 1000
+        
+      - record: e2e:pipeline:leader_latency:p95_ms
+        expr: histogram_quantile(0.95, rate(e2e_stage_latency_bucket{stage="leader"}[5m])) * 1000
+        
+      - record: e2e:pipeline:consensus_latency:p95_ms
+        expr: histogram_quantile(0.95, rate(e2e_stage_latency_bucket{stage="consensus"}[5m])) * 1000
+        
+      - record: e2e:pipeline:policy_latency:p95_ms
+        expr: histogram_quantile(0.95, rate(e2e_stage_latency_bucket{stage="policy"}[5m])) * 1000
+        
+      - record: e2e:pipeline:propagation_latency:p95_ms
+        expr: histogram_quantile(0.95, rate(e2e_stage_latency_bucket{stage="propagation"}[5m])) * 1000
+        
+      - record: e2e:pipeline:roles_latency:p95_ms
+        expr: histogram_quantile(0.95, rate(e2e_stage_latency_bucket{stage="roles"}[5m])) * 1000
+        
+      - record: e2e:pipeline:memory_latency:p95_ms
+        expr: histogram_quantile(0.95, rate(e2e_stage_latency_bucket{stage="memory"}[5m])) * 1000
+        
+      - record: e2e:pipeline:decisions_latency:p95_ms
+        expr: histogram_quantile(0.95, rate(e2e_stage_latency_bucket{stage="decisions"}[5m])) * 1000
+        
+      - record: e2e:pipeline:scoping_latency:p95_ms
+        expr: histogram_quantile(0.95, rate(e2e_stage_latency_bucket{stage="scoping"}[5m])) * 1000
+        
+      - record: e2e:pipeline:safety_latency:p95_ms
+        expr: histogram_quantile(0.95, rate(e2e_stage_latency_bucket{stage="safety"}[5m])) * 1000
+      
+      # ============================================================================
+      # ANOMALY DETECTION LATENCY
+      # ============================================================================
+      
+      - record: e2e:detection:latency:p95_seconds
+        expr: histogram_quantile(0.95, rate(e2e_detection_latency_bucket[5m]))
+        
+      - record: e2e:detection:latency:max_seconds
+        expr: max(e2e_detection_latency_seconds)
+      
+      # ============================================================================
+      # CONSENSUS & COMPLIANCE METRICS
+      # ============================================================================
+      
+      - record: e2e:consensus:mean_rate
+        expr: avg(e2e_consensus_rate_during_recovery)
+        
+      - record: e2e:consensus:min_rate
+        expr: min(e2e_consensus_rate_during_recovery)
+        
+      - record: e2e:compliance:mean_rate
+        expr: avg(e2e_compliance_rate_during_recovery)
+        
+      - record: e2e:compliance:min_rate
+        expr: min(e2e_compliance_rate_during_recovery)
+      
+      # ============================================================================
+      # SAFETY VALIDATION METRICS
+      # ============================================================================
+      
+      - record: e2e:safety:blocks:total
+        expr: sum(increase(e2e_safety_blocks_triggered[5m]))
+        
+      - record: e2e:safety:blocks:by_scenario
+        expr: sum by (scenario) (increase(e2e_safety_blocks_triggered[5m]))
+        
+      - record: e2e:safety:validation:passed
+        expr: sum(increase(e2e_safety_validation_passed[5m]))
+      
+      # ============================================================================
+      # TEST RESULT METRICS
+      # ============================================================================
+      
+      - record: e2e:test:pass:total
+        expr: sum(increase(e2e_test_pass[5m]))
+        
+      - record: e2e:test:fail:total
+        expr: sum(increase(e2e_test_fail[5m]))
+        
+      - record: e2e:test:pass:rate
+        expr: |
+          sum(increase(e2e_test_pass[5m])) / 
+          (sum(increase(e2e_test_pass[5m])) + sum(increase(e2e_test_fail[5m])))
+        
+      - record: e2e:test:pass:by_scenario
+        expr: |
+          sum by (scenario) (increase(e2e_test_pass[5m])) /
+          (sum by (scenario) (increase(e2e_test_pass[5m])) + 
+           sum by (scenario) (increase(e2e_test_fail[5m])))
+      
+      # ============================================================================
+      # FAILURE MODE METRICS
+      # ============================================================================
+      
+      - record: e2e:failure_mode:battery:success_rate
+        expr: |
+          sum(increase(e2e_test_pass{scenario="battery_fault_recovery"}[5m])) /
+          (sum(increase(e2e_test_pass{scenario="battery_fault_recovery"}[5m])) +
+           sum(increase(e2e_test_fail{scenario="battery_fault_recovery"}[5m])))
+        
+      - record: e2e:failure_mode:attitude:success_rate
+        expr: |
+          sum(increase(e2e_test_pass{scenario="attitude_fault_with_safety"}[5m])) /
+          (sum(increase(e2e_test_pass{scenario="attitude_fault_with_safety"}[5m])) +
+           sum(increase(e2e_test_fail{scenario="attitude_fault_with_safety"}[5m])))
+        
+      - record: e2e:failure_mode:leader_crash:success_rate
+        expr: |
+          sum(increase(e2e_test_pass{scenario="leader_crash_during_recovery"}[5m])) /
+          (sum(increase(e2e_test_pass{scenario="leader_crash_during_recovery"}[5m])) +
+           sum(increase(e2e_test_fail{scenario="leader_crash_during_recovery"}[5m])))
+      
+      # ============================================================================
+      # COMBINED SUCCESS METRICS
+      # ============================================================================
+      
+      - record: e2e:success:mttr_within_sla
+        expr: e2e:mttr:p95_seconds < 30
+        
+      - record: e2e:success:consensus_maintained
+        expr: e2e:consensus:min_rate > 0.95
+        
+      - record: e2e:success:compliance_maintained
+        expr: e2e:compliance:min_rate > 0.90
+        
+      - record: e2e:success:all_criteria
+        expr: |
+          (e2e:mttr:p95_seconds < 30) and
+          (e2e:consensus:min_rate > 0.95) and
+          (e2e:compliance:min_rate > 0.90) and
+          (e2e:test:pass:rate > 0.95)
+        
+      - record: e2e:sla_status
+        expr: e2e:success:all_criteria

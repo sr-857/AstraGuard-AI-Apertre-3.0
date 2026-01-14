@@ -10,12 +10,13 @@
 
 1. [System Overview](#system-overview)
 2. [Architecture](#architecture)
-3. [Core Modules](#core-modules)
-4. [Memory Engine](#memory-engine)
-5. [Decision Loop](#decision-loop)
-6. [API Reference](#api-reference)
-7. [Performance Benchmarks](#performance-benchmarks)
-8. [Deployment Guide](#deployment-guide)
+3. [Secrets Management](#secrets-management)
+4. [Core Modules](#core-modules)
+5. [Memory Engine](#memory-engine)
+6. [Decision Loop](#decision-loop)
+7. [API Reference](#api-reference)
+8. [Performance Benchmarks](#performance-benchmarks)
+9. [Deployment Guide](#deployment-guide)
 
 ---
 
@@ -127,6 +128,60 @@ Telemetry Stream → Encoder → Adaptive Memory ↔ Reasoning Agent → Respons
 │  - Feedback to memory                                            │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## Secrets Management
+
+### Overview
+
+AstraGuard AI includes a centralized secrets management module (`core/secrets.py`) that provides:
+
+- **Unified secret access** - Single entry point for all credentials
+- **Startup validation** - Verify required secrets before application starts
+- **Log masking** - Prevent accidental exposure in logs
+- **.env file support** - Load secrets from environment files
+- **Secret rotation** - Reload secrets without restart
+
+### API Reference
+
+```python
+from core.secrets import get_secret, require_secrets, mask_secret
+
+# Get a secret (optional, with default)
+api_key = get_secret("API_KEY", default="fallback")
+
+# Get a required secret (raises ValueError if missing)
+jwt_secret = get_secret("JWT_SECRET", required=True)
+
+# Validate multiple secrets at startup
+secrets = require_secrets(["API_KEY", "JWT_SECRET", "DATABASE_URL"])
+
+# Mask a secret for safe logging
+print(f"Using key: {mask_secret(api_key)}")  # Output: "****xyz1"
+```
+
+### Configuration
+
+Secrets are loaded from:
+1. Environment variables (highest priority)
+2. `.env.local` file (if exists)
+3. `.env` file (if exists)
+
+**Example `.env.local`:**
+```bash
+API_KEY=your_api_key_here
+JWT_SECRET=your_jwt_secret_here
+METRICS_USER=admin
+METRICS_PASSWORD=secure_password_here
+```
+
+### Best Practices
+
+- Never commit `.env.local` to version control
+- Use `require_secrets()` at application startup
+- Use `mask_secret()` when logging sensitive values
+- Rotate secrets with `secrets_manager.reload()`
 
 ---
 

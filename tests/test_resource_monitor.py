@@ -274,10 +274,21 @@ class TestResourceMonitorSingleton:
         
         # Reset singleton to force reload
         from core import resource_monitor as rm
-        from core.secrets import get_secrets_manager
+        from core.secrets import init_secrets_manager, get_secrets_manager
+        
+        # Initialize secrets manager if not already done with a test master key
+        try:
+            init_secrets_manager(master_key="test_master_key_32_chars_minimum_")
+        except (RuntimeError, ValueError):
+            # Already initialized or key error - this is OK
+            pass
         
         rm._resource_monitor = None
-        get_secrets_manager().reload_cache()
+        try:
+            get_secrets_manager().reload_cache()
+        except (RuntimeError, AttributeError):
+            # Secrets manager may not be initialized; skip reload
+            pass
         
         monitor = get_resource_monitor()
         

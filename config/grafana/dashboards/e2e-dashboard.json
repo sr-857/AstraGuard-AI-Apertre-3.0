@@ -1,0 +1,315 @@
+{
+  "dashboard": {
+    "title": "E2E Recovery Pipeline",
+    "description": "End-to-end constellation recovery metrics (MTTR SLA validation)",
+    "timezone": "UTC",
+    "refresh": "5s",
+    "time": {
+      "from": "now-24h",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "MTTR Histogram (p95 Target: <30s)",
+        "type": "histogram",
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 0
+        },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(e2e:mttr_seconds_bucket[5m]))",
+            "legendFormat": "p95 MTTR"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "custom": {
+              "hideFrom": {
+                "tooltip": false,
+                "viz": false,
+                "legend": false
+              }
+            },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "red",
+                  "value": 45
+                },
+                {
+                  "color": "yellow",
+                  "value": 30
+                },
+                {
+                  "color": "green",
+                  "value": 0
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 2,
+        "title": "Mean MTTR vs Target",
+        "type": "stat",
+        "gridPos": {
+          "h": 8,
+          "w": 6,
+          "x": 12,
+          "y": 0
+        },
+        "targets": [
+          {
+            "expr": "avg(e2e:mttr_seconds)",
+            "legendFormat": "Mean MTTR"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": 0
+                },
+                {
+                  "color": "yellow",
+                  "value": 25
+                },
+                {
+                  "color": "red",
+                  "value": 30
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 3,
+        "title": "Pipeline Stage Latencies (Heatmap)",
+        "type": "heatmap",
+        "gridPos": {
+          "h": 8,
+          "w": 24,
+          "x": 0,
+          "y": 8
+        },
+        "targets": [
+          {
+            "expr": "rate(e2e:pipeline_stage_latency_seconds[5m])",
+            "legendFormat": "{{stage}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "custom": {
+              "hideFrom": {
+                "tooltip": false,
+                "viz": false,
+                "legend": false
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": 4,
+        "title": "Failure Mode Success Rates",
+        "type": "piechart",
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 16
+        },
+        "targets": [
+          {
+            "expr": "sum by (scenario) (increase(e2e:test_pass[5m]))",
+            "legendFormat": "{{scenario}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "hideFrom": {
+                "tooltip": false,
+                "viz": false,
+                "legend": false
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": 5,
+        "title": "Consensus Rate During Recovery",
+        "type": "timeseries",
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 16
+        },
+        "targets": [
+          {
+            "expr": "avg(e2e:consensus_rate_during_recovery)",
+            "legendFormat": "Consensus Rate"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "custom": {
+              "lineWidth": 2,
+              "hideFrom": {
+                "tooltip": false,
+                "viz": false,
+                "legend": false
+              }
+            },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "red",
+                  "value": 0.90
+                },
+                {
+                  "color": "yellow",
+                  "value": 0.95
+                },
+                {
+                  "color": "green",
+                  "value": 0.95
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 6,
+        "title": "Safety Blocks Triggered",
+        "type": "stat",
+        "gridPos": {
+          "h": 4,
+          "w": 8,
+          "x": 0,
+          "y": 24
+        },
+        "targets": [
+          {
+            "expr": "sum(increase(e2e:safety_blocks_triggered[5m]))",
+            "legendFormat": "Safety Blocks"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": 0
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 7,
+        "title": "Anomaly Detection Latency (<2s target)",
+        "type": "timeseries",
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 8,
+          "y": 24
+        },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(e2e:detection_latency_bucket[5m]))",
+            "legendFormat": "Detection p95"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "custom": {
+              "lineWidth": 2,
+              "hideFrom": {
+                "tooltip": false,
+                "viz": false,
+                "legend": false
+              }
+            },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": 0
+                },
+                {
+                  "color": "yellow",
+                  "value": 1.5
+                },
+                {
+                  "color": "red",
+                  "value": 2.0
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 8,
+        "title": "Test Results Summary (Pass/Fail)",
+        "type": "bargauge",
+        "gridPos": {
+          "h": 8,
+          "w": 8,
+          "x": 20,
+          "y": 24
+        },
+        "targets": [
+          {
+            "expr": "sum(increase(e2e:test_pass[5m]))",
+            "legendFormat": "Passed"
+          },
+          {
+            "expr": "sum(increase(e2e:test_fail[5m]))",
+            "legendFormat": "Failed"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "hideFrom": {
+                "tooltip": false,
+                "viz": false,
+                "legend": false
+              }
+            }
+          }
+        }
+      }
+    ],
+    "schemaVersion": 35,
+    "version": 1
+  }
+}

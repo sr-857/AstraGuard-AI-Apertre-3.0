@@ -75,7 +75,7 @@ done
 # Install dependencies if needed
 if [ ! -d "venv" ]; then
     echo -e "${YELLOW}📦 Installing dependencies...${NC}"
-    pip install -r requirements.txt > /dev/null 2>&1
+    pip install -r config/requirements.txt > /dev/null 2>&1
     pip install pytest pytest-cov pytest-mock pytest-timeout > /dev/null 2>&1
 fi
 

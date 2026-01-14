@@ -1,0 +1,29 @@
+name: "thermal_cascade_test"
+description: "Patient zero radiator failure - thermal cascade across formation contagion"
+duration_s: 1200
+
+satellites:
+  - id: "SAT1"
+    initial_position_km: [0, 0, 420]
+    neighbors: ["SAT2", "SAT3"]
+  
+  - id: "SAT2"
+    initial_position_km: [1.2, 0, 420]
+    neighbors: ["SAT1"]
+  
+  - id: "SAT3"
+    initial_position_km: [3.5, 0, 420]
+    neighbors: ["SAT1"]
+
+fault_sequence:
+  - type: thermal_runaway
+    satellite: SAT1
+    start_time_s: 60
+    severity: 0.7
+    duration_s: 600
+
+success_criteria:
+  max_nadir_error_deg: 8.0
+  min_battery_soc: 0.4
+  max_temperature_c: 65.0
+  max_packet_loss: 0.15

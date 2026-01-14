@@ -1,0 +1,52 @@
+# Docker Compose for E2E Contact Flow Tests
+# 
+# Provides ephemeral services for reproducible E2E testing:
+# - Redis for rate limiting integration tests
+# - Test environment isolation
+#
+# Usage:
+#   docker-compose -f docker/docker-compose.e2e.yml up -d
+#   pytest tests/e2e/contact_flow/ -v
+#   docker-compose -f docker/docker-compose.e2e.yml down
+
+version: '3.8'
+
+services:
+  # Redis for rate limiting tests
+  redis:
+    image: redis:7-alpine
+    container_name: astraguard-e2e-redis
+    ports:
+      - "6380:6379"  # Use different port to avoid conflicts
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - e2e-network
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly no --save ""
+    # No persistence for faster tests
+
+  # Mock notification server (optional - tests can use embedded server)
+  mock-notification:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.mock-notification
+    container_name: astraguard-e2e-notification
+    ports:
+      - "8889:8889"
+    networks:
+      - e2e-network
+    profiles:
+      - with-external-mock  # Only start when explicitly requested
+
+networks:
+  e2e-network:
+    driver: bridge
+
+volumes:
+  redis-data:
+    driver: local

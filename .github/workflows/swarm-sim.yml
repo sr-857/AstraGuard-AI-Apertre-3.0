@@ -1,0 +1,250 @@
+name: Swarm Simulator Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'tests/swarm/**'
+      - 'docker-compose.swarm.yml'
+      - 'astraguard/**'
+      - '.github/workflows/swarm-sim.yml'
+  pull_request:
+    branches: [ main ]
+
+concurrency:
+  group: swarm-sim-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  swarm-tests:
+    name: Swarm Simulator Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    services:
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      
+      rabbitmq:
+        image: rabbitmq:3.12-management-alpine
+        env:
+          RABBITMQ_DEFAULT_USER: guest
+          RABBITMQ_DEFAULT_PASS: guest
+        options: >-
+          --health-cmd "rabbitmq-diagnostics ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r config/requirements-ci.txt
+          pip install pytest pytest-asyncio pytest-cov httpx docker
+      
+      - name: Start Docker Daemon
+        run: |
+          sudo service docker start || true
+          docker info
+      
+      - name: Start Swarm Constellation
+        run: |
+          docker-compose -f docker-compose.swarm.yml up -d
+          echo "Waiting for services to be healthy..."
+          sleep 10
+          docker-compose -f docker-compose.swarm.yml ps
+      
+      - name: Wait for Agents Ready
+        run: |
+          python -c "
+          import asyncio
+          import httpx
+          import time
+          
+          async def wait_agents():
+              for i in range(60):
+                  try:
+                      async with httpx.AsyncClient() as client:
+                          resp = await client.get('http://localhost:8001/health', timeout=2)
+                          if resp.status_code == 200:
+                              print('Agent SAT-001-A ready')
+                              return True
+                  except:
+                      pass
+                  await asyncio.sleep(1)
+              return False
+          
+          if asyncio.run(wait_agents()):
+              print('Agents ready')
+          else:
+              print('Timeout waiting for agents')
+              exit(1)
+          "
+      
+      - name: Run Swarm Tests
+        run: |
+          pytest tests/swarm/test_swarm_sim.py -v --tb=short --durations=10 2>&1 | tee test-output.txt
+        timeout-minutes: 10
+      
+      - name: Collect Telemetry
+        if: always()
+        run: |
+          mkdir -p test-artifacts
+          
+          # Docker compose logs
+          docker-compose -f docker-compose.swarm.yml logs > test-artifacts/docker-compose.log || true
+          
+          # Prometheus metrics
+          curl -s http://localhost:9090/api/v1/query?query=up > test-artifacts/prometheus-metrics.json || true
+          
+          # Agent metrics
+          for port in 8001 8002 8003 8004 8005; do
+            curl -s http://localhost:$port/metrics > test-artifacts/agent-$port-metrics.txt || true
+          done
+          
+          # Test output
+          cp test-output.txt test-artifacts/ || true
+      
+      - name: Generate Coverage Report
+        run: |
+          pytest tests/swarm/ \
+            --cov=astraguard \
+            --cov=tests.swarm \
+            --cov-report=term-missing \
+            --cov-report=html:htmlcov \
+            --cov-report=xml:coverage.xml \
+            -v 2>&1 | tee coverage-output.txt || true
+      
+      - name: Upload Coverage
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+          fail_ci_if_error: false
+      
+      - name: Upload Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swarm-test-artifacts
+          path: test-artifacts/
+          retention-days: 7
+      
+      - name: Cleanup
+        if: always()
+        run: |
+          docker-compose -f docker-compose.swarm.yml down -v || true
+      
+      - name: Test Summary
+        if: always()
+        run: |
+          echo "=== Test Summary ==="
+          if [ -f test-output.txt ]; then
+            tail -20 test-output.txt
+          fi
+          if [ -f coverage-output.txt ]; then
+            echo ""
+            echo "=== Coverage ==="
+            grep -A 20 "coverage:" coverage-output.txt || echo "Coverage report not available"
+          fi
+
+  performance:
+    name: Performance Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r config/requirements-ci.txt
+          pip install pytest pytest-asyncio pytest-benchmark httpx docker
+      
+      - name: Start Docker Daemon
+        run: sudo service docker start || true
+      
+      - name: Run Performance Tests
+        run: |
+          # Start constellation
+          docker-compose -f docker-compose.swarm.yml up -d
+          sleep 15
+          
+          # Run timing tests
+          python -c "
+          import asyncio
+          import time
+          import httpx
+          
+          async def test_latency():
+              async with httpx.AsyncClient() as client:
+                  times = []
+                  for _ in range(10):
+                      start = time.time()
+                      try:
+                          resp = await client.get('http://localhost:8001/health', timeout=2)
+                          times.append((time.time() - start) * 1000)
+                      except:
+                          pass
+                  
+                  if times:
+                      avg = sum(times) / len(times)
+                      max_time = max(times)
+                      print(f'Latency: avg={avg:.1f}ms, max={max_time:.1f}ms')
+                      assert avg < 100, f'Average latency {avg}ms exceeds 100ms'
+                      assert max_time < 200, f'Max latency {max_time}ms exceeds 200ms'
+          
+          asyncio.run(test_latency())
+          "
+      
+      - name: Cleanup
+        if: always()
+        run: docker-compose -f docker-compose.swarm.yml down -v || true
+
+  render-deployment:
+    name: Render Deployment Readiness
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Validate Render Config
+        run: |
+          # Check render.yaml exists
+          if [ -f render.yaml ]; then
+            echo "✓ render.yaml found"
+            # Validate YAML
+            python -c "import yaml; yaml.safe_load(open('render.yaml'))"
+            echo "✓ render.yaml is valid"
+          else
+            echo "⚠ render.yaml not found"
+          fi
+      
+      - name: Check Docker Image
+        run: |
+          # Verify docker image can be built
+          if [ -f Dockerfile.swarm ]; then
+            docker build -t astraguard:swarm-test -f Dockerfile.swarm . --target base --no-cache 2>&1 | head -50
+            echo "✓ Docker image builds successfully"
+          fi

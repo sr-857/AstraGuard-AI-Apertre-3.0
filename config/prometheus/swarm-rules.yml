@@ -1,0 +1,289 @@
+# Prometheus Recording Rules for Swarm Metrics
+# Issue #414: Pre-computed metrics for dashboard/alerting
+
+groups:
+  # Agent Health Metrics
+  - name: agent_health
+    interval: 10s
+    rules:
+      # Current agent health score (0-1)
+      - record: agent:health_score
+        expr: health_score
+
+      # Health status grouped by agent
+      - record: agent:health_status
+        expr: label_replace(health_score, "status", "healthy", "health_score", "[0.8-1.0]")
+
+      # Agents that are critically unhealthy
+      - record: agent:critical
+        expr: health_score < 0.3
+
+      # Rolling 5-minute health average
+      - record: agent:health_5m_avg
+        expr: avg_over_time(health_score[5m])
+
+  # Consensus Metrics
+  - name: consensus
+    interval: 10s
+    rules:
+      # Decision latency percentiles
+      - record: consensus:decision_latency_p50
+        expr: histogram_quantile(0.50, decision_latency_ms)
+
+      - record: consensus:decision_latency_p95
+        expr: histogram_quantile(0.95, decision_latency_ms)
+
+      - record: consensus:decision_latency_p99
+        expr: histogram_quantile(0.99, decision_latency_ms)
+
+      # Consensus approval rate (approved / total)
+      - record: consensus:approval_rate
+        expr: rate(consensus_approved[5m]) / (rate(consensus_approved[5m]) + rate(consensus_rejected[5m]))
+
+      # Decisions per minute
+      - record: consensus:decisions_per_minute
+        expr: rate(consensus_approved[1m]) * 60
+
+      # Average consensus time
+      - record: consensus:avg_time_ms
+        expr: avg(decision_latency_ms)
+
+  # Leadership Metrics
+  - name: leadership
+    interval: 10s
+    rules:
+      # Count of current leaders (should be 1)
+      - record: swarm:current_leaders
+        expr: count(is_leader)
+
+      # Leadership stability (5m without change)
+      - record: swarm:leader_stable_5m
+        expr: count(is_leader) == bool 1
+
+      # Leader uptime
+      - record: swarm:leader_uptime_hours
+        expr: leader_uptime_seconds / 3600
+
+      # Leader election rate (per hour)
+      - record: swarm:leader_elections_per_hour
+        expr: rate(leader_elections_total[1h]) * 3600
+
+  # Quorum Metrics
+  - name: quorum
+    interval: 10s
+    rules:
+      # Alive agents (sum across constellation)
+      - record: swarm:alive_agents
+        expr: count(health_score > 0.3)
+
+      # Dead agents
+      - record: swarm:dead_agents
+        expr: count(health_score <= 0.3)
+
+      # Quorum available (alive >= 3)
+      - record: swarm:quorum_available
+        expr: swarm:alive_agents >= 3
+
+      # Quorum status: healthy (5), degraded (3-4), critical (<3)
+      - record: swarm:quorum_status
+        expr: 
+          label_replace(
+            label_replace(
+              swarm:alive_agents,
+              "status", "healthy", "alive_agents", "[45]"
+            ),
+            "status", "degraded", "alive_agents", "[34]"
+          )
+
+  # Network/ISL Metrics
+  - name: network
+    interval: 10s
+    rules:
+      # Average latency across all links
+      - record: network:isl_latency_avg_ms
+        expr: avg(network_latency_ms)
+
+      # Latency percentiles
+      - record: network:isl_latency_p95_ms
+        expr: histogram_quantile(0.95, network_latency_ms)
+
+      # Packet loss rate (percent)
+      - record: network:packet_loss_percent
+        expr: avg(network_packet_loss_percent)
+
+      # Link health score (inverse of latency/loss)
+      - record: network:link_health
+        expr: max(1 - (network_latency_ms / 200) - (network_packet_loss_percent / 100), 0)
+
+  # Memory Metrics
+  - name: memory
+    interval: 10s
+    rules:
+      # Memory pool usage across constellation
+      - record: swarm:memory_pool_usage_avg_percent
+        expr: avg(memory_pool_usage_percent)
+
+      # Max memory pool usage (any agent)
+      - record: swarm:memory_pool_usage_max_percent
+        expr: max(memory_pool_usage_percent)
+
+      # Agents with critical memory (>90%)
+      - record: swarm:memory_critical_agents
+        expr: count(memory_pool_usage_percent > 90)
+
+      # Memory pressure (0-1, for backpressure)
+      - record: swarm:memory_pressure
+        expr: swarm:memory_pool_usage_avg_percent / 100
+
+  # Anomaly Metrics
+  - name: anomaly
+    interval: 10s
+    rules:
+      # Agents with detected anomalies
+      - record: swarm:anomalous_agents
+        expr: count(anomaly_detected > 0)
+
+      # Anomaly detection rate (per minute)
+      - record: swarm:anomalies_per_minute
+        expr: rate(anomaly_detected[1m]) * 60
+
+      # Agent threat level (0-1)
+      - record: agent:threat_level
+        expr: threat_level
+
+      # Critical threat agents
+      - record: swarm:critical_threats
+        expr: count(threat_level > 0.7)
+
+  # Failure Recovery Metrics
+  - name: recovery
+    interval: 10s
+    rules:
+      # Average recovery time (seconds)
+      - record: swarm:recovery_time_avg_s
+        expr: avg(recovery_time_seconds)
+
+      # Recovery success rate (recovered / triggered)
+      - record: swarm:recovery_success_rate
+        expr: rate(recovery_successful[5m]) / rate(recovery_triggered[5m])
+
+      # Cascading failures detected
+      - record: swarm:cascading_failures
+        expr: rate(cascading_failure_detected[5m]) * 60
+
+# Alert Rules
+alert:
+  - name: swarm_alerts
+    interval: 10s
+    rules:
+      # Critical: No leader elected
+      - alert: NoLeaderElected
+        expr: swarm:current_leaders == 0
+        for: 30s
+        annotations:
+          summary: "No leader elected in constellation"
+          description: "No leader has been elected. Consensus may be blocked."
+
+      # Critical: Quorum lost
+      - alert: QuorumLost
+        expr: swarm:quorum_available == 0
+        for: 10s
+        annotations:
+          summary: "Quorum lost (< 3/5 agents healthy)"
+          description: "Constellation has lost quorum. Consensus operations blocked."
+
+      # Warning: Degraded quorum (3-4 agents)
+      - alert: DegradedQuorum
+        expr: (swarm:alive_agents >= 3) and (swarm:alive_agents < 5)
+        for: 1m
+        annotations:
+          summary: "Degraded quorum ({{ $value }}/5 agents alive)"
+          description: "Constellation operating in degraded mode with {{ $value }} agents."
+
+      # Critical: Multiple anomalies
+      - alert: CriticalThreat
+        expr: swarm:critical_threats > 0
+        for: 30s
+        annotations:
+          summary: "{{ $value }} agent(s) with critical threat level"
+          description: "One or more agents detected as critical threat."
+
+      # Warning: High memory pressure
+      - alert: HighMemoryPressure
+        expr: swarm:memory_pool_usage_avg_percent > 80
+        for: 5m
+        annotations:
+          summary: "High memory pressure ({{ $value | humanize }}%)"
+          description: "Constellation memory pool usage exceeds 80%."
+
+      # Critical: Memory critical
+      - alert: MemoryCritical
+        expr: swarm:memory_pool_usage_avg_percent > 95
+        for: 1m
+        annotations:
+          summary: "Memory critical ({{ $value | humanize }}%)"
+          description: "Constellation approaching memory exhaustion."
+
+      # Warning: High latency
+      - alert: HighLatency
+        expr: network:isl_latency_p95_ms > 500
+        for: 5m
+        annotations:
+          summary: "High ISL latency (p95: {{ $value | humanize }}ms)"
+          description: "Satellite links experiencing high latency (>500ms p95)."
+
+      # Warning: High packet loss
+      - alert: HighPacketLoss
+        expr: network:packet_loss_percent > 10
+        for: 5m
+        annotations:
+          summary: "High packet loss ({{ $value | humanize }}%)"
+          description: "ISL experiencing high packet loss (>10%)."
+
+      # Warning: Slow consensus
+      - alert: SlowConsensus
+        expr: consensus:decision_latency_p95_ms > 200
+        for: 5m
+        annotations:
+          summary: "Slow consensus decisions (p95: {{ $value | humanize }}ms)"
+          description: "Consensus decision latency exceeds 200ms p95."
+
+      # Warning: Low approval rate
+      - alert: LowApprovalRate
+        expr: consensus:approval_rate < 0.8
+        for: 5m
+        annotations:
+          summary: "Low consensus approval rate ({{ $value | humanizePercentage }})"
+          description: "Less than 80% of decisions being approved."
+
+      # Critical: Frequent leader elections
+      - alert: FrequentLeaderElections
+        expr: swarm:leader_elections_per_hour > 6
+        for: 10m
+        annotations:
+          summary: "Frequent leader elections ({{ $value | humanize }}/hour)"
+          description: "More than 6 leader elections per hour detected."
+
+      # Warning: Cascading failures
+      - alert: CascadingFailures
+        expr: swarm:cascading_failures > 0
+        for: 5m
+        annotations:
+          summary: "Cascading failures detected ({{ $value | humanize }}/min)"
+          description: "Multiple correlated agent failures detected."
+
+      # Warning: Recovery rate low
+      - alert: PoorRecovery
+        expr: swarm:recovery_success_rate < 0.9
+        for: 10m
+        annotations:
+          summary: "Low recovery success rate ({{ $value | humanizePercentage }})"
+          description: "Less than 90% of failures successfully recovered."
+
+      # Info: Agent health degraded
+      - alert: AgentHealthDegraded
+        expr: count(agent:health_5m_avg < 0.7) > 0
+        for: 2m
+        annotations:
+          summary: "{{ $value }} agent(s) with degraded health"
+          description: "One or more agents showing 5m average health < 0.7."

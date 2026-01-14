@@ -1,11 +1,23 @@
 """
 Redis client for distributed resilience coordination.
 
+COMPATIBILITY SHIM: This module is maintained for backward compatibility
+during incremental migration to the new storage abstraction layer.
+New code should import from backend.storage instead.
+
 Supports:
 - Leader election with TTL-based expiry
 - State publishing to cluster
 - Vote collection for consensus
 - Cluster state aggregation
+
+Migration path:
+    # Old (still works):
+    from backend.redis_client import RedisClient
+    
+    # New (preferred):
+    from backend.storage import Storage, RedisAdapter
+    storage: Storage = RedisAdapter.from_config(config)
 """
 
 import redis.asyncio as aioredis
@@ -18,7 +30,13 @@ from datetime import datetime
 from core.timeout_handler import get_timeout_config
 import asyncio
 
+# Re-export storage components for compatibility
+from backend.storage import Storage, RedisAdapter, MemoryStorage
+
 logger = logging.getLogger(__name__)
+
+# Compatibility exports
+__all__ = ["RedisClient", "Storage", "RedisAdapter", "MemoryStorage"]
 
 
 class RedisClient:

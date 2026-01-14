@@ -5,6 +5,7 @@ from typing import Dict, List, Optional, Tuple
 
 from models.feedback import FeedbackEvent, FeedbackLabel
 from core.input_validation import PolicyDecision, ValidationError
+from core.timeout_handler import with_timeout
 from .error_handling import (
     handle_memory_operation_error,
     handle_policy_update_error,
@@ -23,6 +24,7 @@ class FeedbackPolicyUpdater:
         """Initialize with adaptive memory backend."""
         self.memory = memory
 
+    @with_timeout(seconds=30.0, operation_name="policy_update_from_feedback")
     def update_from_feedback(self) -> Dict[str, int]:
         """Main entrypoint: Query pinned feedback → update policies."""
         if not self.memory:
@@ -160,6 +162,7 @@ class FeedbackPolicyUpdater:
             )
 
 
+@with_timeout(seconds=35.0, operation_name="policy_processing")
 def process_policy_updates(memory: Optional[object]) -> Dict[str, int]:
     """Public API - call after #53 pinning."""
     updater = FeedbackPolicyUpdater(memory)

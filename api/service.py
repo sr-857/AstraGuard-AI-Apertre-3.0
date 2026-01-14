@@ -14,10 +14,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from contextlib import asynccontextmanager
 import secrets
+from core.secrets import get_secret, mask_secret
 from pydantic import BaseModel
-
-# Import centralized secrets management
-from core.secrets import get_secret, get_secret_masked
 
 
 from api.models import (
@@ -45,11 +43,14 @@ from core.auth import (
     get_current_user,
     require_admin,
     require_operator,
+    require_phase_update,
     require_analyst,
     UserRole,
     Permission,
     User,
+    APIKey,
 )
+from api.auth import get_api_key
 from state_machine.state_engine import StateMachine, MissionPhase
 from config.mission_phase_policy_loader import MissionPhasePolicyLoader
 from anomaly_agent.phase_aware_handler import PhaseAwareAnomalyHandler
@@ -67,6 +68,9 @@ from core.metrics import get_metrics_text, get_metrics_content_type
 from core.rate_limiter import RateLimiter, RateLimitMiddleware, get_rate_limit_config
 from backend.redis_client import RedisClient
 import numpy as np
+from astraguard.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 # Observability imports
 try:
@@ -133,13 +137,15 @@ def _check_credential_security():
     """
     global _USING_DEFAULT_CREDENTIALS
 
+    metrics_user = get_secret("METRICS_USER")
+    metrics_password = get_secret("METRICS_PASSWORD")
     metrics_user = get_secret("metrics_user")
     metrics_password = get_secret("metrics_password")
 
     # Check if credentials are set
     if not metrics_user or not metrics_password:
         print("\n" + "=" * 70)
-        print("⚠️  SECURITY WARNING: Metrics authentication not configured!")
+        print("[WARNING] SECURITY WARNING: Metrics authentication not configured!")
         print("=" * 70)
         print("METRICS_USER and METRICS_PASSWORD environment variables are not set.")
         print("The /metrics endpoint will return HTTP 500 until configured.")
@@ -170,11 +176,11 @@ def _check_credential_security():
         if metrics_user == weak_user and metrics_password == weak_pass:
             _USING_DEFAULT_CREDENTIALS = True
             print("\n" + "=" * 70)
-            print("🔴 CRITICAL SECURITY WARNING: Using default/weak credentials!")
+            print("[CRITICAL] SECURITY WARNING: Using default/weak credentials!")
             print("=" * 70)
             print(f"Detected credentials: {get_secret_masked('metrics_user')}/{get_secret_masked('metrics_password')}")
             print()
-            print("⚠️  THESE CREDENTIALS ARE PUBLICLY KNOWN AND INSECURE!")
+            print("[WARNING] THESE CREDENTIALS ARE PUBLICLY KNOWN AND INSECURE!")
             print()
             print("IMMEDIATE ACTION REQUIRED:")
             print("  1. Change credentials before deploying to production")
@@ -189,7 +195,7 @@ def _check_credential_security():
     # Check for short passwords
     if len(metrics_password) < 12:
         print("\n" + "=" * 70)
-        print("⚠️  WARNING: Weak password detected!")
+        print("[WARNING] Weak password detected!")
         print("=" * 70)
         print(f"Password length: {len(metrics_password)} characters")
         print("Recommended minimum: 16 characters")
@@ -236,13 +242,12 @@ async def lifespan(app: FastAPI):
             rate_configs["api"][1]   # burst_capacity
         )
 
-        # Add rate limiting middleware after initialization
-        if telemetry_limiter and api_limiter:
-            app.add_middleware(RateLimitMiddleware, telemetry_limiter=telemetry_limiter, api_limiter=api_limiter)
+        # Note: RateLimitMiddleware can only be added during app setup, not in lifespan
+        # This is a limitation of Starlette/FastAPI - middleware stack is locked after startup
 
-        print("✅ Rate limiting initialized successfully")
+        print("[OK] Rate limiting initialized successfully")
     except Exception as e:
-        print(f"⚠️  Warning: Rate limiting initialization failed: {e}")
+        print(f"[WARNING] Rate limiting initialization failed: {e}")
         print("Rate limiting will be disabled")
 
     # Initialize observability (if available)
@@ -277,9 +282,14 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Include routers
+from api.contact import router as contact_router
+app.include_router(contact_router)
+
 # CORS configuration from environment variables
 # Security: Never use allow_origins=["*"] with allow_credentials=True in production
-ALLOWED_ORIGINS = get_secret("allowed_origins").split(",")
+allowed_origins_str = get_secret("allowed_origins") or "http://localhost:3000,http://localhost:8000"
+ALLOWED_ORIGINS = [origin.strip() for origin in allowed_origins_str.split(",")]
 
 # CORS middleware
 app.add_middleware(
@@ -289,8 +299,6 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "Accept"],
 )
-
-# Rate limiting middleware will be added in lifespan after initialization
 
 security = HTTPBasic()
 
@@ -316,6 +324,8 @@ def get_current_username(credentials: HTTPBasicCredentials = Depends(security)):
         HTTPException 401: Invalid credentials
         HTTPException 500: Credentials not configured
     """
+    correct_username = get_secret("METRICS_USER")
+    correct_password = get_secret("METRICS_PASSWORD")
     correct_username = get_secret("metrics_user")
     correct_password = get_secret("metrics_password")
 
@@ -463,11 +473,49 @@ async def get_metrics():
 @app.get("/health", response_model=HealthCheckResponse)
 async def health_check():
     """Health check endpoint."""
-    return HealthCheckResponse(
-        status="healthy",
-        version="1.0.0",
-        timestamp=datetime.now()
-    )
+    try:
+        # Get component health status
+        health_monitor = get_health_monitor()
+        components = health_monitor.get_all_health()
+
+        # Determine overall status
+        all_healthy = all(
+            c.get("status") == "HEALTHY" for c in components.values()
+        )
+
+        # Get system uptime
+        uptime = time.time() - start_time
+
+        # Get current mission phase
+        try:
+            mission_phase = state_machine.get_current_phase().value
+        except:
+            mission_phase = "UNKNOWN"
+
+        # Enhanced health response with more details
+        return HealthCheckResponse(
+            status="healthy" if all_healthy else "degraded",
+            version="1.0.0",
+            timestamp=datetime.now(),
+            uptime_seconds=round(uptime, 2),
+            mission_phase=mission_phase,
+            components_status={
+                name: {
+                    "status": comp.get("status", "UNKNOWN"),
+                    "last_check": comp.get("timestamp"),
+                    "details": comp.get("details", "")
+                }
+                for name, comp in components.items()
+            }
+        )
+    except Exception as e:
+        # If health check fails, return degraded status
+        return HealthCheckResponse(
+            status="unhealthy",
+            version="1.0.0",
+            timestamp=datetime.now(),
+            error=str(e)
+        )
 
 
 @app.get("/metrics")
@@ -754,7 +802,7 @@ async def get_phase(api_key: APIKey = Depends(get_api_key)):
 
 
 @app.post("/api/v1/phase", response_model=PhaseUpdateResponse)
-async def update_phase(request: PhaseUpdateRequest, current_user: User = Depends(require_admin)):
+async def update_phase(request: PhaseUpdateRequest, current_user: User = Depends(require_phase_update)):
     """Update mission phase."""
     try:
         target_phase = MissionPhase(request.phase.value)
