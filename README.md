@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/logo.png" width="400" alt="AstraGuard AI Logo">
+  <img src="ui/assets/logo.png" width="400" alt="AstraGuard AI Logo">
 
   # AstraGuard AI
   
@@ -22,8 +22,8 @@
   <p align="center">
     <a href="docs/TECHNICAL.md"><strong>📚 Documentation</strong></a> •
     <a href="docs/TECHNICAL_REPORT.md"><strong>📄 Technical Report</strong></a> •
-    <a href="research/"><strong>🧪 Research Lab</strong></a> •
-    <a href="CHANGES.md"><strong>📝 Changelog</strong></a>
+    <a href="src/research/"><strong>🧪 Research Lab</strong></a> •
+    <a href="docs/changelogs/CHANGES.md"><strong>📝 Changelog</strong></a>
   </p>
 
   <p align="center">
@@ -1862,96 +1862,35 @@ Try the interactive API rate limiting demo in the frontend to see the system in 
 
 ---
 
-## �📂 Project Structure
+## 📂 Project Structure
 
 ```
 AstraGuard-AI/
-│
-├── .github/                          # GitHub configuration
-│   ├── ISSUE_TEMPLATE/               # Issue templates
-│   │   ├── bug_report.yml           # Bug report template
-│   │   └── feature_request.yml      # Feature request template
-│   └── workflows/                    # GitHub Actions workflows
-│       ├── ci.yml                   # Continuous integration
-│       └── deploy.yml               # Deployment pipeline
-│
-├── dashboard/                        # React frontend application
-│   ├── public/                      # Static assets
-│   ├── src/                         # Source code
-│   │   ├── components/              # React components
-│   │   │   ├── Dashboard.jsx       # Main dashboard
-│   │   │   ├── TelemetryChart.jsx  # Real-time charts
-│   │   │   └── HealthMonitor.jsx   # System health display
-│   │   ├── hooks/                   # Custom React hooks
-│   │   ├── utils/                   # Utility functions
-│   │   └── App.jsx                  # Root component
-│   ├── package.json                 # Node dependencies
-│   └── vite.config.js              # Vite configuration
-│
-├── research/                         # 🧪 Research Lab & Documentation
-│   ├── docs/                        # Technical specifications
-│   │   ├── architecture.md         # System architecture
-│   │   ├── ai_integration.md       # AI/ML design docs
-│   │   └── security_model.md       # Security model
-│   ├── reports/                     # Lab reports and findings
-│   │   ├── vulnerability_analysis.md
-│   │   └── performance_benchmarks.md
-│   └── notebooks/                   # Jupyter notebooks for experiments
-│       └── anomaly_detection_experiments.ipynb
-│
-├── src/                             # Core source code
-│   ├── security_engine/             # Python-based security tools
-│   │   ├── __init__.py
-│   │   ├── scanner.py              # Network scanning
-│   │   ├── payload_generator.py   # Smart payload creation
-│   │   ├── proxy_handler.py       # Traffic interception
-│   │   └── vulnerability_db.py    # CVE database interface
-│   │
-│   ├── ai_agent/                    # LLM integration logic
-│   │   ├── __init__.py
-│   │   ├── threat_analyzer.py     # Attack surface analysis
-│   │   ├── anomaly_detector.py    # AI-powered anomaly detection
-│   │   ├── reasoning_engine.py    # Decision-making logic
-│   │   └── memory_store.py        # Adaptive memory management
-│   │
-│   ├── api/                         # FastAPI server
-│   │   ├── __init__.py
-│   │   ├── main.py                 # API entry point
-│   │   ├── routes/                 # API endpoints
-│   │   │   ├── telemetry.py       # Telemetry ingestion
-│   │   │   ├── phase.py           # Mission phase management
-│   │   │   └── history.py         # Historical data queries
-│   │   ├── models.py               # Pydantic data models
-│   │   └── dependencies.py         # Dependency injection
-│   │
-│   ├── core/                        # Core system components
-│   │   ├── __init__.py
-│   │   ├── error_handler.py       # Centralized error handling
-│   │   ├── health_monitor.py      # System health tracking
-│   │   ├── policy_engine.py       # Mission phase policies
-│   │   └── config.py               # Configuration management
-│   │
-│   └── utils/                       # Shared utilities
-│       ├── __init__.py
-│       ├── logger.py               # Logging configuration
-│       └── validators.py           # Input validation
-│
-├── tests/                           # Automated test suite
-│   ├── unit/                        # Unit tests
-│   │   ├── test_scanner.py
-│   │   ├── test_anomaly_detector.py
-│   │   └── test_policy_engine.py
-│   ├── integration/                 # Integration tests
-│   │   ├── test_api_endpoints.py
-│   │   └── test_end_to_end.py
-│   └── fixtures/                    # Test data and mocks
-│       └── sample_telemetry.json
-│
-├── examples/                        # Usage examples
-│   ├── api_usage_examples.py       # API integration examples
-│   ├── security_scan_example.py    # Security engine usage
-│   └── ai_analysis_example.py      # AI agent usage
-│
+├── src/                # Core application source code
+│   ├── security_engine/# Threat detection & payload generation
+│   ├── ai_agent/       # LLM integration & reasoning
+│   ├── api/            # FastAPI backend services
+│   ├── core/           # System policies & error handling
+│   └── research/       # Labs & Jupyter experiments
+├── ui/                 # Unified user interface components
+│   ├── dashboard/      # Streamlit/React dynamic dashboard
+│   ├── frontend/       # Documentation & landing pages
+│   └── assets/         # Unified static media (logos, images)
+├── infra/              # Orchestration & Deployment
+│   ├── docker/         # Container definitions
+│   ├── k8s/            # Kubernetes manifests
+│   └── monitoring/     # Prometheus/Grafana configs
+├── docs/               # Technical documentation & guides
+│   ├── guides/         # Developer & Startup documentation
+│   ├── api/            # API specifications
+│   └── planning/       # Roadmap & TODOs
+├── scripts/            # Automation & Maintenance
+│   └── entrypoints/    # Main application runners
+└── tests/              # Validation suites
+    ├── unit/           # Module-level testing
+    └── manual/         # Standalone verification scripts
+```
+
 ├── docs/                            # Documentation
 │   ├── GETTING_STARTED.md          # Quick start guide
 │   ├── TECHNICAL.md                # Technical documentation
