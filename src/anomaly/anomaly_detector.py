@@ -1,3 +1,22 @@
+"""
+Anomaly Detector Module
+=======================
+
+This module is responsible for detecting anomalies in telemetry data using a hybrid approach:
+1.  **Model-Based Detection**: Uses a pre-trained machine learning model (pickle format) for high-accuracy detection.
+2.  **Heuristic Fallback**: Uses rule-based logic if the model fails to load, crashes, or if system resources are critical.
+
+Key Features:
+-   **Resilience**: Implements Circuit Breakers, Retries, and Fallback mechanisms.
+-   **Observability**: Integrated with health monitoring, metrics (Prometheus), and structured logging.
+-   **Safety**: Validates input data schema and monitors execution time (timeouts).
+
+Usage:
+    >>> from src.anomaly import anomaly_detector
+    >>> data = {"voltage": 8.5, "temperature": 30.0, "gyro": 0.05}
+    >>> is_anomaly, score = await anomaly_detector.detect_anomaly(data)
+"""
+
 import random
 import os
 import pickle
@@ -52,15 +71,19 @@ _model_loader_cb = register_circuit_breaker(
 @async_timeout(seconds=get_timeout_config().model_load_timeout)
 async def _load_model_impl() -> bool:
     """
-    Internal implementation of model loading.
-    Wrapped by retry logic first, then circuit breaker and timeout.
+    Internal implementation of model loading from disk.
+
+    This function attempts to load the pickle model file. It updates the
+    component health status based on the success or failure of the operation.
+    It is wrapped by retry logic and circuit breakers in higher-level callers.
 
     Returns:
-        True if model loaded successfully, False otherwise
+        bool: True if the model was loaded successfully, False otherwise
+            (e.g., if dependencies like numpy are missing).
 
     Raises:
-        ModelLoadError: If model loading fails
-        TimeoutError: If loading exceeds timeout
+        ModelLoadError: If the model file does not exist at `MODEL_PATH`.
+        Exception: Propagates other exceptions (e.g., permission errors) to trigger retries.
     """
     global _MODEL, _MODEL_LOADED, _USING_HEURISTIC_MODE
 
@@ -105,7 +128,15 @@ async def _load_model_impl() -> bool:
 
 
 async def _load_model_fallback() -> bool:
-    """Fallback when circuit breaker is open - use heuristic mode"""
+    """
+    Fallback callback executed when the model loader circuit breaker is open.
+
+    Switches the module to heuristic mode to prevent cascading failures during
+    persistent model loading issues.
+
+    Returns:
+        bool: Always returns False to indicate model loading failed (gracefully).
+    """
     global _USING_HEURISTIC_MODE
     logger.warning("Model loader circuit breaker open - switching to heuristic mode")
     _USING_HEURISTIC_MODE = True
@@ -124,23 +155,30 @@ async def _load_model_fallback() -> bool:
 )
 async def _load_model_with_retry() -> bool:
     """
-    Model loading with retry wrapper.
-    Retries on transient failures before circuit breaker engagement.
+    Wrapper for model loading that applies retry logic.
+
+    This function is decorated with @Retry to handle transient failures
+    (like temporary file access locks or IO hiccups) before the circuit
+    breaker counts them as permanent failures.
+
+    Returns:
+        bool: True if model loaded, False otherwise.
     """
     return await _load_model_impl()
 
 
 async def load_model() -> bool:
     """
-    Load the anomaly detection model with retry + circuit breaker protection.
+    Orchestrates the model loading process with full resilience patterns.
 
-    Pattern: Retry (transient failures) → CircuitBreaker (cascading failures)
+    Pattern: Retry (transient) -> CircuitBreaker (cascading) -> Fallback (heuristic).
 
-    The retry decorator handles transient failures (timeouts, connection resets).
-    The circuit breaker handles persistent failures (protection from cascading).
+    1.  Attempts to load the model using `_load_model_with_retry`.
+    2.  Protects execution using the `anomaly_model_loader` circuit breaker.
+    3.  Catches `CircuitOpenError` or other exceptions and activates heuristic mode.
 
     Returns:
-        True if model loaded successfully, False otherwise (heuristic mode)
+        bool: True if model loaded successfully, False if using heuristic mode.
     """
     global _MODEL, _MODEL_LOADED, _USING_HEURISTIC_MODE
 
@@ -166,14 +204,19 @@ async def load_model() -> bool:
 
 def _detect_anomaly_heuristic(data: Dict) -> Tuple[bool, float]:
     """
-    Heuristic fallback anomaly detection.
-    Conservative approach that prefers false positives to false negatives.
+    Performs anomaly detection using rule-based heuristics.
+
+    This is a fallback mechanism used when the ML model is unavailable or
+    system resources are critical. It uses conservative thresholds to
+    prefer false positives over false negatives (safety first).
 
     Args:
-        data: Telemetry data dictionary
+        data (Dict): The telemetry data containing 'voltage', 'temperature', and 'gyro'.
 
     Returns:
-        Tuple of (is_anomalous, anomaly_score)
+        Tuple[bool, float]:
+            - bool: True if an anomaly is detected, False otherwise.
+            - float: An anomaly confidence score between 0.0 and 1.0.
     """
     # Handle non-dict input gracefully
     if not isinstance(data, dict):
@@ -210,20 +253,26 @@ def _detect_anomaly_heuristic(data: Dict) -> Tuple[bool, float]:
 @async_timeout(seconds=10.0, operation_name="anomaly_detection")
 async def detect_anomaly(data: Dict) -> Tuple[bool, float]:
     """
-    Detect anomaly in telemetry data with resource-aware execution.
+    Detects anomalies in telemetry data using the best available method.
 
-    Falls back to heuristic detection if:
-    - Model is unavailable or circuit breaker is open
-    - Resources are critically low
-    - Operation times out
+    This function acts as the main entry point. It prioritizes the ML model
+    but automatically downgrades to heuristic detection if:
+    1.  The model is not loaded or circuit breaker is open.
+    2.  System resources (CPU/Memory) are critical.
+    3.  Input validation fails.
+    4.  An unexpected error occurs during prediction.
 
     Args:
-        data: Telemetry data dictionary
+        data (Dict): A dictionary containing telemetry fields (voltage, temperature, gyro).
 
     Returns:
-        Tuple of (is_anomalous, anomaly_score) where:
-        - is_anomalous: bool indicating if anomaly detected
-        - anomaly_score: float between 0 and 1
+        Tuple[bool, float]:
+            - bool: True if the data is anomalous, False otherwise.
+            - float: A score (0.0 to 1.0) indicating the severity/confidence.
+
+    Raises:
+        AnomalyEngineError: (Internal) Raised if validation fails, but caught internally
+            to trigger heuristic fallback. The function itself handles all errors gracefully.
     """
     global _USING_HEURISTIC_MODE
     health_monitor = get_health_monitor()
