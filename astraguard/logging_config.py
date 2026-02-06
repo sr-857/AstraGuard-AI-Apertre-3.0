@@ -8,7 +8,7 @@ import json
 import sys
 import os
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Type
 import structlog
 from pythonjsonlogger import jsonlogger
 from core.secrets import get_secret
@@ -20,8 +20,8 @@ from core.secrets import get_secret
 def setup_json_logging(
     log_level: str = "INFO",
     service_name: str = "astra-guard",
-    environment: str = get_secret("environment", "development")
-):
+    environment: Optional[str] = get_secret("environment", "development")
+) -> None:
     """
     Setup JSON structured logging for production environments
     Compatible with Azure Monitor, ELK Stack, Splunk, etc.
@@ -95,11 +95,11 @@ class LogContext:
         self.logger = logger
         self.context = context
     
-    def __enter__(self):
+    def __enter__(self) -> structlog.BoundLogger:
         self.logger = self.logger.bind(**self.context)
         return self.logger
     
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException], exc_tb: Optional[Any]) -> None:
         if exc_type is not None:
             self.logger.error(
                 "context_error",
@@ -114,8 +114,8 @@ def log_request(
     endpoint: str,
     status: int,
     duration_ms: float,
-    **extra
-):
+    **extra: Any
+) -> None:
     """
     Log HTTP request with structured data
     
@@ -141,8 +141,8 @@ def log_error(
     logger: structlog.BoundLogger,
     error: Exception,
     context: str,
-    **extra
-):
+    **extra: Any
+) -> None:
     """
     Log error with full context and stack trace
     
@@ -166,8 +166,8 @@ def log_detection(
     severity: str,
     detected_type: str,
     confidence: float,
-    **extra
-):
+    **extra: Any
+) -> None:
     """
     Log anomaly/detection event
     
@@ -193,8 +193,8 @@ def log_circuit_breaker_event(
     breaker_name: str,
     state: str,
     reason: Optional[str] = None,
-    **extra
-):
+    **extra: Any
+) -> None:
     """
     Log circuit breaker state changes
     
@@ -222,8 +222,8 @@ def log_retry_event(
     attempt: int,
     status: str,
     delay_ms: Optional[float] = None,
-    **extra
-):
+    **extra: Any
+) -> None:
     """
     Log retry attempt
     
@@ -252,8 +252,8 @@ def log_recovery_action(
     status: str,
     component: str,
     duration_ms: Optional[float] = None,
-    **extra
-):
+    **extra: Any
+) -> None:
     """
     Log recovery/remediation action
     
@@ -281,8 +281,8 @@ def log_performance_metric(
     value: float,
     unit: str = "ms",
     threshold: Optional[float] = None,
-    **extra
-):
+    **extra: Any
+) -> None:
     """
     Log performance metric
     
@@ -316,22 +316,22 @@ def log_performance_metric(
 # FILTERING AND UTILITIES
 # ============================================================================
 
-def set_log_level(level: str):
+def set_log_level(level: str) -> None:
     """Change logging level at runtime"""
     logging.getLogger().setLevel(getattr(logging, level))
 
 
-def clear_context():
+def clear_context() -> None:
     """Clear all context variables"""
     structlog.contextvars.clear_contextvars()
 
 
-def bind_context(**context):
+def bind_context(**context) -> None:
     """Add context to all future log entries"""
     structlog.contextvars.bind_contextvars(**context)
 
 
-def unbind_context(*keys):
+def unbind_context(*keys) -> None:
     """Remove context variables"""
     structlog.contextvars.unbind_contextvars(*keys)
 
@@ -341,5 +341,5 @@ def unbind_context(*keys):
 # ============================================================================
 
 # Initialize on import
-if get_secret("enable_json_logging", False):
+if get_secret("enable_json_logging", "false") == "true":
     setup_json_logging()
