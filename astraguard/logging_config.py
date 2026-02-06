@@ -8,7 +8,7 @@ import json
 import sys
 import os
 from datetime import datetime
-from typing import Any, Dict, Optional, Type
+from typing import Any, Optional, Type
 import structlog
 from pythonjsonlogger import jsonlogger
 from core.secrets import get_secret
@@ -20,7 +20,7 @@ from core.secrets import get_secret
 def setup_json_logging(
     log_level: str = "INFO",
     service_name: str = "astra-guard",
-    environment: Optional[str] = get_secret("environment", "development")
+    environment: str = get_secret("environment", "development")
 ) -> None:
     """
     Setup JSON structured logging for production environments
