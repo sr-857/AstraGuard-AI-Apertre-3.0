@@ -1,6 +1,19 @@
 """
-AstraGuard AI - Vercel Serverless Function Entry Point
-Adapts the FastAPI app for Vercel's serverless environment
+AstraGuard AI - Vercel Serverless Function Entry Point.
+
+This module adapts the AstraGuard AI FastAPI application for deployment on Vercel's
+serverless platform. It handles environment setup, path resolution, and application
+export required by the Vercel runtime.
+
+The module performs the following critical initialization steps:
+1.  Resolves the project root directory relative to this file.
+2.  Adds the project root to `sys.path` to ensure absolute imports work correctly
+    in the serverless environment where directory structure may differ from local development.
+3.  Imports the main FastAPI application instance (`app`) from `api.service`.
+4.  Exports the `app` object, which Vercel looks for to handle incoming HTTP requests.
+
+Attributes:
+    app (FastAPI): The main FastAPI application instance exported for Vercel.
 """
 
 import sys
