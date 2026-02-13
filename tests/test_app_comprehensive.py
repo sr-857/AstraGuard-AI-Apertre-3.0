@@ -16,9 +16,6 @@ import sys
 import os
 import signal
 from unittest.mock import patch, MagicMock, call
-from io import StringIO
-
-
 class TestSignalHandler:
     """Test signal handling functionality."""
 
