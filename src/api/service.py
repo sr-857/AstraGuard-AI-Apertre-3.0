@@ -6,7 +6,7 @@ FastAPI-based REST API for telemetry ingestion and anomaly detection.
 
 import os
 import time
-from typing import List
+import json
 from datetime import datetime, timedelta
 from collections import deque
 from asyncio import Lock
@@ -535,6 +535,118 @@ async def health_check() -> HealthCheckResponse:
             timestamp=datetime.now(),
             error=str(e)
         )
+
+
+@app.get("/health/live")
+async def health_live() -> Dict[str, Any]:
+    """
+    Liveness probe endpoint.
+    
+    Returns 200 if the service is running and can handle requests.
+    This is a lightweight check that doesn't verify dependencies.
+    
+    Used by Kubernetes/Docker for liveness probes.
+    """
+    return {
+        "status": "alive",
+        "timestamp": datetime.now().isoformat(),
+        "version": "1.0.0"
+    }
+
+
+@app.get("/health/ready")
+async def health_ready() -> Dict[str, Any]:
+    """
+    Readiness probe endpoint.
+    
+    Returns 200 if the service is ready to accept traffic.
+    Checks all critical dependencies:
+    - Redis connectivity
+    - Database connection (if applicable)
+    - Component health
+    
+    Used by Kubernetes/Docker for readiness probes.
+    Returns 503 if any critical dependency is unavailable.
+    """
+    checks = {
+        "redis": {"status": "unknown", "message": ""},
+        "components": {"status": "unknown", "message": ""},
+        "overall": {"status": "unknown", "ready": False}
+    }
+    
+    all_ready = True
+    
+    # Check Redis connectivity
+    try:
+        if redis_client is not None:
+            # Try to ping Redis
+            await redis_client.redis.ping()
+            checks["redis"] = {
+                "status": "healthy",
+                "message": "Redis connection active"
+            }
+        else:
+            checks["redis"] = {
+                "status": "not_configured",
+                "message": "Redis client not initialized (optional)"
+            }
+            # Redis is optional, don't fail readiness
+    except Exception as e:
+        checks["redis"] = {
+            "status": "unhealthy",
+            "message": f"Redis connection failed: {str(e)}"
+        }
+        all_ready = False
+    
+    # Check component health
+    try:
+        health_monitor = get_health_monitor()
+        components = health_monitor.get_all_health()
+        
+        unhealthy_components = [
+            name for name, comp in components.items()
+            if comp.get("status") != "HEALTHY"
+        ]
+        
+        if unhealthy_components:
+            checks["components"] = {
+                "status": "degraded",
+                "message": f"Unhealthy components: {', '.join(unhealthy_components)}"
+            }
+            all_ready = False
+        else:
+            checks["components"] = {
+                "status": "healthy",
+                "message": f"All {len(components)} components healthy"
+            }
+    except Exception as e:
+        checks["components"] = {
+            "status": "error",
+            "message": f"Component health check failed: {str(e)}"
+        }
+        all_ready = False
+    
+    # Set overall status
+    checks["overall"] = {
+        "status": "ready" if all_ready else "not_ready",
+        "ready": all_ready
+    }
+    
+    # Return appropriate HTTP status code
+    status_code = status.HTTP_200_OK if all_ready else status.HTTP_503_SERVICE_UNAVAILABLE
+    
+    response_data = {
+        "status": "ready" if all_ready else "not_ready",
+        "timestamp": datetime.now().isoformat(),
+        "version": "1.0.0",
+        "checks": checks
+    }
+    
+    return Response(
+        content=json.dumps(response_data, default=str),
+        media_type="application/json",
+        status_code=status_code
+    )
 
 
 @app.get("/metrics")

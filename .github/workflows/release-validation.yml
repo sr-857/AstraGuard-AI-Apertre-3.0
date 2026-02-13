@@ -72,6 +72,10 @@ jobs:
           pip install -r src/config/requirements-ci.txt
           pip install pytest pytest-asyncio pytest-cov
       
+      - name: 'Create Environment File'
+        run: |
+          cp infra/docker/.env.example infra/docker/.env
+      
       - name: 'Boot Docker Compose Stack'
         run: |
           docker compose -f infra/docker/docker-compose.yml up -d --build

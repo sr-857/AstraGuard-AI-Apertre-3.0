@@ -1,6 +1,9 @@
 services:
   # FastAPI Backend
   api:
+    build:
+      context: ../../
+      dockerfile: infra/docker/Dockerfile
     image: astraguard-ai:latest
     container_name: astraguard-api
     ports:

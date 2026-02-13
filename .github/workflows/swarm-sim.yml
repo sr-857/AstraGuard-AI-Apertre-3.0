@@ -61,6 +61,10 @@ jobs:
           sudo service docker start || true
           docker info
       
+      - name: Create Environment File
+        run: |
+          cp infra/docker/.env.example infra/docker/.env
+      
       - name: Start Swarm Constellation
         run: |
           docker compose -f infra/docker/docker-compose.swarm.yml up -d --build
@@ -74,8 +78,19 @@ jobs:
           import asyncio
           import httpx
           import time
+          import subprocess
           
           async def wait_agents():
+              # First check if container is running
+              result = subprocess.run(['docker', 'compose', '-f', 'infra/docker/docker-compose.swarm.yml', 'ps', '--format', 'json'],
+                                     capture_output=True, text=True)
+              print('Container status:', result.stdout)
+              
+              # Check if port is actually mapped
+              result = subprocess.run(['docker', 'compose', '-f', 'infra/docker/docker-compose.swarm.yml', 'port', 'sat-001-a', '8001'],
+                                     capture_output=True, text=True)
+              print('Port mapping:', result.stdout)
+              
               for i in range(60):
                   try:
                       async with httpx.AsyncClient() as client:
@@ -83,8 +98,9 @@ jobs:
                           if resp.status_code == 200:
                               print('Agent SAT-001-A ready')
                               return True
-                  except:
-                      pass
+                  except Exception as e:
+                      if i % 10 == 0:  # Log every 10 attempts
+                          print(f'Attempt {i}: {str(e)}')
                   await asyncio.sleep(1)
               return False
           
@@ -92,6 +108,8 @@ jobs:
               print('Agents ready')
           else:
               print('Timeout waiting for agents')
+              # Show container logs before failing
+              subprocess.run(['docker', 'compose', '-f', 'infra/docker/docker-compose.swarm.yml', 'logs', '--tail=50'])
               exit(1)
           "
       
