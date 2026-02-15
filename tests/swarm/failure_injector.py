@@ -70,7 +70,30 @@ class FailureInjector:
         self.docker = docker_client or docker.from_env()
         self.active_failures: Dict[str, FailureConfig] = {}
         self.recovery_tasks: Dict[str, asyncio.Task] = {}
-    
+        self.container_resolver: Optional[Callable[[str], Optional[str]]] = None
+
+    def _get_container(self, identifier: str):
+        """Get container object by identifier (agent ID or service alias)."""
+        container_id = None
+        if self.container_resolver:
+            container_id = self.container_resolver(identifier)
+
+        if container_id:
+            try:
+                return self.docker.containers.get(container_id)
+            except docker.errors.NotFound:
+                logger.warning(f"Container ID {container_id} not found, trying fallback")
+
+        # Fallback to legacy naming convention
+        if identifier == "bus":
+            name = "astra-event-bus"
+        elif identifier == "registry":
+            name = "astra-redis"
+        else:
+            name = f"astra-{identifier.lower()}"
+
+        return self.docker.containers.get(name)
+
     async def inject_agent_crash(self, agent_id: str, delay_ms: int = 0) -> FailureConfig:
         """
         Inject agent crash (SIGKILL container).
@@ -93,7 +116,7 @@ class FailureInjector:
             await asyncio.sleep(delay_ms / 1000)
         
         try:
-            container = self.docker.containers.get(f"astra-{agent_id.lower()}")
+            container = self._get_container(agent_id)
             logger.warning(f"INJECTING: Agent crash on {agent_id}")
             container.kill()
             self.active_failures[agent_id] = config
@@ -129,7 +152,7 @@ class FailureInjector:
             await asyncio.sleep(delay_ms / 1000)
         
         try:
-            container = self.docker.containers.get(f"astra-{agent_id.lower()}")
+            container = self._get_container(agent_id)
             logger.warning(f"INJECTING: Agent hang on {agent_id} for {duration_seconds}s")
             
             # Send SIGSTOP to freeze process
@@ -174,7 +197,7 @@ class FailureInjector:
         )
         
         try:
-            container = self.docker.containers.get(f"astra-{agent_id.lower()}")
+            container = self._get_container(agent_id)
             logger.warning(
                 f"INJECTING: Memory leak on {agent_id} "
                 f"({leak_rate_mb_per_sec}MB/s for {duration_seconds}s)"
@@ -226,7 +249,7 @@ class FailureInjector:
         )
         
         try:
-            container = self.docker.containers.get(f"astra-{agent_id.lower()}")
+            container = self._get_container(agent_id)
             logger.warning(f"INJECTING: CPU spike on {agent_id} for {duration_seconds}s")
             
             # Start CPU burn process
@@ -271,17 +294,30 @@ class FailureInjector:
         )
         
         try:
-            network = self.docker.networks.get("isl-net")
+            # Find network dynamically via one of the agents
+            agent_ref = isolated_agents[0] if isolated_agents else (remaining_agents[0] if remaining_agents else None)
+            if not agent_ref:
+                raise ValueError("No agents specified for partition")
+
+            container_ref = self._get_container(agent_ref)
+            # Find network that looks like isl-net
+            network_name = "isl-net"
+            for net_name in container_ref.attrs['NetworkSettings']['Networks'].keys():
+                if "isl-net" in net_name:
+                    network_name = net_name
+                    break
+
+            network = self.docker.networks.get(network_name)
             logger.warning(
-                f"INJECTING: Network partition "
+                f"INJECTING: Network partition on {network_name} "
                 f"(isolated={isolated_agents}, remaining={remaining_agents})"
             )
             
             # Disconnect isolated agents from network
             for agent_id in isolated_agents:
-                container = self.docker.containers.get(f"astra-{agent_id.lower()}")
+                container = self._get_container(agent_id)
                 network.disconnect(container)
-                logger.info(f"Disconnected {agent_id} from isl-net")
+                logger.info(f"Disconnected {agent_id} from {network_name}")
             
             self.active_failures["_partition"] = config
             
@@ -326,7 +362,7 @@ class FailureInjector:
         )
         
         try:
-            container = self.docker.containers.get(f"astra-{agent_id.lower()}")
+            container = self._get_container(agent_id)
             logger.warning(f"INJECTING: Network latency on {agent_id} ({latency_ms}ms)")
             
             # Use tc to add latency
@@ -374,7 +410,7 @@ class FailureInjector:
         )
         
         try:
-            container = self.docker.containers.get(f"astra-{agent_id.lower()}")
+            container = self._get_container(agent_id)
             logger.warning(f"INJECTING: Packet loss on {agent_id} ({loss_percent}%)")
             
             # Clear old qdisc first
@@ -418,7 +454,7 @@ class FailureInjector:
         )
         
         try:
-            container = self.docker.containers.get("astra-event-bus")
+            container = self._get_container("bus")
             logger.critical("INJECTING: Event bus down!")
             container.stop()
             self.active_failures["bus"] = config
@@ -453,7 +489,7 @@ class FailureInjector:
         )
         
         try:
-            container = self.docker.containers.get("astra-redis")
+            container = self._get_container("registry")
             logger.critical("INJECTING: Registry (Redis) down!")
             container.stop()
             self.active_failures["registry"] = config
@@ -531,21 +567,30 @@ class FailureInjector:
         try:
             if config.failure_type == FailureType.AGENT_CRASH:
                 for agent_id in config.target_agents:
-                    container = self.docker.containers.get(f"astra-{agent_id.lower()}")
+                    container = self._get_container(agent_id)
                     container.restart()
                     logger.info(f"Restarted {agent_id}")
             
             elif config.failure_type == FailureType.AGENT_HANG:
                 for agent_id in config.target_agents:
-                    container = self.docker.containers.get(f"astra-{agent_id.lower()}")
+                    container = self._get_container(agent_id)
                     container.kill(signal="SIGCONT")  # Resume process
                     logger.info(f"Resumed {agent_id}")
             
             elif config.failure_type == FailureType.NETWORK_PARTITION:
-                network = self.docker.networks.get("isl-net")
+                # Find network dynamically
+                agent_ref = config.target_agents[0]
+                container_ref = self._get_container(agent_ref)
+                network_name = "isl-net"
+                for net_name in container_ref.attrs['NetworkSettings']['Networks'].keys():
+                    if "isl-net" in net_name:
+                        network_name = net_name
+                        break
+                network = self.docker.networks.get(network_name)
+
                 for agent_id in config.target_agents:
                     try:
-                        container = self.docker.containers.get(f"astra-{agent_id.lower()}")
+                        container = self._get_container(agent_id)
                         network.connect(container)
                         logger.info(f"Reconnected {agent_id}")
                     except:
@@ -553,7 +598,7 @@ class FailureInjector:
             
             elif config.failure_type in [FailureType.NETWORK_LATENCY, FailureType.NETWORK_LOSS]:
                 for agent_id in config.target_agents:
-                    container = self.docker.containers.get(f"astra-{agent_id.lower()}")
+                    container = self._get_container(agent_id)
                     try:
                         container.exec_run("tc qdisc del dev eth0 root")
                         logger.info(f"Removed traffic control from {agent_id}")
@@ -561,12 +606,12 @@ class FailureInjector:
                         pass
             
             elif config.failure_type == FailureType.BUS_DOWN:
-                container = self.docker.containers.get("astra-event-bus")
+                container = self._get_container("bus")
                 container.start()
                 logger.info("Event bus restarted")
             
             elif config.failure_type == FailureType.REGISTRY_DOWN:
-                container = self.docker.containers.get("astra-redis")
+                container = self._get_container("registry")
                 container.start()
                 logger.info("Registry restarted")
         
@@ -582,7 +627,7 @@ class FailureInjector:
         """Scheduled recovery from hang."""
         await asyncio.sleep(duration_seconds)
         try:
-            container = self.docker.containers.get(f"astra-{agent_id.lower()}")
+            container = self._get_container(agent_id)
             container.kill(signal="SIGCONT")
             logger.info(f"Auto-recovered hang on {agent_id}")
         except:
@@ -597,9 +642,18 @@ class FailureInjector:
         """Scheduled healing of partition."""
         await asyncio.sleep(duration_seconds)
         try:
-            network = self.docker.networks.get("isl-net")
+            # Find network dynamically
+            agent_ref = isolated_agents[0]
+            container_ref = self._get_container(agent_ref)
+            network_name = "isl-net"
+            for net_name in container_ref.attrs['NetworkSettings']['Networks'].keys():
+                if "isl-net" in net_name:
+                    network_name = net_name
+                    break
+            network = self.docker.networks.get(network_name)
+
             for agent_id in isolated_agents:
-                container = self.docker.containers.get(f"astra-{agent_id.lower()}")
+                container = self._get_container(agent_id)
                 network.connect(container)
                 logger.info(f"Reconnected {agent_id}")
         except:
@@ -609,7 +663,7 @@ class FailureInjector:
         """Scheduled removal of latency."""
         await asyncio.sleep(duration_seconds)
         try:
-            container = self.docker.containers.get(f"astra-{agent_id.lower()}")
+            container = self._get_container(agent_id)
             container.exec_run("tc qdisc del dev eth0 root")
             logger.info(f"Removed latency from {agent_id}")
         except:
@@ -619,7 +673,7 @@ class FailureInjector:
         """Scheduled removal of packet loss."""
         await asyncio.sleep(duration_seconds)
         try:
-            container = self.docker.containers.get(f"astra-{agent_id.lower()}")
+            container = self._get_container(agent_id)
             container.exec_run("tc qdisc del dev eth0 root")
             logger.info(f"Removed packet loss from {agent_id}")
         except:
@@ -629,7 +683,7 @@ class FailureInjector:
         """Scheduled restart of event bus."""
         await asyncio.sleep(duration_seconds)
         try:
-            container = self.docker.containers.get("astra-event-bus")
+            container = self._get_container("bus")
             container.start()
             logger.info("Event bus auto-recovered")
         except:
@@ -639,7 +693,7 @@ class FailureInjector:
         """Scheduled restart of registry."""
         await asyncio.sleep(duration_seconds)
         try:
-            container = self.docker.containers.get("astra-redis")
+            container = self._get_container("registry")
             container.start()
             logger.info("Registry auto-recovered")
         except:
