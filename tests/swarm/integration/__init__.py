@@ -33,8 +33,6 @@ from .test_full_integration import (
 
 from .release_report import (
     ReleaseReportGenerator,
-    ReleaseReport,
-    IssueMilestone,
 )
 
 __all__ = [
@@ -45,8 +43,6 @@ __all__ = [
     "ProductionGate",
     "FullIntegrationResult",
     "ReleaseReportGenerator",
-    "ReleaseReport",
-    "IssueMilestone",
 ]
 
 __version__ = "3.0.0"
