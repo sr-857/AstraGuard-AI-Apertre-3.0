@@ -257,10 +257,20 @@ def setup_test_environment():
     """Initialize test environment."""
     # Suppress debug logs during tests
     import logging
+    import sys
+    
     logging.getLogger('astraguard').setLevel(logging.WARNING)
+    
+    # Close stdout/stderr in case they were opened during imports
+    
     yield
-    # Cleanup after tests - ensure all logging handlers are closed
-    _cleanup_logging_handlers()
+    
+    # Cleanup after tests - ensure all logging handlers are closed EXCEPT pytest's  
+    try:
+        _cleanup_logging_handlers()
+    except Exception as e:
+        # Silently ignore cleanup errors to avoid breaking pytest teardown
+        pass
 
 
 @pytest.fixture(autouse=True)
@@ -277,6 +287,21 @@ def reset_singletons():
         yield
 
 
+@pytest.fixture(autouse=True)
+def reset_prometheus_metrics():
+    """Reset Prometheus metrics cache between tests."""
+    try:
+        # Clear metric cache before each test
+        from astraguard.observability import _metric_cache
+        _metric_cache.clear()
+        yield
+        # Clear cache after test
+        _metric_cache.clear()
+    except (ImportError, ModuleNotFoundError, AttributeError):
+        # Skip if prometheus or observability not available
+        yield
+
+
 # ============================================================================
 # LOGGING CLEANUP UTILITIES
 # ============================================================================
@@ -287,24 +312,44 @@ def _cleanup_logging_handlers():
 
     # Get all loggers
     root_logger = logging.getLogger()
-    loggers = [root_logger] + [logging.getLogger(name) for name in logging.root.manager.loggerDict]
+    loggers = [root_logger] + [logging.getLogger(name) for name in list(logging.root.manager.loggerDict.keys())]
 
+    # Keep track of handlers we've already processed to avoid duplication
+    processed_handlers = set()
+    
     for logger in loggers:
-        # Close and remove all handlers
-        for handler in logger.handlers[:]:  # Copy the list to avoid modification during iteration
+        # Close and remove all handlers (except StreamHandlers which are used by pytest)
+        for handler in list(logger.handlers):  # Create a copy of the list
             try:
+                # Skip StreamHandlers as they may be used by pytest
+                if isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler):
+                    continue
+                
+                handler_id = id(handler)
+                if handler_id in processed_handlers:
+                    continue
+                processed_handlers.add(handler_id)
+                
                 # Flush any pending output
-                handler.flush()
+                try:
+                    handler.flush()
+                except (OSError, ValueError, AttributeError):
+                    pass
+                
                 # Close the handler
-                handler.close()
+                try:
+                    handler.close()
+                except (OSError, ValueError, AttributeError):
+                    pass
+                
                 # Remove from logger
-                logger.removeHandler(handler)
-            except (OSError, ValueError):
-                # Handler might already be closed or invalid
+                try:
+                    logger.removeHandler(handler)
+                except (ValueError, AttributeError):
+                    pass
+            except Exception:
+                # Silently ignore any errors during cleanup
                 pass
-
-    # Clear any cached handlers
-    logging.root.handlers.clear()
 
 
 # ============================================================================

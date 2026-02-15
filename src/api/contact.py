@@ -225,7 +225,7 @@ class InMemoryRateLimiter:
             return is_allowed, metadata
 
 # Initialize database
-_init_db_sync()
+init_database()
 
 _in_memory_limiter: InMemoryRateLimiter = InMemoryRateLimiter()
 

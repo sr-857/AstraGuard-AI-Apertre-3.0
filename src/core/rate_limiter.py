@@ -19,24 +19,83 @@ from core.secrets import get_secret
 
 # Prometheus metrics
 try:
-    from prometheus_client import Counter, Histogram
-    rate_limit_hits = Counter(
+    from prometheus_client import Counter, Histogram, REGISTRY
+    import logging
+    
+    logger_prometheus = logging.getLogger(__name__)
+    
+    # Helper function to safely create metrics, avoiding duplicate registrations
+    def _get_or_create_counter(name, doc, labels):
+        """Get existing counter from registry or create new one."""
+        # Try to unregister if exists to avoid duplicates
+        try:
+            collectors_to_remove = []
+            for collector in list(REGISTRY._collector_to_names.keys()):
+                if hasattr(collector, '_name') and collector._name == name:
+                    collectors_to_remove.append(collector)
+            
+            for collector in collectors_to_remove:
+                try:
+                    REGISTRY.unregister(collector)
+                except Exception:
+                    pass
+        except (AttributeError, TypeError):
+            pass
+        
+        # Create new counter
+        try:
+            return Counter(name, doc, labels)
+        except ValueError as e:
+            if "Duplicated timeseries" in str(e):
+                logger_prometheus.warning(f"Failed to create metric {name}: {e}")
+                return None
+            raise
+    
+    def _get_or_create_histogram(name, doc, labels, buckets=None):
+        """Get existing histogram from registry or create new one."""
+        # Try to unregister if exists to avoid duplicates
+        try:
+            collectors_to_remove = []
+            for collector in list(REGISTRY._collector_to_names.keys()):
+                if hasattr(collector, '_name') and collector._name == name:
+                    collectors_to_remove.append(collector)
+            
+            for collector in collectors_to_remove:
+                try:
+                    REGISTRY.unregister(collector)
+                except Exception:
+                    pass
+        except (AttributeError, TypeError):
+            pass
+        
+        # Create new histogram
+        try:
+            if buckets:
+                return Histogram(name, doc, labels, buckets=buckets)
+            return Histogram(name, doc, labels)
+        except ValueError as e:
+            if "Duplicated timeseries" in str(e):
+                logger_prometheus.warning(f"Failed to create metric {name}: {e}")
+                return None
+            raise
+    
+    rate_limit_hits = _get_or_create_counter(
         'astra_rate_limit_hits_total',
         'Total number of requests allowed by rate limiter',
         ['endpoint']
     )
-    rate_limit_blocks = Counter(
+    rate_limit_blocks = _get_or_create_counter(
         'astra_rate_limit_blocks_total',
         'Total number of requests blocked by rate limiter',
         ['endpoint']
     )
-    rate_limit_latency = Histogram(
+    rate_limit_latency = _get_or_create_histogram(
         'astra_rate_limit_check_duration_seconds',
         'Time spent checking rate limits',
         ['endpoint']
     )
-except ImportError:
-    # Fallback if prometheus not available
+except (ImportError, Exception) as e:
+    # Fallback if prometheus not available or any error occurs
     rate_limit_hits = None
     rate_limit_blocks = None
     rate_limit_latency = None

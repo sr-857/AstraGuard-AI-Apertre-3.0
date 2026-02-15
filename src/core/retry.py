@@ -10,38 +10,127 @@ from typing import Callable, Any, Tuple, Optional
 from datetime import datetime
 import logging
 
-from prometheus_client import Counter, Histogram, Gauge
+from prometheus_client import Counter, Histogram, Gauge, REGISTRY
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
 # ============================================================================
+# SAFE METRIC CREATION (handles test reruns)
+# ============================================================================
+
+def _safe_create_counter(name, doc, labels=None):
+    """Safely create a Counter, handling duplicate registration in tests."""
+    # Try to unregister if exists
+    try:
+        collectors_to_remove = []
+        for collector in list(REGISTRY._collector_to_names.keys()):
+            if hasattr(collector, '_name') and collector._name == name:
+                collectors_to_remove.append(collector)
+        
+        for collector in collectors_to_remove:
+            try:
+                REGISTRY.unregister(collector)
+            except Exception:
+                pass
+    except (AttributeError, TypeError):
+        pass
+    
+    try:
+        if labels:
+            return Counter(name, doc, labels)
+        return Counter(name, doc)
+    except (ValueError, TypeError) as e:
+        logger.warning(f"Failed to create counter {name}: {e}")
+        return None
+
+def _safe_create_histogram(name, doc, labels=None, buckets=None):
+    """Safely create a Histogram, handling duplicate registration in tests."""
+    # Try to unregister if exists
+    try:
+        collectors_to_remove = []
+        for collector in list(REGISTRY._collector_to_names.keys()):
+            if hasattr(collector, '_name') and collector._name == name:
+                collectors_to_remove.append(collector)
+        
+        for collector in collectors_to_remove:
+            try:
+                REGISTRY.unregister(collector)
+            except Exception:
+                pass
+    except (AttributeError, TypeError):
+        pass
+    
+    try:
+        if labels is None:
+            labels = []
+        kwargs = {'name': name, 'documentation': doc, 'labelnames': labels}
+        if buckets:
+            kwargs['buckets'] = buckets
+        return Histogram(**kwargs)
+    except (ValueError, TypeError) as e:
+        logger.warning(f"Failed to create histogram {name}: {e}")
+        return None
+
+def _safe_create_gauge(name, doc, labels=None):
+    """Safely create a Gauge, handling duplicate registration in tests."""
+    # Try to unregister if exists
+    try:
+        collectors_to_remove = []
+        for collector in list(REGISTRY._collector_to_names.keys()):
+            if hasattr(collector, '_name') and collector._name == name:
+                collectors_to_remove.append(collector)
+        
+        for collector in collectors_to_remove:
+            try:
+                REGISTRY.unregister(collector)
+            except Exception:
+                pass
+    except (AttributeError, TypeError):
+        pass
+    
+    try:
+        if labels:
+            return Gauge(name, doc, labels)
+        return Gauge(name, doc)
+    except (ValueError, TypeError) as e:
+        logger.warning(f"Failed to create gauge {name}: {e}")
+        return None
+
+# ============================================================================
 # PROMETHEUS METRICS
 # ============================================================================
 
-RETRY_ATTEMPTS_TOTAL = Counter(
-    'astra_retry_attempts_total',
-    'Total retry attempts',
-    ['outcome']  # success, failed
-)
+try:
+    RETRY_ATTEMPTS_TOTAL = _safe_create_counter(
+        'astra_retry_attempts_total',
+        'Total retry attempts',
+        ['outcome']  # success, failed
+    )
 
-RETRY_DELAYS_SECONDS = Histogram(
-    'astra_retry_delays_seconds',
-    'Retry delay durations in seconds',
-    buckets=(0.1, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0)
-)
+    RETRY_DELAYS_SECONDS = _safe_create_histogram(
+        'astra_retry_delays_seconds',
+        'Retry delay durations in seconds',
+        buckets=(0.1, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0)
+    )
 
-RETRY_EXHAUSTIONS_TOTAL = Counter(
-    'astra_retry_exhaustions_total',
-    'Number of times retry limit exhausted',
-    ['function']
-)
+    RETRY_EXHAUSTIONS_TOTAL = _safe_create_counter(
+        'astra_retry_exhaustions_total',
+        'Number of times retry limit exhausted',
+        ['function']
+    )
 
-RETRY_BACKOFF_LEVEL = Gauge(
-    'astra_retry_backoff_level',
-    'Current backoff level (attempt number)',
-    ['function']
-)
+    RETRY_BACKOFF_LEVEL = _safe_create_gauge(
+        'astra_retry_backoff_level',
+        'Current backoff level (attempt number)',
+        ['function']
+    )
+except (ValueError, ImportError, TypeError) as e:
+    logger.warning(f"Failed to initialize retry metrics: {e}")
+    RETRY_ATTEMPTS_TOTAL = None
+    RETRY_DELAYS_SECONDS = None
+    RETRY_EXHAUSTIONS_TOTAL = None
+    RETRY_BACKOFF_LEVEL = None
 
 
 # ============================================================================

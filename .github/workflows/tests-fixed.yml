@@ -1,0 +1,122 @@
+# CI/CD Tests & Code Quality Workflow (FIXED)
+# This is a corrected version of tests.yml that addresses the pytest issues
+
+name: Tests & Code Quality (Fixed)
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.11']
+      fail-fast: false
+    services:
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+    
+    steps:
+    - name: Free up disk space
+      run: |
+        echo "Freeing up disk space before checkout..."
+        sudo rm -rf /usr/local/lib/android || true
+        sudo rm -rf /usr/share/dotnet || true
+        sudo rm -rf /opt/ghc || true
+        sudo rm -rf /opt/hostedtoolcache/Python* || true
+        df -h
+    
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'pip'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip setuptools wheel
+        pip install -r src/config/requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
+        pip install -r src/config/requirements-test.txt
+    
+    - name: Wait for Redis
+      run: |
+        python -c "
+        import redis, time, sys, socket
+        for i in range(30):
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(2)
+                result = sock.connect_ex(('localhost', 6379))
+                sock.close()
+                if result == 0:
+                    r = redis.Redis(host='localhost', port=6379, socket_connect_timeout=5, decode_responses=True)
+                    pong = r.ping()
+                    if pong:
+                        print('Redis is ready!')
+                        sys.exit(0)
+            except Exception as e:
+                pass
+            print(f'Waiting for Redis... ({i+1}/30)', flush=True)
+            time.sleep(1)
+        print('ERROR: Redis connection timeout after 30 attempts')
+        sys.exit(1)
+        "
+    
+    - name: Run pytest with coverage
+      env:
+        REDIS_URL: redis://localhost:6379
+      run: |
+        pytest tests/ \
+          -v \
+          --tb=short \
+          --cov=src/anomaly \
+          --cov=src/classifier \
+          --cov=src/memory_engine \
+          --cov=src/state_machine \
+          --cov=src/core \
+          --cov-report=term-missing \
+          --cov-report=xml \
+          --timeout=10 \
+          -p no:cacheprovider
+    
+    - name: Check coverage threshold
+      run: coverage report --fail-under=70
+    
+    - name: Upload coverage reports
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: coverage-report-python${{ matrix.python-version }}
+        path: htmlcov/
+        retention-days: 30
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      if: always()
+      with:
+        files: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+    
+    - name: Clean up pip cache
+      if: always()
+      run: pip cache purge

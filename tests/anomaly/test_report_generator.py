@@ -25,6 +25,7 @@ from src.anomaly.report_generator import (
     AnomalyReportGenerator,
     get_report_generator
 )
+from src.core.input_validation import ValidationError
 
 
 class TestAnomalyEvent:
@@ -315,7 +316,7 @@ class TestAnomalyReportGenerator:
         assert isinstance(generator.anomalies[0].resolution_time, datetime)
 
     def test_resolve_anomaly_invalid_index(self, generator):
-        """Test resolving an anomaly with invalid index (should not crash)."""
+        """Test resolving an anomaly with invalid index (should raise ValidationError)."""
         generator.record_anomaly(
             anomaly_type="test_anomaly",
             severity="LOW",
@@ -324,9 +325,13 @@ class TestAnomalyReportGenerator:
             telemetry_data={}
         )
         
-        # Should handle gracefully
-        generator.resolve_anomaly(10)  # Out of bounds
-        generator.resolve_anomaly(-1)  # Negative index
+        # Should raise ValidationError for out of bounds index
+        with pytest.raises(ValidationError):
+            generator.resolve_anomaly(10)  # Out of bounds
+        
+        # Should raise ValidationError for negative index
+        with pytest.raises(ValidationError):
+            generator.resolve_anomaly(-1)  # Negative index (out of range)
         
         # Original anomaly should be unaffected
         assert generator.anomalies[0].resolved is False
