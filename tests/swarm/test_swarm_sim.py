@@ -89,9 +89,25 @@ class SwarmSimulatorOrchestrator:
             "SAT-004-A": 8004,
             "SAT-005-A": 8005,
         }
-    
+        self.managed_lifecycle = False
+
+    async def _are_agents_running(self) -> bool:
+        """Check if agents are already running and reachable."""
+        try:
+            # Check just the first agent as a heuristic
+            async with httpx.AsyncClient(timeout=2) as client:
+                resp = await client.get(f"http://localhost:{self.agent_ports['SAT-001-A']}/health")
+                return resp.status_code == 200
+        except:
+            return False
+
     async def start_constellation(self) -> bool:
         """Start 5-agent constellation via docker-compose."""
+        if await self._are_agents_running():
+            logger.info("Agents already running, attaching to existing constellation...")
+            return True
+
+        self.managed_lifecycle = True
         logger.info("Starting 5-agent constellation...")
         try:
             result = subprocess.run(
@@ -114,6 +130,10 @@ class SwarmSimulatorOrchestrator:
     
     async def stop_constellation(self) -> bool:
         """Stop constellation and cleanup."""
+        if not self.managed_lifecycle:
+            logger.info("Skipping teardown (externally managed lifecycle)")
+            return True
+
         logger.info("Stopping constellation...")
         try:
             subprocess.run(
