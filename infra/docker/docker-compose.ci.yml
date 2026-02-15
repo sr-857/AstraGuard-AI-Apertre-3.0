@@ -16,6 +16,9 @@
 services:
   # FastAPI Backend - Core API service
   api:
+    build:
+      context: ../../
+      dockerfile: infra/docker/Dockerfile
     image: astraguard-ai:latest
     container_name: astraguard-api-ci
     ports:
@@ -29,8 +32,7 @@ services:
       PYTHONDONTWRITEBYTECODE: 1
       ENVIRONMENT: ${ENVIRONMENT:-ci}
       DEBUG: ${DEBUG:-false}
-    env_file:
-      - .env
+
     depends_on:
       redis:
         condition: service_healthy

@@ -19,6 +19,9 @@ import json
 from pathlib import Path
 from typing import Dict, Any
 
+# Mark E2E tests as slow due to full stack operations
+pytestmark = [pytest.mark.slow, pytest.mark.timeout(90)]
+
 from fastapi.testclient import TestClient
 
 
@@ -348,7 +351,8 @@ class TestContactRateLimiting:
         response = e2e_client.post("/api/contact", json=valid_contact_data)
         
         assert response.status_code == 429
-        assert "Too many submissions" in response.json()["detail"]
+        response_data = response.json()
+        assert "Too many submissions" in response_data["detail"]["message"]
     
     def test_rate_limit_applies_per_ip(
         self,

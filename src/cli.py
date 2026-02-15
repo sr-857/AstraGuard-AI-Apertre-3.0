@@ -6,9 +6,10 @@ import subprocess
 import os
 import json
 import time
-from datetime import datetime
+import platform
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Any, Optional
+from typing import List, Any, Optional, Dict, NoReturn
 
 # Enable UTF-8 output on Windows
 if sys.platform == "win32":
@@ -21,6 +22,15 @@ from core.secrets import init_secrets_manager, store_secret, get_secret, rotate_
 from astraguard.logging_config import get_logger
 
 logger = get_logger(__name__)
+
+# Cache for frequently accessed data
+_PHASE_DESCRIPTIONS = {
+    "LAUNCH": "Rocket ascent and orbital insertion",
+    "DEPLOYMENT": "System stabilization and checkout",
+    "NOMINAL_OPS": "Standard mission operations",
+    "PAYLOAD_OPS": "Science/mission payload operations",
+    "SAFE_MODE": "Minimal power survival mode",
+}
 
 
 class FeedbackCLI:
@@ -44,8 +54,9 @@ class FeedbackCLI:
             return []
 
         try:
-            with open(path, 'r', encoding='utf-8') as f:
-                raw = json.load(f)
+            # Optimized: Use Path.read_text() for better performance
+            content = path.read_text(encoding='utf-8')
+            raw = json.loads(content)
             if not isinstance(raw, list):
                 logger.warning("Pending feedback file is not a list, ignoring", file_path=str(path))
                 return []
@@ -64,7 +75,16 @@ class FeedbackCLI:
                 logger.error("Failed to remove corrupted pending feedback file", file_path=str(path), error=str(unlink_e))
             return []
         except Exception as e:
-            logger.error("Unexpected error loading pending feedback", file_path=str(path), error_type=type(e).__name__, error=str(e))
+            logger.error(
+                "Unexpected error loading pending feedback",
+                extra={
+                    "file_path": str(path),
+                    "error_type": type(e).__name__,
+                    "operation": "load_feedback",
+                    "error": str(e)
+                },
+                exc_info=True
+            )
             return []
 
     @staticmethod
@@ -78,9 +98,9 @@ class FeedbackCLI:
         Args:
             events (List[dict[str, Any]]): List of feedback event dictionaries.
         """
-        Path("feedback_processed.json").write_text(
-            json.dumps(events, separators=(",", ":"))
-        )
+        # Optimized: Pre-serialize JSON and write with explicit encoding
+        content = json.dumps(events, separators=(",", ":"), ensure_ascii=False)
+        Path("feedback_processed.json").write_text(content, encoding='utf-8')
 
     @staticmethod
     def review_interactive() -> None:
@@ -141,14 +161,8 @@ class FeedbackCLI:
 
 
 def _get_phase_description(phase: str) -> str:
-    descriptions = {
-        "LAUNCH": "Rocket ascent and orbital insertion",
-        "DEPLOYMENT": "System stabilization and checkout",
-        "NOMINAL_OPS": "Standard mission operations",
-        "PAYLOAD_OPS": "Science/mission payload operations",
-        "SAFE_MODE": "Minimal power survival mode",
-    }
-    return descriptions.get(phase, "Unknown phase")
+    """Get mission phase description from cached dict."""
+    return _PHASE_DESCRIPTIONS.get(phase, "Unknown phase")
 
 
 def run_status(args: argparse.Namespace) -> None:
@@ -170,15 +184,16 @@ def run_status(args: argparse.Namespace) -> None:
     """
     try:
         from core.component_health import get_health_monitor, HealthStatus
-        import platform
 
-        print("\n" + "=" * 70)
+        # Optimized: Use cached f-strings and batch system info
+        separator = "=" * 70
+        print(f"\n{separator}")
         print("🛰️  AstraGuard AI - System Status Report")
-        print("=" * 70)
+        print(separator)
         print(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"Platform: {platform.system()} {platform.release()} ({platform.machine()})")
         print(f"Python: {platform.python_version()}")
-        print("=" * 70)
+        print(separator)
 
         print("\n📊 COMPONENT HEALTH STATUS")
         print("-" * 70)
@@ -201,25 +216,30 @@ def run_status(args: argparse.Namespace) -> None:
         if not components:
             print("  ⚠️  No components registered yet.")
         else:
+            # Optimized: Pre-calculate status icon mapping
+            status_icons = {
+                "healthy": "✅",
+                "degraded": "⚠️ ",
+                "failed": "❌"
+            }
+            
             for name, info in sorted(components.items()):
                 status = info.get("status", "unknown")
-                if status == "healthy":
-                    icon = "✅"
-                elif status == "degraded":
-                    icon = "⚠️ "
+                icon = status_icons.get(status, "❓")
+                
+                # Track counts
+                if status == "degraded":
                     degraded_count += 1
                 elif status == "failed":
-                    icon = "❌"
                     failed_count += 1
-                else:
-                    icon = "❓"
 
-                print(f"  {icon} {name:30s} {status:10s}", end="")
+                # Build status line efficiently
+                status_line = f"  {icon} {name:30s} {status:10s}"
                 if info.get("fallback_active"):
-                    print("  [FALLBACK MODE]", end="")
+                    status_line += "  [FALLBACK MODE]"
                 if info.get("error_count", 0) > 0:
-                    print(f"  (Errors: {info['error_count']})", end="")
-                print()
+                    status_line += f"  (Errors: {info['error_count']})"
+                print(status_line)
 
                 if args.verbose and info.get("last_error"):
                     print(f"       Last Error: {info['last_error']}")
@@ -344,6 +364,27 @@ def run_simulation() -> None:
         print(f"❌ Unexpected error: {e}")
         sys.exit(1)
 
+def run_classifier() -> None:
+    """Run fault classifier tests."""
+    try:
+        from classifier.fault_classifier import run_tests
+        run_tests()
+    except ImportError as e:
+        logger.error("Fault classifier not available", error=str(e))
+        print("❌ Fault classifier not available. Missing dependencies.")
+        sys.exit(1)
+    except Exception as e:
+        logger.error(
+            f"Classifier failed: {e}",
+            extra={
+                "error_type": type(e).__name__,
+                "operation": "run_classifier",
+                "command": "classify"
+            },
+            exc_info=True
+        )
+        print(f"❌ Classifier failed: {e}")
+        sys.exit(1)
 
 def run_report(args: argparse.Namespace) -> None:
     """
@@ -360,7 +401,6 @@ def run_report(args: argparse.Namespace) -> None:
     """
     try:
         from anomaly.report_generator import get_report_generator
-        from datetime import datetime, timedelta
 
         report_generator = get_report_generator()
 
@@ -487,6 +527,16 @@ def run_secrets_command(args: argparse.Namespace) -> None:
             sys.exit(1)
 
     except Exception as e:
+        logger.error(
+            f"Secrets operation failed: {e}",
+            extra={
+                "error_type": type(e).__name__,
+                "operation": "secrets_management",
+                "secrets_command": getattr(args, 'secrets_command', 'unknown'),
+                "key": getattr(args, 'key', None)
+            },
+            exc_info=True
+        )
         print(f"❌ Secrets operation failed: {e}")
         sys.exit(1)
 

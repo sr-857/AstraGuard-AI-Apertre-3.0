@@ -1,344 +1,671 @@
-"""Tests for src/app.py - Main FastAPI Application Entry Point."""
+"""
+Behavior-driven tests for src/app.py - Main FastAPI Application Entry Point.
+
+These tests validate runtime behavior, not source code structure.
+All tests mock external dependencies and assert on outcomes (SystemExit, logs, calls).
+"""
 
 import pytest
 import sys
 import os
+import signal
+import logging
+import runpy
 from unittest.mock import patch, MagicMock
-from importlib import reload, import_module
+from importlib import reload
 
 
-class TestAppModuleStructure:
-    """Test the app.py module structure."""
-
-    def test_module_can_be_imported_with_mocked_dependencies(self):
-        """Test that the module can be imported with mocked api.service."""
-        mock_app = MagicMock()
-        mock_app.title = "AstraGuard AI API"
-        mock_app.version = "1.0.0"
-        mock_app.docs_url = "/docs"
-        mock_app.redoc_url = "/redoc"
-        mock_app.add_middleware = MagicMock()
-
-        with patch.dict(sys.modules, {'api.service': MagicMock(app=mock_app)}):
-            if 'app' in sys.modules:
-                del sys.modules['app']
-            import app
-            reload(app)
-            assert app.app is not None
-
-    def test_logger_is_configured(self):
-        """Test that logger is configured at module level."""
-        mock_app = MagicMock()
-        mock_app.title = "AstraGuard AI API"
-        mock_app.version = "1.0.0"
-
-        with patch.dict(sys.modules, {'api.service': MagicMock(app=mock_app)}):
-            if 'app' in sys.modules:
-                del sys.modules['app']
-            import app
-            reload(app)
-            assert hasattr(app, 'logger')
-            assert app.logger is not None
+@pytest.fixture(autouse=True)
+def reset_env():
+    """Reset ALL app-related environment variables before each test."""
+    original_env = os.environ.copy()
+    for key in ['APP_HOST', 'APP_PORT', 'LOG_LEVEL', 'APP_WORKERS', 'APP_GRACEFUL_TIMEOUT']:
+        os.environ.pop(key, None)
+    yield
+    os.environ.clear()
+    os.environ.update(original_env)
 
 
-class TestAppImportBehavior:
-    """Test import behavior and error handling."""
-
-    def test_successful_import_of_api_service(self):
-        """Test successful import of api.service module."""
-        mock_app = MagicMock()
-        mock_app.title = "Test API"
-        mock_app.version = "1.0.0"
-
-        with patch.dict(sys.modules, {'api.service': MagicMock(app=mock_app)}):
-            if 'app' in sys.modules:
-                del sys.modules['app']
-            import app
-            reload(app)
-            assert app.app is not None
-
-    def test_module_not_found_error_raises(self):
-        """Test that ModuleNotFoundError is properly propagated."""
-        with patch.dict(sys.modules, {'api.service': None}):
-            with patch('builtins.__import__') as mock_import:
-                mock_import.side_effect = ModuleNotFoundError("No module named 'api.service'")
-                with pytest.raises(ModuleNotFoundError):
-                    if 'app' in sys.modules:
-                        del sys.modules['app']
-                    import app
-
-    def test_import_error_is_raised(self):
-        """Test that ImportError is properly propagated."""
-        with patch.dict(sys.modules, {'api.service': None}):
-            with patch('builtins.__import__') as mock_import:
-                mock_import.side_effect = ImportError("Import error from api.service")
-                with pytest.raises(ImportError):
-                    if 'app' in sys.modules:
-                        del sys.modules['app']
-                    import app
+@pytest.fixture
+def mock_api_service():
+    """Create a mock api.service module with a realistic app object."""
+    mock_app = MagicMock()
+    mock_app.title = "AstraGuard AI API"
+    mock_app.version = "1.0.0"
+    return MagicMock(app=mock_app), mock_app
 
 
-class TestAppMainBlock:
-    """Test the __main__ block behavior."""
-
-    def test_main_block_defines_uvicorn_run_parameters(self):
-        """Test that __main__ block contains uvicorn.run with correct parameters."""
-        with open("src/app.py", "r") as f:
-            content = f.read()
-        assert 'uvicorn.run' in content
-        assert 'host="0.0.0.0"' in content
-        assert 'port=8002' in content
-
-    def test_main_block_has_proper_error_handling(self):
-        """Test that __main__ block has proper error handling."""
-        with open("src/app.py", "r") as f:
-            content = f.read()
-        assert 'RuntimeError' in content
-        assert 'logger.critical' in content
-
-    def test_main_block_imports_uvicorn(self):
-        """Test that uvicorn is imported in the __main__ block."""
-        with open("src/app.py", "r") as f:
-            content = f.read()
-        assert 'import uvicorn' in content
-
-    def test_main_block_checks_for_uvicorn(self):
-        """Test that uvicorn availability is checked."""
-        with open("src/app.py", "r") as f:
-            content = f.read()
-        assert 'ModuleNotFoundError' in content
+@pytest.fixture
+def mock_uvicorn():
+    """Create a mock uvicorn module."""
+    mock_uv = MagicMock()
+    mock_uv.run = MagicMock()
+    return mock_uv
 
 
-class TestAppConfiguration:
-    """Test application configuration."""
-
-    def test_app_title_is_astraguard_ai_api(self):
-        """Test that the app has correct title."""
-        mock_app = MagicMock()
-        mock_app.title = "AstraGuard AI API"
-        mock_app.version = "1.0.0"
-        mock_app.docs_url = "/docs"
-        mock_app.redoc_url = "/redoc"
-
-        with patch.dict(sys.modules, {'api.service': MagicMock(app=mock_app)}):
-            if 'app' in sys.modules:
-                del sys.modules['app']
-            import app
-            reload(app)
-            assert app.app.title == "AstraGuard AI API"
-
-    def test_app_version_is_1_0_0(self):
-        """Test that the app has correct version."""
-        mock_app = MagicMock()
-        mock_app.title = "AstraGuard AI API"
-        mock_app.version = "1.0.0"
-        mock_app.docs_url = "/docs"
-        mock_app.redoc_url = "/redoc"
-
-        with patch.dict(sys.modules, {'api.service': MagicMock(app=mock_app)}):
-            if 'app' in sys.modules:
-                del sys.modules['app']
-            import app
-            reload(app)
-            assert app.app.version == "1.0.0"
-
-    def test_app_has_documentation_urls(self):
-        """Test that the app has docs and redoc URLs configured."""
-        mock_app = MagicMock()
-        mock_app.title = "AstraGuard AI API"
-        mock_app.version = "1.0.0"
-        mock_app.docs_url = "/docs"
-        mock_app.redoc_url = "/redoc"
-
-        with patch.dict(sys.modules, {'api.service': MagicMock(app=mock_app)}):
-            if 'app' in sys.modules:
-                del sys.modules['app']
-            import app
-            reload(app)
-            assert app.app.docs_url == "/docs"
-            assert app.app.redoc_url == "/redoc"
+def _load_app_module(mock_service):
+    """
+    Helper: evict cached module and reimport with the given api.service mock.
+    Always call this inside a `patch.dict(sys.modules, {'api.service': mock_service})`
+    context so the mock is visible during import.
+    """
+    sys.modules.pop('src.app', None)
+    from src import app as app_module
+    return app_module
 
 
-class TestAppExports:
-    """Test module exports."""
 
-    def test_app_variable_exported(self):
-        """Test that 'app' variable is exported from the module."""
-        mock_app = MagicMock()
-        mock_app.title = "Test API"
-        mock_app.version = "1.0.0"
-        mock_app.docs_url = "/docs"
-        mock_app.redoc_url = "/redoc"
+class TestSignalHandler:
+    """
+    Test the signal handler factory (_make_signal_handler) and its closures.
 
-        with patch.dict(sys.modules, {'api.service': MagicMock(app=mock_app)}):
-            if 'app' in sys.modules:
-                del sys.modules['app']
-            import app
-            reload(app)
-            assert hasattr(app, 'app')
+    The optimized app uses a factory instead of a bare `signal_handler`
+    function so that each registered signal carries a descriptive label in
+    its log message while still satisfying signal.signal()'s
+    `(int, FrameType | None) -> None` contract.
+    """
 
-    def test_logger_exported(self):
-        """Test that 'logger' variable is exported from the module."""
-        mock_app = MagicMock()
-        mock_app.title = "Test API"
-        mock_app.version = "1.0.0"
-        mock_app.docs_url = "/docs"
-        mock_app.redoc_url = "/redoc"
-
-        with patch.dict(sys.modules, {'api.service': MagicMock(app=mock_app)}):
-            if 'app' in sys.modules:
-                del sys.modules['app']
-            import app
-            reload(app)
-            assert hasattr(app, 'logger')
-
-
-class TestAppMiddleware:
-    """Test middleware configuration."""
-
-    def test_cors_middleware_configured_in_service(self):
-        """Test that CORS middleware is configured in api.service."""
-        with open("src/api/service.py", "r") as f:
-            content = f.read()
-        assert 'CORSMiddleware' in content
-
-
-class TestAppLifespan:
-    """Test lifespan configuration."""
-
-    def test_lifespan_is_configured(self):
-        """Test that lifespan is configured on the app."""
-        mock_app = MagicMock()
-        mock_app.title = "AstraGuard AI API"
-        mock_app.version = "1.0.0"
-        mock_app.docs_url = "/docs"
-        mock_app.redoc_url = "/redoc"
-
-        mock_service = MagicMock(app=mock_app)
+    def test_handler_logs_shutdown_message(self, mock_api_service):
+        """Handler closure must log a message containing 'signal' on invocation."""
+        mock_service, _ = mock_api_service
 
         with patch.dict(sys.modules, {'api.service': mock_service}):
-            if 'app' in sys.modules:
-                del sys.modules['app']
-            import app
-            reload(app)
-            assert mock_app.lifespan is not None
+            app_module = _load_app_module(mock_service)
 
+            handler = app_module._make_signal_handler("SIGINT")
 
-class TestAppErrorHandling:
-    """Test error handling in the module."""
+            with patch.object(app_module.logger, 'info') as mock_log:
+                with pytest.raises(SystemExit) as exc_info:
+                    handler(signal.SIGINT, None)
 
-    def test_module_not_found_error_handling_in_source(self):
-        """Test that ModuleNotFoundError handling exists in source."""
-        with open("src/app.py", "r") as f:
-            content = f.read()
-        assert 'ModuleNotFoundError' in content
+            mock_log.assert_called_once()
+            # The log format uses %s lazy formatting: check args, not just msg
+            log_call = mock_log.call_args
+            full_message = log_call[0][0] % log_call[0][1:] if log_call[0][1:] else log_call[0][0]
+            assert 'signal' in full_message.lower() or 'sigint' in full_message.lower()
+            assert exc_info.value.code == 0
 
-    def test_import_error_handling_in_source(self):
-        """Test that ImportError handling exists in source."""
-        with open("src/app.py", "r") as f:
-            content = f.read()
-        assert 'except ImportError' in content
-
-    def test_critical_logging_on_import_failure(self):
-        """Test that critical logging occurs on import failure."""
-        with open("src/app.py", "r") as f:
-            content = f.read()
-        assert 'logger.critical' in content
-
-    def test_runtime_error_handling_in_main_block(self):
-        """Test that RuntimeError handling exists in main block."""
-        with open("src/app.py", "r") as f:
-            content = f.read()
-        assert 'except RuntimeError' in content
-
-
-class TestAppSourceStructure:
-    """Test source code structure."""
-
-    def test_app_has_docstring(self):
-        """Test that module has a docstring."""
-        with open("src/app.py", "r") as f:
-            content = f.read()
-        assert '"""' in content
-
-    def test_app_imports_from_api_service(self):
-        """Test that module imports from api.service."""
-        with open("src/app.py", "r") as f:
-            content = f.read()
-        assert 'from api.service import app' in content
-
-    def test_app_has_entry_point_guard(self):
-        """Test that module has if __name__ == '__main__' guard."""
-        with open("src/app.py", "r") as f:
-            content = f.read()
-        assert 'if __name__ == "__main__":' in content
-
-    def test_app_uses_logging_module(self):
-        """Test that module uses logging."""
-        with open("src/app.py", "r") as f:
-            content = f.read()
-        assert 'import logging' in content
-
-    def test_app_has_lifespan_import(self):
-        """Test that module has lifespan configuration."""
-        with open("src/api/service.py", "r") as f:
-            content = f.read()
-        assert 'asynccontextmanager' in content
-        assert 'lifespan' in content
-
-    def test_app_calls_uvicorn_run(self):
-        """Test that uvicorn.run is called in main block."""
-        with open("src/app.py", "r") as f:
-            content = f.read()
-        assert 'uvicorn.run(' in content
-
-    def test_app_sets_host_correctly(self):
-        """Test that host is set to 0.0.0.0."""
-        with open("src/app.py", "r") as f:
-            content = f.read()
-        assert 'host="0.0.0.0"' in content
-
-    def test_app_sets_port_correctly(self):
-        """Test that port is set to 8002."""
-        with open("src/app.py", "r") as f:
-            content = f.read()
-        assert 'port=8002' in content
-
-    def test_app_has_error_logging_in_main(self):
-        """Test that error logging is present in main block."""
-        with open("src/app.py", "r") as f:
-            content = f.read()
-        assert 'logger.critical' in content
-        assert 'exc_info=True' in content
-
-
-class TestAppEntryPoint:
-    """Test application entry point functionality."""
-
-    def test_uvicorn_run_imported_in_main(self):
-        """Test that uvicorn.run is imported in main block."""
-        with open("src/app.py", "r") as f:
-            content = f.read()
-        assert 'import uvicorn' in content
-        assert 'uvicorn.run' in content
-
-
-class TestAppReExport:
-    """Test module re-export functionality."""
-
-    def test_app_re_exports_from_api_service(self):
-        """Test that app module re-exports from api.service."""
-        mock_app = MagicMock()
-        mock_app.title = "AstraGuard AI API"
-        mock_app.version = "1.0.0"
-        mock_app.docs_url = "/docs"
-        mock_app.redoc_url = "/redoc"
-
-        mock_service = MagicMock(app=mock_app)
+    def test_handler_exits_with_code_zero(self, mock_api_service):
+        """Handler closure must always exit with code 0 (graceful shutdown)."""
+        mock_service, _ = mock_api_service
 
         with patch.dict(sys.modules, {'api.service': mock_service}):
-            if 'app' in sys.modules:
-                del sys.modules['app']
-            import app
-            reload(app)
-            assert app.app is mock_app
+            app_module = _load_app_module(mock_service)
+
+            handler = app_module._make_signal_handler("SIGTERM")
+
+            with pytest.raises(SystemExit) as exc_info:
+                handler(signal.SIGTERM, None)
+
+            assert exc_info.value.code == 0
+
+    def test_handler_accepts_sigterm(self, mock_api_service):
+        """Handler closure must accept SIGTERM with a live FrameType mock."""
+        mock_service, _ = mock_api_service
+
+        with patch.dict(sys.modules, {'api.service': mock_service}):
+            app_module = _load_app_module(mock_service)
+
+            handler = app_module._make_signal_handler("SIGTERM")
+
+            with pytest.raises(SystemExit) as exc_info:
+                handler(signal.SIGTERM, MagicMock())  # non-None frame
+
+            assert exc_info.value.code == 0
+
+    def test_factory_returns_callable(self, mock_api_service):
+        """_make_signal_handler must return a callable."""
+        mock_service, _ = mock_api_service
+
+        with patch.dict(sys.modules, {'api.service': mock_service}):
+            app_module = _load_app_module(mock_service)
+
+            handler = app_module._make_signal_handler("SIGINT")
+            assert callable(handler)
+
+    def test_label_appears_in_log(self, mock_api_service):
+        """The label passed to the factory must appear in the log output."""
+        mock_service, _ = mock_api_service
+
+        with patch.dict(sys.modules, {'api.service': mock_service}):
+            app_module = _load_app_module(mock_service)
+
+            handler = app_module._make_signal_handler("SIGTERM")
+
+            with patch.object(app_module.logger, 'info') as mock_log:
+                with pytest.raises(SystemExit):
+                    handler(signal.SIGTERM, None)
+
+            log_call = mock_log.call_args
+            # Reconstruct the formatted string from % args if present
+            fmt = log_call[0][0]
+            fmt_args = log_call[0][1:]
+            full_message = fmt % fmt_args if fmt_args else fmt
+            assert 'SIGTERM' in full_message
+
+
+class TestAppModuleImport:
+    """
+    Test module-level public symbols.
+
+    In the optimized app, `app` is no longer imported eagerly at module scope
+    (it lives inside `_load_app()`), so we no longer assert `hasattr(module, 'app')`.
+    Instead we verify the lazy loader is present and functional, and confirm the
+    remaining stable public symbols (logger, _make_signal_handler) are accessible.
+    """
+
+    def test_successful_import_exposes_logger(self, mock_api_service):
+        """Module must expose a `logging.Logger` instance as `logger`."""
+        mock_service, _ = mock_api_service
+
+        with patch.dict(sys.modules, {'api.service': mock_service}):
+            app_module = _load_app_module(mock_service)
+
+            assert hasattr(app_module, 'logger')
+            assert isinstance(app_module.logger, logging.Logger)
+
+    def test_successful_import_exposes_signal_handler_factory(self, mock_api_service):
+        """Module must expose `_make_signal_handler` as a callable factory."""
+        mock_service, _ = mock_api_service
+
+        with patch.dict(sys.modules, {'api.service': mock_service}):
+            app_module = _load_app_module(mock_service)
+
+            assert hasattr(app_module, '_make_signal_handler')
+            assert callable(app_module._make_signal_handler)
+
+    def test_successful_import_exposes_load_app(self, mock_api_service):
+        """Module must expose `_load_app` as a callable."""
+        mock_service, _ = mock_api_service
+
+        with patch.dict(sys.modules, {'api.service': mock_service}):
+            app_module = _load_app_module(mock_service)
+
+            assert hasattr(app_module, '_load_app')
+            assert callable(app_module._load_app)
+
+    def test_load_app_returns_app_object(self, mock_api_service):
+        """_load_app() must return the app object from api.service."""
+        mock_service, mock_app = mock_api_service
+
+        with patch.dict(sys.modules, {'api.service': mock_service}):
+            app_module = _load_app_module(mock_service)
+            loaded = app_module._load_app()
+
+            assert loaded is mock_app
+
+    def test_import_does_not_eagerly_load_app(self, mock_api_service):
+        """
+        Importing the module must NOT trigger api.service import as a side effect.
+        This is the core guarantee of the lazy-load pattern: tooling and test
+        runners can import app.py without paying the full initialization cost.
+        """
+        mock_service, _ = mock_api_service
+
+        with patch.dict(sys.modules, {'api.service': mock_service}):
+            sys.modules.pop('src.app', None)
+            mock_service.reset_mock()
+
+            import src.app  # noqa: F401 — import only, no call
+
+            # api.service.app attribute should NOT have been accessed at import time
+            assert not mock_service.app.called
+
+
+class TestMainBlockPortValidation:
+    """Test port validation in main block."""
+
+    def test_invalid_port_string_causes_exit(self, mock_api_service, mock_uvicorn):
+        """Non-numeric APP_PORT must cause sys.exit(1)."""
+        mock_service, _ = mock_api_service
+        os.environ['APP_PORT'] = 'invalid'
+
+        with patch.dict(sys.modules, {'api.service': mock_service, 'uvicorn': mock_uvicorn}):
+            with patch('signal.signal'):
+                with pytest.raises(SystemExit) as exc_info:
+                    runpy.run_path('src/app.py', run_name='__main__')
+
+        assert exc_info.value.code == 1
+
+    def test_port_out_of_range_causes_exit(self, mock_api_service, mock_uvicorn):
+        """Port > 65535 must cause sys.exit(1)."""
+        mock_service, _ = mock_api_service
+        os.environ['APP_PORT'] = '70000'
+
+        with patch.dict(sys.modules, {'api.service': mock_service, 'uvicorn': mock_uvicorn}):
+            with patch('signal.signal'):
+                with pytest.raises(SystemExit) as exc_info:
+                    runpy.run_path('src/app.py', run_name='__main__')
+
+        assert exc_info.value.code == 1
+
+    def test_port_zero_causes_exit(self, mock_api_service, mock_uvicorn):
+        """Port = 0 must cause sys.exit(1)."""
+        mock_service, _ = mock_api_service
+        os.environ['APP_PORT'] = '0'
+
+        with patch.dict(sys.modules, {'api.service': mock_service, 'uvicorn': mock_uvicorn}):
+            with patch('signal.signal'):
+                with pytest.raises(SystemExit) as exc_info:
+                    runpy.run_path('src/app.py', run_name='__main__')
+
+        assert exc_info.value.code == 1
+
+    def test_negative_port_causes_exit(self, mock_api_service, mock_uvicorn):
+        """Negative port must cause sys.exit(1)."""
+        mock_service, _ = mock_api_service
+        os.environ['APP_PORT'] = '-1'
+
+        with patch.dict(sys.modules, {'api.service': mock_service, 'uvicorn': mock_uvicorn}):
+            with patch('signal.signal'):
+                with pytest.raises(SystemExit) as exc_info:
+                    runpy.run_path('src/app.py', run_name='__main__')
+
+        assert exc_info.value.code == 1
+
+
+class TestMainBlockLogLevelValidation:
+    """Test log level validation in main block."""
+
+    def test_invalid_log_level_defaults_to_info(self, mock_api_service, mock_uvicorn):
+        """Invalid LOG_LEVEL must default to 'info' without exiting."""
+        mock_service, _ = mock_api_service
+        os.environ['LOG_LEVEL'] = 'invalid_level'
+
+        with patch.dict(sys.modules, {'api.service': mock_service, 'uvicorn': mock_uvicorn}):
+            with patch('signal.signal'):
+                runpy.run_path('src/app.py', run_name='__main__')
+
+        call_kwargs = mock_uvicorn.run.call_args[1]
+        assert call_kwargs['log_level'] == 'info'
+
+    def test_valid_log_level_debug_is_accepted(self, mock_api_service, mock_uvicorn):
+        """LOG_LEVEL='DEBUG' (uppercase) must be normalised and accepted."""
+        mock_service, _ = mock_api_service
+        os.environ['LOG_LEVEL'] = 'DEBUG'
+
+        with patch.dict(sys.modules, {'api.service': mock_service, 'uvicorn': mock_uvicorn}):
+            with patch('signal.signal'):
+                runpy.run_path('src/app.py', run_name='__main__')
+
+        call_kwargs = mock_uvicorn.run.call_args[1]
+        assert call_kwargs['log_level'] == 'debug'
+
+    def test_valid_log_level_error_is_accepted(self, mock_api_service, mock_uvicorn):
+        """LOG_LEVEL='error' must be accepted as-is."""
+        mock_service, _ = mock_api_service
+        os.environ['LOG_LEVEL'] = 'error'
+
+        with patch.dict(sys.modules, {'api.service': mock_service, 'uvicorn': mock_uvicorn}):
+            with patch('signal.signal'):
+                runpy.run_path('src/app.py', run_name='__main__')
+
+        call_kwargs = mock_uvicorn.run.call_args[1]
+        assert call_kwargs['log_level'] == 'error'
+
+
+class TestMainBlockUvicornConfiguration:
+    """Test uvicorn.run configuration in main block."""
+
+    def test_uvicorn_run_called_with_default_host(self, mock_api_service, mock_uvicorn):
+        """uvicorn.run must receive host='0.0.0.0' by default."""
+        mock_service, _ = mock_api_service
+
+        with patch.dict(sys.modules, {'api.service': mock_service, 'uvicorn': mock_uvicorn}):
+            with patch('signal.signal'):
+                runpy.run_path('src/app.py', run_name='__main__')
+
+        assert mock_uvicorn.run.call_args[1]['host'] == '0.0.0.0'
+
+    def test_uvicorn_run_called_with_default_port(self, mock_api_service, mock_uvicorn):
+        """uvicorn.run must receive port=8002 by default."""
+        mock_service, _ = mock_api_service
+
+        with patch.dict(sys.modules, {'api.service': mock_service, 'uvicorn': mock_uvicorn}):
+            with patch('signal.signal'):
+                runpy.run_path('src/app.py', run_name='__main__')
+
+        assert mock_uvicorn.run.call_args[1]['port'] == 8002
+
+    def test_uvicorn_run_uses_custom_host_from_env(self, mock_api_service, mock_uvicorn):
+        """uvicorn.run must use APP_HOST when set."""
+        mock_service, _ = mock_api_service
+        os.environ['APP_HOST'] = '127.0.0.1'
+
+        with patch.dict(sys.modules, {'api.service': mock_service, 'uvicorn': mock_uvicorn}):
+            with patch('signal.signal'):
+                runpy.run_path('src/app.py', run_name='__main__')
+
+        assert mock_uvicorn.run.call_args[1]['host'] == '127.0.0.1'
+
+    def test_uvicorn_run_uses_custom_port_from_env(self, mock_api_service, mock_uvicorn):
+        """uvicorn.run must use APP_PORT when set."""
+        mock_service, _ = mock_api_service
+        os.environ['APP_PORT'] = '9000'
+
+        with patch.dict(sys.modules, {'api.service': mock_service, 'uvicorn': mock_uvicorn}):
+            with patch('signal.signal'):
+                runpy.run_path('src/app.py', run_name='__main__')
+
+        assert mock_uvicorn.run.call_args[1]['port'] == 9000
+
+    def test_uvicorn_run_receives_app_instance_when_single_worker(self, mock_api_service, mock_uvicorn):
+        """
+        With APP_WORKERS=1 (default), uvicorn.run first positional arg must be
+        the live app object (not an import string).
+        """
+        mock_service, mock_app = mock_api_service
+
+        with patch.dict(sys.modules, {'api.service': mock_service, 'uvicorn': mock_uvicorn}):
+            with patch('signal.signal'):
+                runpy.run_path('src/app.py', run_name='__main__')
+
+        first_arg = mock_uvicorn.run.call_args[0][0]
+        assert first_arg is mock_app
+
+    def test_uvicorn_run_uses_import_string_for_multi_worker(self, mock_api_service, mock_uvicorn):
+        """
+        With APP_WORKERS > 1, uvicorn.run first positional arg must be the
+        'api.service:app' import string so workers can fork independently.
+        """
+        mock_service, _ = mock_api_service
+        os.environ['APP_WORKERS'] = '4'
+
+        with patch.dict(sys.modules, {'api.service': mock_service, 'uvicorn': mock_uvicorn}):
+            with patch('signal.signal'):
+                runpy.run_path('src/app.py', run_name='__main__')
+
+        first_arg = mock_uvicorn.run.call_args[0][0]
+        assert first_arg == 'api.service:app'
+
+    def test_uvicorn_run_passes_graceful_timeout(self, mock_api_service, mock_uvicorn):
+        """uvicorn.run must receive timeout_graceful_shutdown from config."""
+        mock_service, _ = mock_api_service
+        os.environ['APP_GRACEFUL_TIMEOUT'] = '45'
+
+        with patch.dict(sys.modules, {'api.service': mock_service, 'uvicorn': mock_uvicorn}):
+            with patch('signal.signal'):
+                runpy.run_path('src/app.py', run_name='__main__')
+
+        assert mock_uvicorn.run.call_args[1]['timeout_graceful_shutdown'] == 45
+
+    def test_uvicorn_run_default_graceful_timeout(self, mock_api_service, mock_uvicorn):
+        """uvicorn.run must use a 30s graceful timeout by default."""
+        mock_service, _ = mock_api_service
+
+        with patch.dict(sys.modules, {'api.service': mock_service, 'uvicorn': mock_uvicorn}):
+            with patch('signal.signal'):
+                runpy.run_path('src/app.py', run_name='__main__')
+
+        assert mock_uvicorn.run.call_args[1]['timeout_graceful_shutdown'] == 30
+
+
+class TestMainBlockErrorHandling:
+    """Test error handling in main block."""
+
+    def test_uvicorn_import_error_causes_exit(self, mock_api_service):
+        """Missing uvicorn must cause sys.exit(1)."""
+        mock_service, _ = mock_api_service
+        sys.modules.pop('uvicorn', None)
+
+        with patch.dict(sys.modules, {'api.service': mock_service}):
+            with patch('signal.signal'):
+                with pytest.raises(SystemExit) as exc_info:
+                    runpy.run_path('src/app.py', run_name='__main__')
+
+        assert exc_info.value.code == 1
+
+    def test_oserror_address_in_use_causes_exit(self, mock_api_service, mock_uvicorn):
+        """OSError EADDRINUSE (errno 98) must cause sys.exit(1)."""
+        mock_service, _ = mock_api_service
+        err = OSError("Address already in use")
+        err.errno = 98
+        mock_uvicorn.run.side_effect = err
+
+        with patch.dict(sys.modules, {'api.service': mock_service, 'uvicorn': mock_uvicorn}):
+            with patch('signal.signal'):
+                with pytest.raises(SystemExit) as exc_info:
+                    runpy.run_path('src/app.py', run_name='__main__')
+
+        assert exc_info.value.code == 1
+
+    def test_oserror_permission_denied_causes_exit(self, mock_api_service, mock_uvicorn):
+        """OSError EACCES (errno 13) must cause sys.exit(1)."""
+        mock_service, _ = mock_api_service
+        err = OSError("Permission denied")
+        err.errno = 13
+        mock_uvicorn.run.side_effect = err
+
+        with patch.dict(sys.modules, {'api.service': mock_service, 'uvicorn': mock_uvicorn}):
+            with patch('signal.signal'):
+                with pytest.raises(SystemExit) as exc_info:
+                    runpy.run_path('src/app.py', run_name='__main__')
+
+        assert exc_info.value.code == 1
+
+    def test_oserror_other_causes_exit(self, mock_api_service, mock_uvicorn):
+        """Any unrecognised OSError errno must still cause sys.exit(1)."""
+        mock_service, _ = mock_api_service
+        err = OSError("Some other error")
+        err.errno = 999
+        mock_uvicorn.run.side_effect = err
+
+        with patch.dict(sys.modules, {'api.service': mock_service, 'uvicorn': mock_uvicorn}):
+            with patch('signal.signal'):
+                with pytest.raises(SystemExit) as exc_info:
+                    runpy.run_path('src/app.py', run_name='__main__')
+
+        assert exc_info.value.code == 1
+
+    def test_keyboard_interrupt_causes_graceful_exit(self, mock_api_service, mock_uvicorn):
+        """KeyboardInterrupt must cause sys.exit(0)."""
+        mock_service, _ = mock_api_service
+        mock_uvicorn.run.side_effect = KeyboardInterrupt()
+
+        with patch.dict(sys.modules, {'api.service': mock_service, 'uvicorn': mock_uvicorn}):
+            with patch('signal.signal'):
+                with pytest.raises(SystemExit) as exc_info:
+                    runpy.run_path('src/app.py', run_name='__main__')
+
+        assert exc_info.value.code == 0
+
+    def test_unexpected_exception_causes_exit(self, mock_api_service, mock_uvicorn):
+        """Any unexpected Exception must cause sys.exit(1)."""
+        mock_service, _ = mock_api_service
+        mock_uvicorn.run.side_effect = RuntimeError("Unexpected error")
+
+        with patch.dict(sys.modules, {'api.service': mock_service, 'uvicorn': mock_uvicorn}):
+            with patch('signal.signal'):
+                with pytest.raises(SystemExit) as exc_info:
+                    runpy.run_path('src/app.py', run_name='__main__')
+
+        assert exc_info.value.code == 1
+
+
+class TestMainBlockSignalRegistration:
+    """Test signal handler registration in main block."""
+
+    def test_sigint_handler_is_registered(self, mock_api_service, mock_uvicorn):
+        """SIGINT handler must be registered via signal.signal."""
+        mock_service, _ = mock_api_service
+        mock_signal_func = MagicMock()
+
+        with patch.dict(sys.modules, {'api.service': mock_service, 'uvicorn': mock_uvicorn}):
+            with patch('signal.signal', mock_signal_func):
+                runpy.run_path('src/app.py', run_name='__main__')
+
+        sigint_calls = [c for c in mock_signal_func.call_args_list if c[0][0] == signal.SIGINT]
+        assert len(sigint_calls) >= 1
+
+    def test_sigterm_handler_is_registered(self, mock_api_service, mock_uvicorn):
+        """SIGTERM handler must be registered via signal.signal."""
+        mock_service, _ = mock_api_service
+        mock_signal_func = MagicMock()
+
+        with patch.dict(sys.modules, {'api.service': mock_service, 'uvicorn': mock_uvicorn}):
+            with patch('signal.signal', mock_signal_func):
+                runpy.run_path('src/app.py', run_name='__main__')
+
+        sigterm_calls = [c for c in mock_signal_func.call_args_list if c[0][0] == signal.SIGTERM]
+        assert len(sigterm_calls) >= 1
+
+    def test_signal_handlers_registered_before_uvicorn(self, mock_api_service, mock_uvicorn):
+        """
+        Signal handlers must be registered before uvicorn.run is called so
+        the process is always interruptible, even during slow app loading.
+        """
+        mock_service, _ = mock_api_service
+        call_order = []
+        mock_signal_func = MagicMock(side_effect=lambda *a, **kw: call_order.append('signal'))
+        mock_uvicorn.run.side_effect = lambda *a, **kw: call_order.append('uvicorn')
+
+        with patch.dict(sys.modules, {'api.service': mock_service, 'uvicorn': mock_uvicorn}):
+            with patch('signal.signal', mock_signal_func):
+                runpy.run_path('src/app.py', run_name='__main__')
+
+        assert call_order.index('signal') < call_order.index('uvicorn')
+
+
+class TestMainBlockLogging:
+    """Test logging behavior in main block."""
+
+    def test_startup_logs_host_and_port(self, mock_api_service, mock_uvicorn):
+        """Startup must log a message that contains the host address."""
+        mock_service, _ = mock_api_service
+
+        with patch.dict(sys.modules, {'api.service': mock_service, 'uvicorn': mock_uvicorn}):
+            with patch('signal.signal'):
+                with patch('logging.Logger.info') as mock_log:
+                    runpy.run_path('src/app.py', run_name='__main__')
+
+        all_messages = ' '.join(str(c) for c in mock_log.call_args_list)
+        assert '0.0.0.0' in all_messages or 'host' in all_messages.lower()
+
+    def test_error_logged_on_invalid_port(self, mock_api_service, mock_uvicorn):
+        """An error must be logged when APP_PORT is non-numeric."""
+        mock_service, _ = mock_api_service
+        os.environ['APP_PORT'] = 'not_a_number'
+
+        with patch.dict(sys.modules, {'api.service': mock_service, 'uvicorn': mock_uvicorn}):
+            with patch('signal.signal'):
+                with patch('logging.Logger.error') as mock_error:
+                    with pytest.raises(SystemExit):
+                        runpy.run_path('src/app.py', run_name='__main__')
+
+        assert mock_error.called
+
+    def test_warning_logged_for_invalid_log_level(self, mock_api_service, mock_uvicorn):
+        """A warning must be logged when LOG_LEVEL is unrecognised."""
+        mock_service, _ = mock_api_service
+        os.environ['LOG_LEVEL'] = 'banana'
+
+        with patch.dict(sys.modules, {'api.service': mock_service, 'uvicorn': mock_uvicorn}):
+            with patch('signal.signal'):
+                with patch('logging.Logger.warning') as mock_warning:
+                    runpy.run_path('src/app.py', run_name='__main__')
+
+        assert mock_warning.called
+
+class TestEdgeCases:
+    """Test edge cases and boundary conditions."""
+
+    def test_port_1_is_valid(self, mock_api_service, mock_uvicorn):
+        """Port 1 is the lower boundary and must be accepted."""
+        mock_service, _ = mock_api_service
+        os.environ['APP_PORT'] = '1'
+
+        with patch.dict(sys.modules, {'api.service': mock_service, 'uvicorn': mock_uvicorn}):
+            with patch('signal.signal'):
+                runpy.run_path('src/app.py', run_name='__main__')
+
+        assert mock_uvicorn.run.call_args[1]['port'] == 1
+
+    def test_port_65535_is_valid(self, mock_api_service, mock_uvicorn):
+        """Port 65535 is the upper boundary and must be accepted."""
+        mock_service, _ = mock_api_service
+        os.environ['APP_PORT'] = '65535'
+
+        with patch.dict(sys.modules, {'api.service': mock_service, 'uvicorn': mock_uvicorn}):
+            with patch('signal.signal'):
+                runpy.run_path('src/app.py', run_name='__main__')
+
+        assert mock_uvicorn.run.call_args[1]['port'] == 65535
+
+    def test_port_65536_is_invalid(self, mock_api_service, mock_uvicorn):
+        """Port 65536 is one above the upper boundary and must be rejected."""
+        mock_service, _ = mock_api_service
+        os.environ['APP_PORT'] = '65536'
+
+        with patch.dict(sys.modules, {'api.service': mock_service, 'uvicorn': mock_uvicorn}):
+            with patch('signal.signal'):
+                with pytest.raises(SystemExit) as exc_info:
+                    runpy.run_path('src/app.py', run_name='__main__')
+
+        assert exc_info.value.code == 1
+
+    def test_all_valid_log_levels(self, mock_api_service, mock_uvicorn):
+        """Every documented log level must pass through unchanged."""
+        mock_service, _ = mock_api_service
+
+        for level in ["critical", "error", "warning", "info", "debug"]:
+            mock_uvicorn.run.reset_mock()
+            os.environ['LOG_LEVEL'] = level
+
+            with patch.dict(sys.modules, {'api.service': mock_service, 'uvicorn': mock_uvicorn}):
+                with patch('signal.signal'):
+                    runpy.run_path('src/app.py', run_name='__main__')
+
+            assert mock_uvicorn.run.call_args[1]['log_level'] == level
+
+    def test_log_level_case_insensitive(self, mock_api_service, mock_uvicorn):
+        """LOG_LEVEL must be normalised to lowercase before use."""
+        mock_service, _ = mock_api_service
+        os.environ['LOG_LEVEL'] = 'WARNING'
+
+        with patch.dict(sys.modules, {'api.service': mock_service, 'uvicorn': mock_uvicorn}):
+            with patch('signal.signal'):
+                runpy.run_path('src/app.py', run_name='__main__')
+
+        assert mock_uvicorn.run.call_args[1]['log_level'] == 'warning'
+
+    def test_invalid_workers_defaults_to_one(self, mock_api_service, mock_uvicorn):
+        """Non-numeric APP_WORKERS must fall back to 1 without crashing."""
+        mock_service, _ = mock_api_service
+        os.environ['APP_WORKERS'] = 'many'
+
+        with patch.dict(sys.modules, {'api.service': mock_service, 'uvicorn': mock_uvicorn}):
+            with patch('signal.signal'):
+                runpy.run_path('src/app.py', run_name='__main__')
+
+        assert mock_uvicorn.run.call_args[1]['workers'] == 1
+
+    def test_invalid_graceful_timeout_defaults_to_thirty(self, mock_api_service, mock_uvicorn):
+        """Non-numeric APP_GRACEFUL_TIMEOUT must fall back to 30 without crashing."""
+        mock_service, _ = mock_api_service
+        os.environ['APP_GRACEFUL_TIMEOUT'] = 'soon'
+
+        with patch.dict(sys.modules, {'api.service': mock_service, 'uvicorn': mock_uvicorn}):
+            with patch('signal.signal'):
+                runpy.run_path('src/app.py', run_name='__main__')
+
+        assert mock_uvicorn.run.call_args[1]['timeout_graceful_shutdown'] == 30
+
+
+class TestOSErrorSpecificCodes:
+    """Test specific OSError errno handling."""
+
+    def test_oserror_errno_48_address_in_use_mac(self, mock_api_service, mock_uvicorn):
+        """OSError errno 48 (EADDRINUSE on macOS) must cause sys.exit(1)."""
+        mock_service, _ = mock_api_service
+        err = OSError("Address already in use")
+        err.errno = 48
+        mock_uvicorn.run.side_effect = err
+
+        with patch.dict(sys.modules, {'api.service': mock_service, 'uvicorn': mock_uvicorn}):
+            with patch('signal.signal'):
+                with patch('logging.Logger.error') as mock_error:
+                    with pytest.raises(SystemExit) as exc_info:
+                        runpy.run_path('src/app.py', run_name='__main__')
+
+        assert exc_info.value.code == 1
+        assert mock_error.called

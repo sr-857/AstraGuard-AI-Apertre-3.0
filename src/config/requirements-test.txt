@@ -9,3 +9,5 @@ pytest-asyncio==0.24.0
 coverage>=7.10.6,<8.0.0
 jsonschema>=4.0.0,<5.0
 docker>=7.0.0
+aiosqlite>=0.19.0  # Async SQLite support for contact form tests
+aiofiles>=23.0.0  # Async file operations for contact form tests

@@ -19,6 +19,9 @@ from datetime import datetime
 from typing import List, Dict, Optional, Any
 import statistics
 
+# Mark chaos tests as slow and give them extended timeout
+pytestmark = [pytest.mark.slow, pytest.mark.chaos, pytest.mark.timeout(600)]
+
 from tests.swarm.test_swarm_sim import SwarmSimulatorOrchestrator
 from tests.swarm.chaos.chaos_injector import ChaosInjectorExtensions
 

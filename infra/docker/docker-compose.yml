@@ -1,6 +1,9 @@
 services:
   # FastAPI Backend
   api:
+    build:
+      context: ../../
+      dockerfile: infra/docker/Dockerfile
     image: astraguard-ai:latest
     container_name: astraguard-api
     ports:
@@ -21,13 +24,13 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ./backend:/app/backend
-      - ./anomaly:/app/anomaly
-      - ./core:/app/core
-      - ./state_machine:/app/state_machine
-      - ./memory_engine:/app/memory_engine
-      - ./config:/app/config
-      - ./logs:/app/logs
+      - ../../src/backend:/app/backend
+      - ../../src/anomaly:/app/anomaly
+      - ../../src/core:/app/core
+      - ../../src/state_machine:/app/state_machine
+      - ../../src/memory_engine:/app/memory_engine
+      - ../../src/config:/app/config
+      - ../../logs:/app/logs
       - app_cache:/app/.cache
     networks:
       - astra-network

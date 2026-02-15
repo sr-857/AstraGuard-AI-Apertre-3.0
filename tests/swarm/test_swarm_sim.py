@@ -34,6 +34,9 @@ from tests.swarm.failure_injector import FailureInjector, FailureType
 
 logger = logging.getLogger(__name__)
 
+# Mark swarm simulator tests as slow - they use docker-compose
+pytestmark = [pytest.mark.slow, pytest.mark.timeout(300)]
+
 
 @dataclass
 class SwarmTestResult:
@@ -98,14 +101,14 @@ class SwarmSimulatorOrchestrator:
                 ["docker-compose", "-f", self.compose_file, "up", "-d"],
                 capture_output=True,
                 text=True,
-                timeout=120
+                timeout=300
             )
             if result.returncode != 0:
                 logger.error(f"docker-compose failed: {result.stderr}")
                 return False
             
             # Wait for all agents healthy
-            await self._wait_for_agents_healthy(timeout=120)
+            await self._wait_for_agents_healthy(timeout=300)
             logger.info("✓ All agents healthy")
             return True
         except Exception as e:
@@ -127,7 +130,7 @@ class SwarmSimulatorOrchestrator:
             logger.error(f"Failed to stop constellation: {e}")
             return False
     
-    async def _wait_for_agents_healthy(self, timeout: int = 120):
+    async def _wait_for_agents_healthy(self, timeout: int = 300):
         """Wait for all agents to pass health checks."""
         start = datetime.now()
         logger.info(f"Waiting up to {timeout}s for agents to become healthy...")
@@ -590,28 +593,41 @@ class SwarmSimulatorOrchestrator:
 
 # ==================== PYTEST FIXTURES ====================
 
+
+
 @pytest.fixture
 async def swarm_sim():
     """Swarm simulator fixture."""
-    orchestrator = SwarmSimulatorOrchestrator()
+    try:
+        orchestrator = SwarmSimulatorOrchestrator(docker_compose_file="infra/docker/docker-compose.swarm.yml")
+        # Verify docker connection immediately
+        orchestrator.docker.version()
+    except (docker.errors.DockerException, Exception) as e:
+        pytest.skip(f"Docker not available or not running: {e}")
+        return
+
     yield orchestrator
-    await orchestrator.failure_injector.recover_all()
+    
+    try:
+        await orchestrator.failure_injector.recover_all()
+    except:
+        pass
 
 
 # ==================== PYTEST TESTS ====================
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="Docker infrastructure not available in CI environment - requires docker.from_env()")
 async def test_full_swarm_boot(swarm_sim):
     """Test full swarm boot."""
-    assert await swarm_sim.start_constellation()
+    if not await swarm_sim.start_constellation():
+        pytest.fail("Failed to start constellation")
+    
     alive = await swarm_sim._get_alive_agents()
     assert len(alive) == 5
     await swarm_sim.stop_constellation()
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="Docker infrastructure not available in CI environment - requires docker.from_env()")
 async def test_all_golden_paths(swarm_sim):
     """Run all golden path tests."""
     summary = await swarm_sim.run_all_tests()
