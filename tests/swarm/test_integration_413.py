@@ -16,6 +16,9 @@ from astraguard.swarm.safety_simulator import SwarmImpactSimulator
 from astraguard.swarm.response_orchestrator import SwarmResponseOrchestrator
 from astraguard.swarm.models import AgentID
 
+# Mark safety simulation integration tests as slow
+pytestmark = [pytest.mark.slow, pytest.mark.timeout(90)]
+
 
 @dataclass
 class MockAgent:

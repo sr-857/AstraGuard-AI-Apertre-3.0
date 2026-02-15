@@ -15,11 +15,20 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
+# Fix #809: Prevent cancellation of expensive E2E tests
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   e2e-suite:
     name: E2E Recovery Tests (${{ matrix.scenario }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    
+    # Fix #809: Unique project name per matrix scenario to prevent collisions
+    env:
+      COMPOSE_PROJECT_NAME: e2e-${{ github.run_id }}-${{ matrix.scenario }}
     
     strategy:
       matrix:
@@ -216,20 +225,20 @@ jobs:
               repo: context.repo.repo,
               body: `## ✅ E2E Recovery Pipeline Tests PASSED
 
-**MTTR SLA Achieved**: p95 <30s ✓
-
-### Test Results
-- Battery Fault Recovery: ✓ 100% pass
-- Attitude Fault (Safety Block): ✓ 100% pass  
-- Leader Crash During Recovery: ✓ 100% pass
-
-### Key Metrics
-- Mean MTTR: 24.7s
-- Consensus Rate: 96%+
-- Compliance Rate: 94%+
-- Safety Blocks: Working ✓
-
-**Status**: E2E pipeline complete! Ready for final integration.`
+            **MTTR SLA Achieved**: p95 <30s ✓
+            
+            ### Test Results
+            - Battery Fault Recovery: ✓ 100% pass
+            - Attitude Fault (Safety Block): ✓ 100% pass  
+            - Leader Crash During Recovery: ✓ 100% pass
+            
+            ### Key Metrics
+            - Mean MTTR: 24.7s
+            - Consensus Rate: 96%+
+            - Compliance Rate: 94%+
+            - Safety Blocks: Working ✓
+            
+            **Status**: E2E pipeline complete! Ready for final integration.`
             })
 
   e2e-stress:
@@ -237,6 +246,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     if: github.event_name == 'schedule'
+
+    # Fix #809: Unique project name for stress tests
+    env:
+      COMPOSE_PROJECT_NAME: e2e-stress-${{ github.run_id }}
     
     steps:
       - name: Checkout code

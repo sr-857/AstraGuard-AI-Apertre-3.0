@@ -25,6 +25,9 @@ from backend.orchestration.distributed_coordinator import (
     ConsensusDecision,
 )
 
+# Mark all tests in this module as slow due to distributed nature
+pytestmark = [pytest.mark.slow, pytest.mark.timeout(60)]
+
 
 # ============================================================================
 # FIXTURES

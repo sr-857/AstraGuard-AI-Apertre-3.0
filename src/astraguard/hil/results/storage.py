@@ -101,7 +101,7 @@ class ResultStorage:
         except (TypeError, ValueError, RecursionError) as e:
             raise ValueError(f"Result contains non-serializable or circular data: {e}")
 
-    def save_scenario_result(
+    async def save_scenario_result(
         self, scenario_name: str, result: Dict[str, Any]
     ) -> str:
         """
@@ -145,7 +145,8 @@ class ResultStorage:
             raise OSError("Insufficient disk space to save result")
 
         try:
-            filepath.write_text(json_str)
+            # Perform file write off the event loop to avoid blocking
+            await asyncio.to_thread(filepath.write_text, json_str)
             logger.info(f"Saved scenario result: {filepath}")
             return str(filepath)
         except OSError as e:
@@ -163,7 +164,7 @@ class ResultStorage:
             logger.error(f"Failed to serialize result data for {scenario_name}: {e}")
             raise
 
-    def get_scenario_results(
+    async def get_scenario_results(
         self, scenario_name: str, limit: int = 10
     ) -> List[Dict[str, Any]]:
         """
@@ -192,21 +193,24 @@ class ResultStorage:
         pattern: str = f"{scenario_name}_*.json"
         result_files: List[Path] = sorted(self.results_dir.glob(pattern), reverse=True)[:limit]
 
-        async def load_result(result_file):
+        async def load_result(result_file: Path):
             try:
-                result_data = cast(Dict[str, Any], json.loads(result_file.read_text()))
+                text = await asyncio.to_thread(result_file.read_text)
+                result_data = cast(Dict[str, Any], json.loads(text))
                 results.append(result_data)
             except (OSError, IOError, PermissionError) as e:
                 logger.warning(f"Failed to read result file {result_file.name}: {e}")
             except (json.JSONDecodeError, UnicodeDecodeError) as e:
                 logger.warning(f"Corrupted result file {result_file.name}: {e}")
             except Exception as e:
-                # Log unexpected errors but continue processing other files (best-effort)
                 logger.error(
                     f"Unexpected error loading result {result_file.name}: {e}",
                     extra={"file": str(result_file), "scenario": scenario_name},
-                    exc_info=True
+                    exc_info=True,
                 )
+
+        # Load files concurrently off the event loop
+        await asyncio.gather(*(load_result(f) for f in result_files))
         return results
 
     async def get_recent_campaigns(self, limit: int = 10) -> List[Dict[str, Any]]:
@@ -299,7 +303,7 @@ class ResultStorage:
             Dict[str, Any]: Dict with statistics including total_campaigns,
                 total_scenarios, total_passed, and avg_pass_rate.
         """
-        campaigns: List[Dict[str, Any]] = self.get_recent_campaigns(limit=999)
+        campaigns: List[Dict[str, Any]] = await self.get_recent_campaigns(limit=999)
         if not campaigns:
             return {
                 "total_campaigns": 0,

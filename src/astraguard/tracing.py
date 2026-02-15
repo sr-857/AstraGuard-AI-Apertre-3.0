@@ -52,19 +52,39 @@ def initialize_tracing(
     - Returns a no-op provider if tracing is disabled or initialization fails.
 
     Args:
-        service_name (str): Identifier for the service in Jaeger UI.
-        jaeger_host (str): Hostname of the Jaeger agent/collector.
-        jaeger_port (int): Port of the Jaeger agent/collector (default: 6831).
-        enabled (bool): Global switch to enable/disable tracing.
-        batch_size (int): Max number of spans to send in one batch.
-        export_interval (float): Time in seconds between batch exports.
-
+        service_name: Name of the service for tracing
+        jaeger_host: Jaeger agent hostname
+        jaeger_port: Jaeger agent port (1-65535)
+        enabled: Enable/disable tracing
+        batch_size: Max batch size for span export (must be > 0)
+        export_interval: Export interval in seconds (must be > 0)
+        
     Returns:
-        TracerProvider: The configured global tracer provider.
+        TracerProvider instance
+        
+    Raises:
+        ValueError: If configuration parameters are invalid
+        ConnectionError: If unable to connect to Jaeger (after retries)
     """
     if not enabled:
         logger.info("⚠️  Tracing disabled - using no-op tracer provider")
         return TracerProvider()
+    
+    # Input validation
+    if not (1 <= jaeger_port <= 65535):
+        logger.error(
+            f"Invalid jaeger_port: {jaeger_port} "
+            f"(must be between 1 and 65535)"
+        )
+        raise ValueError(f"jaeger_port must be between 1-65535, got {jaeger_port}")
+    
+    if batch_size <= 0:
+        logger.error(f"Invalid batch_size: {batch_size} (must be > 0)")
+        raise ValueError(f"batch_size must be positive, got {batch_size}")
+    
+    if export_interval <= 0:
+        logger.error(f"Invalid export_interval: {export_interval} (must be > 0)")
+        raise ValueError(f"export_interval must be positive, got {export_interval}")
     
     try:
         # Configure Jaeger exporter
@@ -96,32 +116,63 @@ def initialize_tracing(
         return provider
         
     except (ConnectionError, OSError) as e:
-        logger.warning(f"⚠️  Failed to initialize Jaeger due to connection/os error: {e}")
+        # Network/connection issues - already retried by tenacity decorator
+        logger.error(
+            f"Failed to connect to Jaeger at {jaeger_host}:{jaeger_port} "
+            f"after retries: {e}"
+        )
+        raise
+    except ImportError as e:
+        logger.error(f"Missing OpenTelemetry dependency: {e}")
+        logger.info("Falling back to no-op tracer provider")
         return TracerProvider()
-    except RuntimeError as e:
-        logger.warning(f"⚠️  Runtime error during Jaeger initialization: {e}")
-        return TracerProvider()
+    except ValueError as e:
+        # Configuration errors
+        logger.error(f"Invalid tracing configuration: {e}")
+        raise
     except Exception as e:
-        logger.warning(f"⚠️  Unexpected error during Jaeger initialization: {e}")
+        # Unexpected errors - log with full context
+        logger.warning(
+            f"Unexpected error initializing Jaeger "
+            f"(host={jaeger_host}, port={jaeger_port}): {type(e).__name__}: {e}"
+        )
+        logger.info("Falling back to no-op tracer provider")
         return TracerProvider()
 
 
-def setup_auto_instrumentation() -> None:
+
+def setup_auto_instrumentation():
     """
     Setup automatic instrumentation for common libraries
     Must be called before creating FastAPI app
     """
+    # Instrument requests library
     try:
-        # Instrument external libraries
         RequestsInstrumentor().instrument()
-        RedisInstrumentor().instrument()
-        logger.info("✅ Auto-instrumentation enabled for requests and Redis")
+        logger.info("✅ Auto-instrumentation enabled for requests")
     except ImportError as e:
-        logger.warning(f"⚠️  Missing instrumentation library: {e}")
+        logger.warning(f"⚠️  Missing requests instrumentation library: {e}")
     except RuntimeError as e:
-        logger.warning(f"⚠️  Runtime error during auto-instrumentation setup: {e}")
-    except Exception as e:
-        logger.warning(f"⚠️  Unexpected error during auto-instrumentation setup: {e}")
+        logger.warning(f"⚠️  Failed to instrument requests library: {e}")
+    except AttributeError as e:
+        logger.error(
+            f"Requests instrumentation method not found: {e}. "
+            f"Check OpenTelemetry version compatibility."
+        )
+    
+    # Instrument Redis library
+    try:
+        RedisInstrumentor().instrument()
+        logger.info("✅ Auto-instrumentation enabled for Redis")
+    except ImportError as e:
+        logger.warning(f"⚠️  Missing Redis instrumentation library: {e}")
+    except RuntimeError as e:
+        logger.warning(f"⚠️  Failed to instrument Redis library: {e}")
+    except AttributeError as e:
+        logger.error(
+            f"Redis instrumentation method not found: {e}. "
+            f"Check OpenTelemetry version compatibility."
+        )
 
 
 def instrument_fastapi(app: Any) -> None:
@@ -130,16 +181,32 @@ def instrument_fastapi(app: Any) -> None:
 
     Args:
         app: FastAPI application instance
+        
+    Raises:
+        TypeError: If app is None or invalid type
     """
+    if app is None:
+        logger.error("Cannot instrument FastAPI: app is None")
+        raise TypeError("FastAPI app cannot be None")
+    
     try:
         FastAPIInstrumentor.instrument_app(app)
         logger.info("✅ FastAPI instrumented with OpenTelemetry")
     except ImportError as e:
         logger.warning(f"⚠️  Missing FastAPI instrumentation: {e}")
+    except TypeError as e:
+        logger.error(
+            f"Invalid FastAPI app type: {type(app).__name__}. "
+            f"Expected FastAPI instance: {e}"
+        )
+        raise
     except RuntimeError as e:
-        logger.warning(f"⚠️  Runtime error during FastAPI instrumentation: {e}")
-    except Exception as e:
-        logger.warning(f"⚠️  Unexpected error during FastAPI instrumentation: {e}")
+        logger.warning(f"⚠️  Failed to instrument FastAPI: {e}")
+    except AttributeError as e:
+        logger.error(
+            f"FastAPI instrumentation method not found: {e}. "
+            f"Check OpenTelemetry version compatibility."
+        )
 
 
 # ============================================================================
@@ -176,8 +243,19 @@ def span(name: str, attributes: Optional[Dict[str, Any]] = None) -> Generator[An
     with tracer.start_as_current_span(name) as span_obj:
         if attributes:
             for key, value in attributes.items():
-                span_obj.set_attribute(key, str(value))
+                try:
+                    span_obj.set_attribute(key, str(value))
+                except (TypeError, ValueError) as e:
+                    logger.warning(
+                        f"Failed to set span attribute '{key}': {e}. "
+                        f"Attribute type: {type(value).__name__}"
+                    )
+                except Exception as e:
+                    logger.debug(
+                        f"Unexpected error setting attribute '{key}': {e}"
+                    )
         yield span_obj
+
 
 
 @contextmanager
@@ -204,9 +282,111 @@ def span_anomaly_detection(data_size: int, model_name: str = "default") -> Gener
             raise
 
 
-# ... [All other context managers remain exactly the same, only generic exceptions in places replaced with RuntimeError + Exception] ...
+@contextmanager
+def span_model_inference(model_type: str, input_shape: Any) -> Generator[Any, None, None]:
+    """
+    Trace ML model inference operations
+    
+    Args:
+        model_type: Type of model (e.g., 'classifier', 'detector')
+        input_shape: Shape of input data
+    """
+    tracer = get_tracer()
+    with tracer.start_as_current_span("model_inference") as span_obj:
+        span_obj.set_attribute("model.type", model_type)
+        span_obj.set_attribute("input.shape", str(input_shape))
+        yield span_obj
 
+
+@contextmanager
+def span_external_call(service: str, operation: str, timeout: Optional[float] = None) -> Generator[Any, None, None]:
+    """
+    Trace external service calls (API, database, etc.)
+    
+    Args:
+        service: External service name
+        operation: Operation being performed
+        timeout: Operation timeout in seconds
+    """
+    tracer = get_tracer()
+    with tracer.start_as_current_span("external_call") as span_obj:
+        span_obj.set_attribute("service", service)
+        span_obj.set_attribute("operation", operation)
+        if timeout:
+            span_obj.set_attribute("timeout", timeout)
+        yield span_obj
+
+
+@contextmanager
+def span_database_query(query_type: str, table: Optional[str] = None) -> Generator[Any, None, None]:
+    """
+    Trace database query operations
+    
+    Args:
+        query_type: Type of query (SELECT, INSERT, UPDATE, etc.)
+        table: Table name (optional)
+    """
+    tracer = get_tracer()
+    with tracer.start_as_current_span("database_query") as span_obj:
+        span_obj.set_attribute("query.type", query_type)
+        if table:
+            span_obj.set_attribute("table", table)
+        yield span_obj
+
+
+@contextmanager
+def span_cache_operation(operation: str, key: str, cache_type: str = "redis") -> Generator[Any, None, None]:
+    """
+    Trace cache operations
+    
+    Args:
+        operation: Cache operation (get, set, delete)
+        key: Cache key
+        cache_type: Type of cache (default: redis)
+    """
+    tracer = get_tracer()
+    with tracer.start_as_current_span("cache_operation") as span_obj:
+        span_obj.set_attribute("cache.operation", operation)
+        span_obj.set_attribute("cache.key", key)
+        span_obj.set_attribute("cache.type", cache_type)
+        yield span_obj
+
+
+@contextmanager
+def span_circuit_breaker(name: str, operation: str) -> Generator[Any, None, None]:
+    """
+    Trace circuit breaker operations
+    
+    Args:
+        name: Name of the circuit breaker
+        operation: Operation type (call, trip, reset, half-open)
+    """
+    tracer = get_tracer()
+    with tracer.start_as_current_span("circuit_breaker") as span_obj:
+        span_obj.set_attribute("breaker.name", name)
+        span_obj.set_attribute("breaker.operation", operation)
+        yield span_obj
+
+
+@contextmanager
+def span_retry(endpoint: str, attempt: int) -> Generator[Any, None, None]:
+    """
+    Trace retry attempts
+    
+    Args:
+        endpoint: Endpoint being retried
+        attempt: Retry attempt number
+    """
+    tracer = get_tracer()
+    with tracer.start_as_current_span("retry") as span_obj:
+        span_obj.set_attribute("endpoint", endpoint)
+        span_obj.set_attribute("attempt", attempt)
+        yield span_obj
+
+
+# ============================================================================
 # TRACING SHUTDOWN
+# ============================================================================
 
 def shutdown_tracing() -> None:
     """
@@ -215,15 +395,32 @@ def shutdown_tracing() -> None:
     """
     try:
         provider = trace.get_tracer_provider()
-        if hasattr(provider, 'force_flush'):
-            provider.force_flush()
+        
+        if not hasattr(provider, 'force_flush'):
+            logger.debug("Tracer provider does not support force_flush (no-op provider)")
+            return
+        
+        # Attempt to flush with timeout
+        provider.force_flush(timeout_millis=5000)
         logger.info("✅ Tracing flushed and shutdown complete")
+        
     except ConnectionError as e:
-        logger.warning(f"⚠️  Connection error during tracing shutdown: {e}")
+        logger.warning(
+            f"⚠️  Connection error during tracing shutdown: {e}. "
+            f"Some spans may not have been exported."
+        )
+    except TimeoutError as e:
+        logger.warning(
+            f"⚠️  Timeout during span flush: {e}. "
+            f"Some pending spans may not have been exported."
+        )
     except RuntimeError as e:
         logger.warning(f"⚠️  Runtime error during tracing shutdown: {e}")
     except Exception as e:
-        logger.warning(f"⚠️  Unexpected error during tracing shutdown: {e}")
+        # Unexpected errors during shutdown - log but don't raise
+        logger.warning(
+            f"Unexpected error during tracing shutdown: {type(e).__name__}: {e}"
+        )
 
 
 # ASYNC CONTEXT MANAGERS

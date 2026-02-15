@@ -5,6 +5,9 @@ Tests thread-safe access to global state variables.
 import asyncio
 import pytest
 
+# Mark all tests in this module as slow due to concurrent operations
+pytestmark = [pytest.mark.slow, pytest.mark.timeout(30)]
+
 
 @pytest.mark.asyncio
 async def test_concurrent_telemetry_updates():
