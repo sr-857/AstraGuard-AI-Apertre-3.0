@@ -48,8 +48,9 @@
   <img src="https://contrib.rocks/image?repo=sr-857/AstraGuard-AI-Apertre-3.0" />
 </a>
 
-## _Want to see your avatar here? [Make your first contribution today!](CONTRIBUTING.md)_
+### _Want to see your avatar here? [Make your first contribution today!](docs/CONTRIBUTING.md)_
 
+**📋 [View All Contributors](CONTRIBUTORS.md)** | **📊 [Metrics Dashboard](docs/contribution-metrics-dashboard.html)** | **🎖️ [Recognition Program](.github/CONTRIBUTOR_RECOGNITION.md)** | **🏅 [Badge System](docs/CONTRIBUTOR_BADGES.md)**
 
 ---
 
@@ -515,16 +516,52 @@ print(result)
 
 ## 👥 Contributing
 
-We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+We welcome contributions from developers of all skill levels! 🎉
+
+### 👋 First Time Contributing?
+
+Start with a **Good First Issue** - perfect for newcomers!
+
+[![Good First Issues](https://img.shields.io/github/issues/sr-857/AstraGuard-AI-Apertre-3.0/good%20first%20issue?style=for-the-badge&label=Good%20First%20Issues&color=7057ff)](https://github.com/sr-857/AstraGuard-AI-Apertre-3.0/labels/good%20first%20issue)
+
+**What are Good First Issues?**
+- ✅ Well-defined with clear acceptance criteria
+- ✅ Beginner-friendly requiring minimal context  
+- ✅ Completable in 2-4 hours
+- ✅ Include guidance and resources
+
+### 📚 Contribution Resources
+
+- **[Contributing Guide](docs/CONTRIBUTING.md)** - Full guidelines and workflow
+- **[Good First Issue Criteria](docs/GOOD_FIRST_ISSUE_CRITERIA.md)** - How issues are selected
+- **[Code of Conduct](docs/CODE_OF_CONDUCT.md)** - Community standards
+
+### 💡 How to Get Started
+
+1. **Find an issue** you want to work on
+2. **Comment** on the issue to claim it
+3. **Fork** the repository
+4. **Create** a branch: `git checkout -b feature/issue-699-description`
+5. **Make** your changes
+6. **Test** thoroughly
+7. **Submit** a pull request
+
+**Questions?** Don't hesitate to ask in the issue comments or join our [WhatsApp group](https://chat.whatsapp.com/Ka6WKpDdKIxInvpLBO1nCB)!
 
 ---
 
 ## 📚 Documentation
 
-- [Getting Started](docs/GETTING_STARTED.md)
-- [Technical Documentation](docs/TECHNICAL.md)
-- [API Reference](docs/API_REFERENCE.md)
-- [Architecture](docs/ARCHITECTURE.md)
+### Core Documentation
+- **[Getting Started](docs/GETTING_STARTED.md)** - Setup and installation guide
+- **[Technical Documentation](docs/TECHNICAL.md)** - Architecture and design
+- **[API Reference](docs/API_REFERENCE.md)** - API endpoints and usage
+- **[Architecture](docs/ARCHITECTURE.md)** - System architecture overview
+
+### Developer Tools
+- **[Dependency Conflict Resolver](docs/DEPENDENCY_CONFLICT_RESOLVER.md)** - Detect and resolve dependency conflicts
+- **[Contributing Guide](docs/CONTRIBUTING.md)** - How to contribute to the project
+- **[Good First Issue Criteria](docs/GOOD_FIRST_ISSUE_CRITERIA.md)** - Guidelines for newcomers
 
 ---
 

@@ -11,6 +11,9 @@ from backend.orchestration.coordinator import (
 )
 from backend.orchestration.distributed_coordinator import DistributedResilienceCoordinator
 
+# Mark coordinator tests as slow due to distributed operations
+pytestmark = [pytest.mark.slow, pytest.mark.timeout(60)]
+
 
 class MockHealthMonitor:
     """Mock health monitor for testing."""

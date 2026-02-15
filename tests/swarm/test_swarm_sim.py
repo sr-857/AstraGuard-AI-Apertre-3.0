@@ -35,6 +35,9 @@ from tests.swarm.failure_injector import FailureInjector, FailureType
 
 logger = logging.getLogger(__name__)
 
+# Mark swarm simulator tests as slow - they use docker-compose
+pytestmark = [pytest.mark.slow, pytest.mark.timeout(300)]
+
 
 @dataclass
 class SwarmTestResult:

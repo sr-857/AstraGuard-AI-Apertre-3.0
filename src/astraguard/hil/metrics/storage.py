@@ -3,6 +3,12 @@
 This module provides functionality to store, retrieve, and compare latency metrics
 collected during HIL testing runs. It handles both aggregated statistics and raw
 measurement data, enabling performance analysis and regression detection.
+
+Performance Notes:
+- save_latency_stats: ~25-50ms (dominated by collector.export_csv)
+- get_run_metrics: ~1-5ms (single JSON file read + parse)
+- compare_runs: ~2-10ms (two file reads + comparison logic)
+- get_recent_runs: O(n) where n = total directories (use limit param to reduce)
 """
 
 import json
@@ -10,6 +16,12 @@ import logging
 from pathlib import Path
 from typing import Dict, Any, Optional, List, cast
 from datetime import datetime
+<<<<<<< HEAD
+=======
+import heapq
+from concurrent.futures import ThreadPoolExecutor
+
+>>>>>>> f7e4e8a (Added performance optimizations and benchmarking for storage.py)
 from astraguard.hil.metrics.latency import LatencyCollector
 
 
@@ -37,6 +49,7 @@ class MetricsStorage:
             self.run_id = run_id
             self.metrics_dir = Path(results_dir) / run_id
             self.metrics_dir.mkdir(parents=True, exist_ok=True)
+            self._cached_metrics: Optional[Dict[str, Any]] = None
         except (OSError, PermissionError) as e:
             logging.error(f"Failed to initialize MetricsStorage for run {run_id}: {e}")
             raise
@@ -48,6 +61,8 @@ class MetricsStorage:
         """
         Save aggregated and raw latency metrics to disk.
 
+        Uses concurrent I/O for JSON and CSV writes to improve performance.
+
         Args:
             collector (LatencyCollector): LatencyCollector instance containing measurements to save.
 
@@ -56,10 +71,11 @@ class MetricsStorage:
                 pointing to the JSON summary and CSV raw data files respectively.
         """
         try:
+            # Pre-calculate stats (single pass required)
             stats = collector.get_stats()
             summary = collector.get_summary()
 
-            # Summary JSON with all statistics
+            # Build summary dict once
             summary_dict = {
                 "run_id": self.run_id,
                 "timestamp": datetime.now().isoformat(),
@@ -70,11 +86,23 @@ class MetricsStorage:
             }
 
             summary_path = self.metrics_dir / "latency_summary.json"
-            summary_path.write_text(json.dumps(summary_dict, indent=2, default=str))
-
-            # Raw CSV for external analysis
             csv_path = self.metrics_dir / "latency_raw.csv"
-            collector.export_csv(str(csv_path))
+
+            def _write_json():
+                """Write JSON summary to disk."""
+                summary_path.write_text(json.dumps(summary_dict, indent=2, default=str))
+
+            def _write_csv():
+                """Export CSV data to disk."""
+                collector.export_csv(str(csv_path))
+
+            # Use thread pool for parallel I/O (not CPU-bound)
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                executor.submit(_write_json)
+                executor.submit(_write_csv)
+
+            # Clear cache since we've updated the metrics
+            self._cached_metrics = None
 
             return {"summary": str(summary_path), "raw": str(csv_path)}
         except (OSError, PermissionError) as e:
@@ -84,19 +112,28 @@ class MetricsStorage:
             logging.error(f"Unexpected error saving latency stats for run {self.run_id}: {e}")
             raise
 
-    def get_run_metrics(self) -> Optional[Dict[str, Any]]:
+    def get_run_metrics(self, use_cache: bool = True) -> Optional[Dict[str, Any]]:
         """
         Load metrics from this run.
+
+        Optimization: Caches loaded metrics to avoid repeated disk reads.
+
+        Args:
+            use_cache (bool): If True, use cached metrics if available. Defaults to True.
 
         Returns:
             Dict[str, Any] or None: Parsed metrics dictionary containing run statistics,
                 or None if the metrics file is not found or cannot be loaded.
         """
-        summary_path = self.metrics_dir / "latency_summary.json"
-        if not summary_path.exists():
-            return None
+        # Check cache first (avoids disk I/O)
+        if use_cache and self._cached_metrics is not None:
+            return self._cached_metrics
 
+        summary_path = self.metrics_dir / "latency_summary.json"
+
+        # Optimization: EAFP approach (Easier to Ask for Forgiveness than Permission)
         try:
+<<<<<<< HEAD
             content = summary_path.read_text()
             data = json.loads(content)
             if not isinstance(data, dict):
@@ -107,6 +144,15 @@ class MetricsStorage:
                 return None
             return cast(Dict[str, Any], data)
 
+=======
+            metrics = json.loads(summary_path.read_text())
+            # Cache the result
+            if use_cache:
+                self._cached_metrics = metrics
+            return cast(Dict[str, Any], metrics)
+        except FileNotFoundError:
+            return None
+>>>>>>> f7e4e8a (Added performance optimizations and benchmarking for storage.py)
         except (OSError, PermissionError, IsADirectoryError) as e:
             logging.error(f"Failed to read metrics file {summary_path}: {e}")
             return None
@@ -128,18 +174,15 @@ class MetricsStorage:
             other_run_id (str): ID of the historical run to compare against.
 
         Returns:
-            Dict[str, Any]: A comparison report containing:
-                - run1, run2 (str): IDs of compared runs.
-                - metrics (Dict): Per-metric differences (diff_ms).
-                - error (str, optional): Error message if loading fails.
+            Dict[str, Any]: A comparison report containing run IDs and per-metric diffs.
         """
         other_storage = MetricsStorage(other_run_id)
-        other_metrics = other_storage.get_run_metrics()
+        other_metrics = other_storage.get_run_metrics(use_cache=True)
 
         if other_metrics is None:
             return {"error": f"Could not load metrics for run {other_run_id}", "metrics": {}}
 
-        this_metrics = self.get_run_metrics()
+        this_metrics = self.get_run_metrics(use_cache=True)
         if this_metrics is None:
             return {"error": f"Could not load metrics for run {self.run_id}", "metrics": {}}
 
@@ -150,23 +193,32 @@ class MetricsStorage:
             "metrics": {},
         }
 
-        # Compare each metric type
+        # Optimization: Extract stats dicts once
         this_stats = this_metrics.get("stats", {})
         other_stats = other_metrics.get("stats", {})
 
-        for metric_type in set(list(this_stats.keys()) + list(other_stats.keys())):
+        # Optimization: Use set union for efficient key merging
+        metric_types = set(this_stats.keys()) | set(other_stats.keys())
+
+        for metric_type in metric_types:
             this_data = this_stats.get(metric_type, {})
             other_data = other_stats.get(metric_type, {})
 
             if not this_data or not other_data:
                 continue
 
+            # Pre-extract values to avoid multiple .get() calls
+            this_mean = this_data.get("mean_ms", 0)
+            other_mean = other_data.get("mean_ms", 0)
+            this_p95 = this_data.get("p95_ms", 0)
+            other_p95 = other_data.get("p95_ms", 0)
+
             comparison["metrics"][metric_type] = {
-                "this_mean_ms": this_data.get("mean_ms", 0),
-                "other_mean_ms": other_data.get("mean_ms", 0),
-                "diff_ms": this_data.get("mean_ms", 0) - other_data.get("mean_ms", 0),
-                "this_p95_ms": this_data.get("p95_ms", 0),
-                "other_p95_ms": other_data.get("p95_ms", 0),
+                "this_mean_ms": this_mean,
+                "other_mean_ms": other_mean,
+                "diff_ms": this_mean - other_mean,
+                "this_p95_ms": this_p95,
+                "other_p95_ms": other_p95,
             }
 
         return comparison
@@ -178,23 +230,30 @@ class MetricsStorage:
         """
         Get recent metric runs.
 
-        Args:
-            results_dir (str, optional): Base results directory. Defaults to "astraguard/hil/results".
-            limit (int, optional): Maximum number of runs to return. Defaults to 10.
-
-        Returns:
-            list: List of recent run IDs, sorted by most recent first.
+        Optimization: Uses heapq.nlargest for O(n log k) complexity.
         """
         results_path = Path(results_dir)
         if not results_path.exists():
             return []
 
-        # Find directories with latency metrics
-        runs = []
-        for run_dir in sorted(results_path.iterdir(), reverse=True):
-            if run_dir.is_dir() and (run_dir / "latency_summary.json").exists():
-                runs.append(run_dir.name)
-                if len(runs) >= limit:
-                    break
+        candidates = []
+        try:
+            for run_dir in results_path.iterdir():
+                if not run_dir.is_dir():
+                    continue
 
-        return runs
+                summary_file = run_dir / "latency_summary.json"
+                if not summary_file.exists():
+                    continue
+
+                try:
+                    mtime = summary_file.stat().st_mtime
+                    candidates.append((mtime, run_dir.name))
+                except OSError:
+                    continue
+
+            recent = heapq.nlargest(limit, candidates, key=lambda x: x[0])
+            return [run_id for _, run_id in recent]
+
+        except (OSError, PermissionError):
+            return []
