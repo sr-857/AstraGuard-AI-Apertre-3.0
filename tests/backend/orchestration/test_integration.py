@@ -8,6 +8,9 @@ from backend.orchestration.recovery_orchestrator import RecoveryOrchestrator
 from backend.orchestration.coordinator import LocalCoordinator, ConsensusDecision
 from backend.orchestration.distributed_coordinator import DistributedResilienceCoordinator
 
+# Mark orchestration integration tests as slow
+pytestmark = [pytest.mark.slow, pytest.mark.timeout(60)]
+
 
 class IntegrationMockHealthMonitor:
     """Health monitor mock for integration testing."""

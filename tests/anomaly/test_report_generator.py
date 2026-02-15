@@ -792,6 +792,419 @@ class TestIntegration:
                 assert "test" in text_data
 
 
+class TestErrorHandling:
+    """Test suite for error handling and exceptional conditions."""
+
+    @pytest.fixture
+    def generator(self):
+        """Fixture to create a fresh generator for each test."""
+        return AnomalyReportGenerator()
+
+    def test_export_json_file_permission_error(self, generator):
+        """Test handling of file permission errors during JSON export."""
+        generator.record_anomaly("test", "HIGH", 0.9, "test", {})
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = os.path.join(tmpdir, "report.json")
+            
+            # Mock open to raise PermissionError
+            with patch("builtins.open", side_effect=PermissionError("Access denied")):
+                with pytest.raises(PermissionError):
+                    generator.export_json(file_path)
+
+    def test_export_text_file_permission_error(self, generator):
+        """Test handling of file permission errors during text export."""
+        generator.record_anomaly("test", "HIGH", 0.9, "test", {})
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = os.path.join(tmpdir, "report.txt")
+            
+            # Mock open to raise PermissionError
+            with patch("builtins.open", side_effect=PermissionError("Access denied")):
+                with pytest.raises(PermissionError):
+                    generator.export_text(file_path)
+
+    def test_export_json_disk_full_error(self, generator):
+        """Test handling of disk full errors during JSON export."""
+        generator.record_anomaly("test", "HIGH", 0.9, "test", {})
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = os.path.join(tmpdir, "report.json")
+            
+            # Mock open to raise OSError (disk full)
+            with patch("builtins.open", side_effect=OSError("No space left on device")):
+                with pytest.raises(OSError):
+                    generator.export_json(file_path)
+
+    def test_export_json_invalid_path_characters(self, generator):
+        """Test handling of invalid path characters."""
+        generator.record_anomaly("test", "HIGH", 0.9, "test", {})
+        
+        # Test will vary by OS, but should handle invalid paths by raising an error
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Path with invalid characters (on Windows)
+            if os.name == 'nt':
+                file_path = os.path.join(tmpdir, "report<>:.json")
+            else:
+                # NUL byte is invalid in POSIX paths and should raise an error
+                file_path = os.path.join(tmpdir, "report\x00.json")
+
+            # Expect an error when attempting to export to an invalid path
+            with pytest.raises((OSError, ValueError)):
+                generator.export_json(file_path)
+
+    def test_export_json_with_very_long_path(self, generator):
+        """Test handling of very long file paths."""
+        generator.record_anomaly("test", "HIGH", 0.9, "test", {})
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a very long nested path (but still valid)
+            long_subdir = os.path.join(tmpdir, *["subdir"] * 10)
+            file_path = os.path.join(long_subdir, "report.json")
+            
+            # Should handle by creating nested directories
+            generator.export_json(file_path)
+            assert os.path.exists(file_path)
+
+    def test_large_telemetry_data(self, generator):
+        """Test handling of large telemetry data."""
+        # Create large telemetry dictionary
+        large_telemetry = {f"sensor_{i}": i * 1.5 for i in range(1000)}
+        
+        generator.record_anomaly(
+            "data_overflow",
+            "HIGH",
+            0.92,
+            "data_collection",
+            large_telemetry
+        )
+        
+        assert len(generator.anomalies[0].telemetry_data) == 1000
+        
+        # Verify it can be exported
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = os.path.join(tmpdir, "large.json")
+            generator.export_json(file_path)
+            assert os.path.exists(file_path)
+
+    def test_very_long_explanation_text(self, generator):
+        """Test handling of very long explanation text."""
+        long_explanation = "A" * 10000  # 10,000 characters
+        
+        generator.record_anomaly(
+            "test",
+            "LOW",
+            0.6,
+            "test",
+            {},
+            explanation=long_explanation
+        )
+        
+        assert len(generator.anomalies[0].explanation) == 10000
+
+    def test_anomaly_with_nested_telemetry_structures(self, generator):
+        """Test handling of deeply nested telemetry structures."""
+        nested_telemetry = {
+            "level1": {
+                "level2": {
+                    "level3": {
+                        "level4": {
+                            "sensor_value": 42.5,
+                            "status": "critical"
+                        }
+                    }
+                }
+            },
+            "array": [1, 2, 3, [4, 5, [6, 7, 8]]]
+        }
+        
+        generator.record_anomaly(
+            "nested_test",
+            "MEDIUM",
+            0.8,
+            "test",
+            nested_telemetry
+        )
+        
+        # Verify deep access
+        telemetry = generator.anomalies[0].telemetry_data
+        assert telemetry["level1"]["level2"]["level3"]["level4"]["sensor_value"] == 42.5
+        assert telemetry["array"][3][2][2] == 8  # array[3] is [4, 5, [6, 7, 8]], array[3][2] is [6, 7, 8], array[3][2][2] is 8
+
+    def test_recovery_action_with_null_metadata(self, generator):
+        """Test recovery action explicitly passing None for metadata."""
+        generator.record_recovery_action(
+            "test_action",
+            "test_anomaly",
+            True,
+            1.0,
+            error_message=None,
+            metadata=None
+        )
+        
+        action = generator.recovery_actions[0]
+        assert action.error_message is None
+        assert action.metadata == {}
+
+    def test_generate_report_with_same_start_and_end_time(self, generator):
+        """Test report generation with start_time == end_time."""
+        now = datetime.now()
+        
+        generator.record_anomaly("test", "LOW", 0.5, "test", {})
+        
+        # Set exact timestamp
+        generator.anomalies[0].timestamp = now
+        
+        # Generate report with same start and end time
+        report = generator.generate_report(now, now)
+        
+        # Should include anomalies at exact time
+        assert report["summary"]["total_anomalies"] == 1
+
+    def test_generate_report_end_before_start(self, generator):
+        """Test report generation with end_time before start_time."""
+        now = datetime.now()
+        start = now
+        end = now - timedelta(hours=1)
+        
+        generator.record_anomaly("test", "LOW", 0.5, "test", {})
+        
+        # Generate report with inverted time range
+        report = generator.generate_report(start, end)
+        
+        # Should return empty report
+        assert report["summary"]["total_anomalies"] == 0
+
+    def test_report_with_anomalies_exactly_at_boundaries(self, generator):
+        """Test that anomalies exactly at time boundaries are included."""
+        start_time = datetime(2025, 2, 15, 10, 0, 0)
+        end_time = datetime(2025, 2, 15, 12, 0, 0)
+        
+        # Add anomaly exactly at start
+        generator.record_anomaly("at_start", "LOW", 0.5, "test", {})
+        # Add anomaly exactly at end
+        generator.record_anomaly("at_end", "LOW", 0.5, "test", {})
+        # Add anomaly before start (should be excluded)
+        generator.record_anomaly("before_start", "LOW", 0.5, "test", {})
+        # Add anomaly after end (should be excluded)
+        generator.record_anomaly("after_end", "LOW", 0.5, "test", {})
+        
+        # Now set timestamps after all are added
+        generator.anomalies[0].timestamp = start_time
+        generator.anomalies[1].timestamp = end_time
+        generator.anomalies[2].timestamp = start_time - timedelta(seconds=1)
+        generator.anomalies[3].timestamp = end_time + timedelta(seconds=1)
+        
+        report = generator.generate_report(start_time, end_time)
+        
+        # Should include exactly 2 anomalies (at boundaries)
+        assert report["summary"]["total_anomalies"] == 2
+        anomaly_types = [a["anomaly_type"] for a in report["anomalies"]]
+        assert "at_start" in anomaly_types
+        assert "at_end" in anomaly_types
+        assert "before_start" not in anomaly_types
+        assert "after_end" not in anomaly_types
+
+    def test_negative_duration_recovery_action(self, generator):
+        """Test recovery action with negative duration (edge case)."""
+        # While not realistic, test that it doesn't crash
+        generator.record_recovery_action("test", "test", True, -5.0)
+        assert generator.recovery_actions[0].duration_seconds == -5.0
+
+    def test_extremely_high_confidence(self, generator):
+        """Test anomaly with confidence > 1.0 (invalid but should not crash)."""
+        generator.record_anomaly("test", "HIGH", 1.5, "test", {})
+        assert generator.anomalies[0].confidence == 1.5
+
+    def test_negative_confidence(self, generator):
+        """Test anomaly with negative confidence (invalid but should not crash)."""
+        generator.record_anomaly("test", "LOW", -0.5, "test", {})
+        assert generator.anomalies[0].confidence == -0.5
+
+    def test_empty_string_fields(self, generator):
+        """Test handling of empty strings in various fields."""
+        generator.record_anomaly("", "", 0.5, "", {})
+        
+        anomaly = generator.anomalies[0]
+        assert anomaly.anomaly_type == ""
+        assert anomaly.severity == ""
+        assert anomaly.mission_phase == ""
+
+    def test_whitespace_only_fields(self, generator):
+        """Test handling of whitespace-only strings."""
+        generator.record_anomaly("   ", "  ", 0.5, "\t", {}, explanation="  \n  ")
+        
+        anomaly = generator.anomalies[0]
+        assert anomaly.anomaly_type == "   "
+        assert anomaly.explanation == "  \n  "
+
+    def test_special_characters_in_anomaly_type(self, generator):
+        """Test handling of special characters in anomaly types."""
+        special_types = [
+            "type/with/slashes",
+            "type\\with\\backslashes",
+            "type<with>brackets",
+            "type|with|pipes",
+            "type:with:colons",
+            "type*with*asterisks",
+            "type?with?questions"
+        ]
+        
+        for anom_type in special_types:
+            generator.record_anomaly(anom_type, "LOW", 0.5, "test", {})
+        
+        assert len(generator.anomalies) == len(special_types)
+
+    def test_unicode_emoji_in_fields(self, generator):
+        """Test handling of emoji and special Unicode in fields."""
+        generator.record_anomaly(
+            "🚨critical_alert🚨",
+            "⚠️HIGH⚠️",
+            0.95,
+            "🛰️satellite",
+            {"status": "❌failed"},
+            explanation="System encountered 💥 critical failure"
+        )
+        
+        anomaly = generator.anomalies[0]
+        assert "🚨" in anomaly.anomaly_type
+        assert "⚠️" in anomaly.severity
+        assert "💥" in anomaly.explanation
+
+    def test_export_json_no_directory_path(self, generator):
+        """Test JSON export with filename only (no directory path)."""
+        generator.record_anomaly("test", "HIGH", 0.9, "test", {})
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            original_dir = os.getcwd()
+            try:
+                os.chdir(tmpdir)
+                # Export with just filename (current directory)
+                generator.export_json("report.json")
+                assert os.path.exists("report.json")
+            finally:
+                os.chdir(original_dir)
+
+    def test_export_text_no_directory_path(self, generator):
+        """Test text export with filename only (no directory path)."""
+        generator.record_anomaly("test", "HIGH", 0.9, "test", {})
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            original_dir = os.getcwd()
+            try:
+                os.chdir(tmpdir)
+                # Export with just filename (current directory)
+                generator.export_text("report.txt")
+                assert os.path.exists("report.txt")
+            finally:
+                os.chdir(original_dir)
+
+    def test_mttr_with_microsecond_precision(self, generator):
+        """Test MTTR calculation with microsecond-level resolution times."""
+        base_time = datetime.now()
+        
+        # Create anomalies with very precise resolution times
+        generator.record_anomaly("test1", "HIGH", 0.9, "test", {})
+        generator.anomalies[0].timestamp = base_time
+        generator.anomalies[0].resolved = True
+        generator.anomalies[0].resolution_time = base_time + timedelta(microseconds=500000)  # 0.5 seconds
+        
+        generator.record_anomaly("test2", "HIGH", 0.9, "test", {})
+        generator.anomalies[1].timestamp = base_time
+        generator.anomalies[1].resolved = True
+        generator.anomalies[1].resolution_time = base_time + timedelta(microseconds=1500000)  # 1.5 seconds
+        
+        report = generator.generate_report()
+        
+        # MTTR should be (0.5 + 1.5) / 2 = 1.0 second
+        assert report["summary"]["average_mttr_seconds"] == pytest.approx(1.0, abs=0.001)
+
+    def test_cleanup_with_max_history_zero(self):
+        """Test cleanup behavior with max_history_days set to 0."""
+        generator = AnomalyReportGenerator(max_history_days=0)
+        
+        generator.record_anomaly("test", "LOW", 0.5, "test", {})
+        
+        # With max_history=0, data older than today should be removed
+        # But newly added data should still be there initially
+        assert len(generator.anomalies) == 1
+
+    def test_resolve_anomaly_multiple_times(self, generator):
+        """Test resolving the same anomaly multiple times."""
+        generator.record_anomaly("test", "LOW", 0.5, "test", {})
+        
+        # Resolve multiple times
+        generator.resolve_anomaly(0)
+        first_resolution = generator.anomalies[0].resolution_time
+        
+        # Resolve again
+        generator.resolve_anomaly(0)
+        second_resolution = generator.anomalies[0].resolution_time
+        
+        # Resolution time should be updated
+        assert second_resolution >= first_resolution
+
+    def test_export_with_circular_reference_in_metadata(self, generator):
+        """Test handling of metadata that could cause JSON serialization issues."""
+        # Note: Python's JSON module will handle most cases, but test anyway
+        metadata = {"key1": "value1", "key2": "value2"}
+        # Cannot create true circular references in JSON-able structures
+        # but test deeply nested similar structures
+        metadata["nested"] = metadata.copy()
+        
+        generator.record_recovery_action("test", "test", True, 1.0, metadata=metadata)
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = os.path.join(tmpdir, "report.json")
+            generator.export_json(file_path)
+            assert os.path.exists(file_path)
+
+
+class TestBoundaryValues:
+    """Test suite for boundary value conditions."""
+
+    @pytest.fixture
+    def generator(self):
+        """Fixture to create a fresh generator for each test."""
+        return AnomalyReportGenerator()
+
+    def test_max_history_days_boundary(self):
+        """Test maximum value for max_history_days."""
+        generator = AnomalyReportGenerator(max_history_days=365 * 100)  # Approx. 100 years (ignoring leap years)
+        assert generator.max_history_days == 365 * 100
+
+    def test_telemetry_with_very_large_numbers(self, generator):
+        """Test telemetry data with very large numeric values."""
+        large_telemetry = {
+            "temp": 1e308,  # Near float max
+            "pressure": 9999999999999999,
+            "small": 1e-308  # Near float min
+        }
+        
+        generator.record_anomaly("test", "HIGH", 0.9, "test", large_telemetry)
+        
+        # Verify values are preserved
+        telemetry = generator.anomalies[0].telemetry_data
+        assert telemetry["temp"] == 1e308
+        assert telemetry["small"] == 1e-308
+
+    def test_report_with_thousands_of_anomalies(self, generator):
+        """Test report generation with large number of anomalies."""
+        # Add 1000 anomalies
+        for i in range(1000):
+            generator.record_anomaly(f"anomaly_{i}", "LOW", 0.5, "test", {"index": i})
+        
+        report = generator.generate_report()
+        
+        assert report["summary"]["total_anomalies"] == 1000
+        assert len(report["anomalies"]) == 1000
+
+    def test_recovery_action_with_max_float_duration(self, generator):
+        """Test recovery action with extremely large duration."""
+        generator.record_recovery_action("test", "test", True, 1e308)
+        assert generator.recovery_actions[0].duration_seconds == 1e308
+
+
 # Test configuration for pytest
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--cov=report_generator", "--cov-report=term-missing"])

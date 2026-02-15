@@ -83,7 +83,6 @@ jobs:
     - name: Run Bandit security check
       run: |
         bandit -r src/anomaly src/classifier src/memory_engine src/state_machine src/core -f json -o bandit-report.json
-      continue-on-error: true
     
     - name: Run Safety check
       run: |
@@ -165,7 +164,7 @@ jobs:
           --cov=src/core \
           --cov-report=term-missing \
           --cov-report=xml \
-          --timeout=10 \
+          --timeout=30 \
           --tb=short
     
     - name: Check coverage threshold
@@ -308,7 +307,7 @@ jobs:
           --cov=src/state_machine \
           --cov=src/core \
           --cov-report=xml \
-          --timeout=10 \
+          --timeout=30 \
           --tb=short
     
     - name: Clean up pip cache

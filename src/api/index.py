@@ -31,14 +31,6 @@ except NameError as e:
 
 project_root_str: str = str(project_root)
 
-# Add project root to sys.path if not already present
-if project_root_str not in sys.path:
-    sys.path.insert(0, project_root_str)
-    logger.info(
-        f"Added project root to sys.path: {project_root_str}",
-        extra={"project_root": project_root_str}
-    )
-
 
 # Import FastAPI application
 try:

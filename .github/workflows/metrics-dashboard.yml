@@ -1,0 +1,118 @@
+name: Update Contribution Metrics Dashboard
+
+on:
+  # Run weekly on Sundays at 2:00 AM UTC
+  schedule:
+    - cron: '0 2 * * 0'
+  
+  # Run when PRs are merged to main
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+  
+  # Allow manual trigger
+  workflow_dispatch:
+
+jobs:
+  update-metrics:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write
+      pull-requests: read
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          pip install requests pyyaml
+      
+      - name: Generate metrics data
+        id: generate
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python scripts/maintenance/generate_metrics.py \
+            --repo ${{ github.repository }} \
+            --token ${{ secrets.GITHUB_TOKEN }} \
+            --output docs/contributor_metrics.json \
+            --summary
+      
+      - name: Check for changes
+        id: check_changes
+        run: |
+          if git diff --quiet docs/contributor_metrics.json; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "No changes detected in metrics"
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "Metrics updated successfully"
+          fi
+      
+      - name: Commit and push if changed
+        if: steps.check_changes.outputs.changed == 'true'
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add docs/contributor_metrics.json
+          git commit -m "chore: update contribution metrics dashboard data [skip ci]
+          
+          Auto-generated metrics update
+          - Updated contributor statistics
+          - Refreshed tier distribution
+          - Updated recent activity
+          
+          Generated: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          git push
+      
+      - name: Upload metrics artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: contribution-metrics
+          path: docs/contributor_metrics.json
+          retention-days: 90
+      
+      - name: Create summary
+        if: steps.check_changes.outputs.changed == 'true'
+        run: |
+          echo "## 📊 Metrics Dashboard Updated" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The contribution metrics dashboard has been updated with the latest data." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**View Dashboard**: [Contribution Metrics](https://github.com/${{ github.repository }}/blob/main/docs/contribution-metrics-dashboard.html)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Updated**: $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+
+  notify-discord:
+    needs: update-metrics
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Send Discord notification
+        if: env.DISCORD_WEBHOOK != ''
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: |
+          curl -X POST "$DISCORD_WEBHOOK" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "embeds": [{
+                "title": "📊 Contribution Metrics Updated",
+                "description": "Weekly metrics dashboard has been refreshed with the latest contribution data.",
+                "color": 5814783,
+                "timestamp": "'$(date -u +%Y-%m-%dT%H:%M:%S.000Z)'"
+              }]
+            }'
