@@ -1,0 +1,28 @@
+{{- if .Values.astraGuard.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "astraguard.fullname" . }}-astra-guard
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: astra-guard
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: api
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    helm.sh/chart: {{ include "astraguard.chart" . }}
+spec:
+  type: {{ .Values.astraGuard.service.type }}
+  ports:
+    - port: {{ .Values.astraGuard.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+    - port: {{ .Values.astraGuard.service.metricsPort }}
+      targetPort: metrics
+      protocol: TCP
+      name: metrics
+  selector:
+    app.kubernetes.io/name: astra-guard
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: api
+{{- end }}
