@@ -1,0 +1,61 @@
+name: Continuous Training
+
+on:
+  schedule:
+    - cron: "0 2 * * 0"   # Weekly Sunday 2AM
+  workflow_dispatch:
+    inputs:
+      force_training:
+        description: "Force training regardless of drift"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+          cache: "pip"
+
+      - name: Install Dependencies
+        run: |
+          pip install --upgrade pip
+          if [ -f src/config/requirements.txt ]; then
+            pip install -r src/config/requirements.txt
+          else
+            echo "requirements.txt not found in src/config/"
+            # Fallback to root requirements.txt if exists, strictly as a backup
+            if [ -f requirements.txt ]; then
+               pip install -r requirements.txt
+            else
+               echo "No requirements file found."
+               exit 1
+            fi
+          fi
+
+      - name: Run Training
+        run: |
+          # Use the input force flag if provided
+          FORCE_FLAG=""
+          if [ "${{ github.event.inputs.force_training }}" == "true" ]; then
+            FORCE_FLAG="--force"
+          fi
+
+          echo "Running training with flags: $FORCE_FLAG"
+          python src/training/train.py $FORCE_FLAG --output-dir artifacts
+
+      - name: Upload Artifacts
+        if: always() # Upload logs even if training fails/skips
+        uses: actions/upload-artifact@v3
+        with:
+          name: training-artifacts
+          path: artifacts/
+          retention-days: 90

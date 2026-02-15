@@ -52,4 +52,4 @@ node_modules/
 #contact feature runtime
 /data/
 /*.log
-*.db
+*.dbartifacts/
