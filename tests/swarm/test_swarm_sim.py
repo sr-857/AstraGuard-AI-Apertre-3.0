@@ -16,6 +16,7 @@ Test Flow:
 import asyncio
 import pytest
 import logging
+import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Any
@@ -92,19 +93,73 @@ class SwarmSimulatorOrchestrator:
             "SAT-004-A": 8004,
             "SAT-005-A": 8005,
         }
-    
-    async def start_constellation(self) -> bool:
-        """Start 5-agent constellation via docker-compose."""
-        logger.info("Starting 5-agent constellation...")
+        self.service_map = {
+            "SAT-001-A": "agent-1",
+            "SAT-002-A": "agent-2",
+            "SAT-003-A": "agent-3",
+            "SAT-004-A": "agent-4",
+            "SAT-005-A": "agent-5",
+            "bus": "event-bus",
+            "registry": "redis",
+        }
+        # Pass container resolver to failure injector
+        self.failure_injector.container_resolver = self._get_container_id
+        self.managed_lifecycle = False
+
+    def _get_container_id(self, identifier: str) -> Optional[str]:
+        """Get container ID for identifier (agent or service) from docker compose."""
+        service_name = self.service_map.get(identifier)
+        if not service_name:
+            # Fallback: check if identifier IS the service name (e.g. agent-1)
+            if identifier in self.service_map.values():
+                service_name = identifier
+            else:
+                return None
+
         try:
+            env = os.environ.copy()
+            # Use docker compose ps -q to get container ID
             result = subprocess.run(
-                ["docker-compose", "-f", self.compose_file, "up", "-d"],
+                ["docker", "compose", "-f", self.compose_file, "ps", "-q", service_name],
                 capture_output=True,
                 text=True,
-                timeout=300
+                env=env
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip()
+        except Exception as e:
+            logger.error(f"Failed to get container ID for {agent_id}: {e}")
+        return None
+
+    async def _are_agents_running(self) -> bool:
+        """Check if agents are already running and reachable."""
+        try:
+            # Check just the first agent as a heuristic
+            async with httpx.AsyncClient(timeout=2) as client:
+                resp = await client.get(f"http://localhost:{self.agent_ports['SAT-001-A']}/health")
+                return resp.status_code == 200
+        except:
+            return False
+
+    async def start_constellation(self) -> bool:
+        """Start 5-agent constellation via docker-compose."""
+        if await self._are_agents_running():
+            logger.info("Agents already running, attaching to existing constellation...")
+            return True
+
+        self.managed_lifecycle = True
+        logger.info("Starting 5-agent constellation...")
+        try:
+            env = os.environ.copy()
+            result = subprocess.run(
+                ["docker", "compose", "-f", self.compose_file, "up", "-d"],
+                capture_output=True,
+                text=True,
+                timeout=300,
+                env=env
             )
             if result.returncode != 0:
-                logger.error(f"docker-compose failed: {result.stderr}")
+                logger.error(f"docker compose failed: {result.stderr}")
                 return False
             
             # Wait for all agents healthy
@@ -117,12 +172,18 @@ class SwarmSimulatorOrchestrator:
     
     async def stop_constellation(self) -> bool:
         """Stop constellation and cleanup."""
+        if not self.managed_lifecycle:
+            logger.info("Skipping teardown (externally managed lifecycle)")
+            return True
+
         logger.info("Stopping constellation...")
         try:
+            env = os.environ.copy()
             subprocess.run(
-                ["docker-compose", "-f", self.compose_file, "down"],
+                ["docker", "compose", "-f", self.compose_file, "down"],
                 capture_output=True,
-                timeout=30
+                timeout=30,
+                env=env
             )
             logger.info("✓ Constellation stopped")
             return True
@@ -170,9 +231,13 @@ class SwarmSimulatorOrchestrator:
             logger.error("!!! TIMEOUT: Dumping container logs !!!")
             for agent_id in self.agents:
                 try:
-                    container = self.docker.containers.get(f"astra-{agent_id.lower()}")
-                    logs = container.logs(tail=20).decode('utf-8')
-                    logger.error(f"--- Logs for {agent_id} ---\n{logs}\n----------------")
+                    container_id = self._get_container_id(agent_id)
+                    if container_id:
+                        container = self.docker.containers.get(container_id)
+                        logs = container.logs(tail=20).decode('utf-8')
+                        logger.error(f"--- Logs for {agent_id} ---\n{logs}\n----------------")
+                    else:
+                        logger.error(f"Could not find container for {agent_id}")
                 except Exception as e:
                     logger.error(f"Could not get logs for {agent_id}: {e}")
         except Exception as e:
@@ -498,13 +563,23 @@ class SwarmSimulatorOrchestrator:
     
     async def _kill_agent(self, agent_id: str):
         """Kill agent container."""
-        container = self.docker.containers.get(f"astra-{agent_id.lower()}")
-        container.kill()
+        container_id = self._get_container_id(agent_id)
+        if container_id:
+            container = self.docker.containers.get(container_id)
+            container.kill()
+        else:
+            logger.error(f"Could not find container to kill for {agent_id}")
+            raise RuntimeError(f"Container not found for {agent_id}")
     
     async def _restart_agent(self, agent_id: str):
         """Restart agent container."""
-        container = self.docker.containers.get(f"astra-{agent_id.lower()}")
-        container.restart()
+        container_id = self._get_container_id(agent_id)
+        if container_id:
+            container = self.docker.containers.get(container_id)
+            container.restart()
+        else:
+            logger.error(f"Could not find container to restart for {agent_id}")
+            raise RuntimeError(f"Container not found for {agent_id}")
     
     async def _inject_memory_leak(self, agent_id: str):
         """Inject memory leak."""

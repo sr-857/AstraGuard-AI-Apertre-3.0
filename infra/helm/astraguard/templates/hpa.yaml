@@ -1,0 +1,33 @@
+{{- if .Values.astraGuard.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "astraguard.fullname" . }}-astra-guard
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "astraguard.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "astraguard.fullname" . }}-astra-guard
+  minReplicas: {{ .Values.astraGuard.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.astraGuard.autoscaling.maxReplicas }}
+  metrics:
+  {{- if .Values.astraGuard.autoscaling.targetCPUUtilizationPercentage }}
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: {{ .Values.astraGuard.autoscaling.targetCPUUtilizationPercentage }}
+  {{- end }}
+  {{- if .Values.astraGuard.autoscaling.targetMemoryUtilizationPercentage }}
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: {{ .Values.astraGuard.autoscaling.targetMemoryUtilizationPercentage }}
+  {{- end }}
+{{- end }}
