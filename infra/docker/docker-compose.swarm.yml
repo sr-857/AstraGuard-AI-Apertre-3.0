@@ -1,5 +1,4 @@
 
-
 # Multi-Agent Docker Swarm Simulator for AstraGuard v3.0
 # Issue #414: Testing infrastructure for complete swarm intelligence pipeline
 # 
@@ -14,9 +13,6 @@ services:
   # ==================== LEADER CANDIDATE ====================
   agent-1:
     image: astraguard:swarm-v3.0
-    build:
-      context: ../../
-      dockerfile: infra/docker/Dockerfile
     build:
       context: ../../
       dockerfile: infra/docker/Dockerfile
@@ -82,9 +78,6 @@ services:
   # ==================== FOLLOWER AGENTS ====================
   agent-2:
     image: astraguard:swarm-v3.0
-    build:
-      context: ../../
-      dockerfile: infra/docker/Dockerfile
     build:
       context: ../../
       dockerfile: infra/docker/Dockerfile
@@ -351,6 +344,11 @@ services:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
       - '--storage.tsdb.retention.time=24h'
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
   grafana:
@@ -371,6 +369,11 @@ services:
     depends_on:
       prometheus:
         condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
 # ==================== NETWORKS ====================
