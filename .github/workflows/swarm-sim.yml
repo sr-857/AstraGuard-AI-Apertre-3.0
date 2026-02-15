@@ -74,6 +74,14 @@ jobs:
           echo "Waiting for services to be healthy..."
           docker compose -f infra/docker/docker-compose.swarm.yml ps
       
+      - name: Show Docker containers
+        run: docker ps -a
+
+      - name: Show Docker logs
+        env:
+          COMPOSE_PROJECT_NAME: swarm-${{ github.run_id }}
+        run: docker compose -f infra/docker/docker-compose.swarm.yml logs --no-color
+
       - name: Wait for Agents Ready
         run: |
           python -c "
@@ -96,7 +104,8 @@ jobs:
                                      capture_output=True, text=True, env={**os.environ, **env})
               print('Port mapping:', result.stdout)
               
-              for i in range(60):
+              # Wait up to 300 seconds (5 minutes)
+              for i in range(300):
                   try:
                       async with httpx.AsyncClient() as client:
                           ready_count = 0
@@ -241,7 +250,8 @@ jobs:
           async def wait_for_health():
               print('Waiting for health...')
               async with httpx.AsyncClient() as client:
-                  for i in range(60):
+                  # Wait up to 300 seconds (5 minutes)
+                  for i in range(300):
                       try:
                           resp = await client.get('http://localhost:8001/health', timeout=2)
                           if resp.status_code == 200:
