@@ -12,6 +12,7 @@ import re
 import logging
 import sqlite3
 import json
+import asyncio
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -281,7 +282,6 @@ async def save_submission(
         await conn.commit()
         return cursor.lastrowid
 
-async def log_notification(submission: ContactSubmission, submission_id: Optional[int]) -> None:
 
 async def log_notification(
     submission: ContactSubmission,

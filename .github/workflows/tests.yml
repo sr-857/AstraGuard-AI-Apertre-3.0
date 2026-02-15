@@ -131,6 +131,8 @@ jobs:
         python -m pip install --upgrade pip setuptools wheel
         pip install -r src/config/requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
         pip install -r src/config/requirements-test.txt
+        # Fix known Starlette/FastAPI compatibility issues
+        pip install --upgrade 'starlette>=0.37.0' 'httpx>=0.27.0'
     
     - name: Wait for Redis
       run: |
@@ -241,6 +243,8 @@ jobs:
         python -m pip install --upgrade pip setuptools wheel
         pip install -r src/config/requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
         pip install -r src/config/requirements-test.txt
+        # Fix known Starlette/FastAPI compatibility issues
+        pip install --upgrade 'starlette>=0.37.0' 'httpx>=0.27.0'
     
     - name: Wait for Redis
       run: |
