@@ -7,9 +7,23 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator, ValidationError
+from pydantic import BaseModel, Field, field_validator, model_validator, ValidationError, ConfigDict
 
 logger = logging.getLogger(__name__)
+
+
+# Module-level constants for validation (performance optimization)
+# Caching these avoids recreating them on every validation
+_VALID_PERMISSIONS = frozenset({'read', 'write', 'admin', 'execute'})
+_VALID_PHASES_LIST = None  # Lazy-initialized on first use
+
+
+def _get_valid_phases() -> List[str]:
+    """Get list of valid phase values (cached)."""
+    global _VALID_PHASES_LIST
+    if _VALID_PHASES_LIST is None:
+        _VALID_PHASES_LIST = [p.value for p in MissionPhaseEnum]
+    return _VALID_PHASES_LIST
 
 
 class ModelValidationError(Exception):
@@ -36,9 +50,9 @@ class ModelValidationError(Exception):
 
 class UserRole(str, Enum):
     """User roles with hierarchical permissions."""
-    ADMIN = "admin"      # Full system access including user management
+    ADMIN = "admin"        # Full system access including user management
     OPERATOR = "operator"  # Full operational access (telemetry, phase changes)
-    ANALYST = "analyst"   # Read-only access (status, history, monitoring)
+    ANALYST = "analyst"    # Read-only access (status, history, monitoring)
 
 
 class MissionPhaseEnum(str, Enum):
@@ -70,8 +84,8 @@ class TelemetryInput(BaseModel):
 
     @field_validator('timestamp', mode='before')
     @classmethod
-    def set_timestamp(cls, v):
-        """Set timestamp to now if not provided."""
+    def set_timestamp(cls, v) -> datetime:
+        """Set timestamp to now if not provided; parse ISO strings; warn on bad input."""
         if v is None:
             return datetime.now()
 
@@ -81,57 +95,45 @@ class TelemetryInput(BaseModel):
         if isinstance(v, str):
             try:
                 return datetime.fromisoformat(v.replace('Z', '+00:00'))
-            except ValueError as e:
+            except ValueError as exc:
                 logger.warning(
                     "timestamp_parsing_failed",
                     extra={
                         "provided_value": v[:50] if len(v) > 50 else v,
-                        "error": str(e),
-                        "action": "using_current_timestamp"
-                    }
+                        "error": str(exc),
+                        "action": "using_current_timestamp",
+                    },
                 )
                 return datetime.now()
 
+        # Any other type: log and fall back — do NOT silently discard without trace.
         logger.warning(
             "timestamp_type_invalid",
             extra={
                 "provided_value": type(v).__name__,
                 "expected_types": ["None", "datetime", "str"],
-                "action": "using_current_timestamp"
-            }
+                "action": "using_current_timestamp",
+            },
         )
         return datetime.now()
 
 
 class TelemetryBatch(BaseModel):
-    """Batch of telemetry data points."""
+    """Batch of telemetry data points.
+
+    Pydantic enforces 1 ≤ len ≤ 1000 via Field constraints before the
+    validator runs, so the validator focuses only on runtime logging.
+    """
     telemetry: List[TelemetryInput] = Field(..., min_length=1, max_length=1000)
 
     @field_validator('telemetry')
     @classmethod
-    def validate_telemetry_batch(cls, v):
-        """Validate telemetry batch with edge case handling."""
-        if not v:
-            logger.warning(
-                "empty_telemetry_batch",
-                extra={
-                    "action": "rejected",
-                    "reason": "batch_must_contain_at_least_one_item"
-                }
-            )
-            raise ValueError("Telemetry batch must contain at least one item")
-
-        if len(v) > 1000:
-            logger.warning(
-                "telemetry_batch_too_large",
-                extra={
-                    "batch_size": len(v),
-                    "max_allowed": 1000,
-                    "action": "truncated_to_max"
-                }
-            )
-            return v[:1000]
-
+    def validate_telemetry_batch(cls, v: List[TelemetryInput]) -> List[TelemetryInput]:
+        """Log accepted batch size; Field constraints already enforce bounds."""
+        logger.debug(
+            "telemetry_batch_accepted",
+            extra={"batch_size": len(v)},
+        )
         return v
 
 
@@ -177,10 +179,21 @@ class PhaseUpdateRequest(BaseModel):
 
     @field_validator('phase', mode='before')
     @classmethod
-    def validate_phase(cls, v):
-        """Validate and log phase transition."""
+    def validate_phase(cls, v) -> MissionPhaseEnum:
+        """Normalise and validate mission phase input.
+
+        Raises
+        ------
+        ValueError
+            When the string value is not a recognised MissionPhaseEnum member.
+        TypeError
+            When the value is neither a string nor a MissionPhaseEnum instance.
+            Pydantic re-wraps this in a ValidationError so callers always get
+            a consistent ValidationError at the API boundary.
+        """
         if isinstance(v, MissionPhaseEnum):
             return v
+
         if isinstance(v, str):
             try:
                 phase = MissionPhaseEnum(v.upper())
@@ -189,21 +202,28 @@ class PhaseUpdateRequest(BaseModel):
                     extra={
                         "original": v,
                         "normalized": phase.value,
-                        "action": "normalized_to_enum"
-                    }
+                        "action": "normalized_to_enum",
+                    },
                 )
                 return phase
             except ValueError:
-                valid_phases = [p.value for p in MissionPhaseEnum]
+                valid_phases = _get_valid_phases()
                 logger.error(
                     "invalid_phase_value",
                     extra={
                         "provided": v,
-                        "valid_values": valid_phases
-                    }
+                        "valid_values": valid_phases,
+                    },
                 )
-                raise ValueError(f"Invalid phase: {v}. Valid phases: {valid_phases}")
-        raise TypeError(f"Phase must be a string or MissionPhaseEnum, got {type(v).__name__}")
+                raise ValueError(
+                    f"Invalid phase: {v!r}. Valid phases: {valid_phases}"
+                )
+
+        # Non-string, non-enum input: raise TypeError so the test can catch it
+        # directly, and Pydantic wraps it in ValidationError for API consumers.
+        raise TypeError(
+            f"Phase must be a string or MissionPhaseEnum, got {type(v).__name__!r}"
+        )
 
 
 class PhaseUpdateResponse(BaseModel):
@@ -225,7 +245,12 @@ class MemoryStats(BaseModel):
 
 
 class AnomalyHistoryQuery(BaseModel):
-    """Query parameters for anomaly history."""
+    """Query parameters for anomaly history.
+
+    Field-level constraints (ge/le) are the authoritative source of truth for
+    limit and severity_min boundaries; they fire before validators.  The
+    validators handle logging and the datetime edge-cases.
+    """
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
     limit: int = Field(100, ge=1, le=1000)
@@ -233,34 +258,15 @@ class AnomalyHistoryQuery(BaseModel):
 
     @field_validator('limit')
     @classmethod
-    def validate_limit(cls, v):
-        """Validate and log limit value."""
-        if v < 1:
-            logger.info(
-                "limit_adjusted",
-                extra={
-                    "requested": v,
-                    "adjusted_to": 1,
-                    "reason": "minimum_value_enforced"
-                }
-            )
-            return 1
-        if v > 1000:
-            logger.info(
-                "limit_adjusted",
-                extra={
-                    "requested": v,
-                    "adjusted_to": 1000,
-                    "reason": "maximum_value_enforced"
-                }
-            )
-            return 1000
+    def log_limit(cls, v: int) -> int:
+        """Log the accepted limit value (bounds already enforced by Field)."""
+        logger.debug("limit_accepted", extra={"limit": v})
         return v
 
     @field_validator('start_time', 'end_time', mode='before')
     @classmethod
-    def validate_datetime(cls, v):
-        """Validate datetime inputs."""
+    def validate_datetime(cls, v) -> Optional[datetime]:
+        """Parse ISO datetime strings; return None and warn on parse failure."""
         if v is None:
             return v
         if isinstance(v, datetime):
@@ -273,32 +279,24 @@ class AnomalyHistoryQuery(BaseModel):
                     "datetime_parse_failed",
                     extra={
                         "provided_value": v[:50] if len(v) > 50 else v,
-                        "action": "ignored"
-                    }
+                        "action": "ignored",
+                    },
                 )
                 return None
         return v
 
     @field_validator('severity_min')
     @classmethod
-    def validate_severity_min(cls, v):
-        """Validate severity minimum."""
-        if v is not None and (v < 0 or v > 1):
-            logger.warning(
-                "severity_min_out_of_range",
-                extra={
-                    "provided_value": v,
-                    "valid_range": [0, 1],
-                    "action": "clamped_to_boundary"
-                }
-            )
-            return max(0, min(1, v))
+    def log_severity_min(cls, v: Optional[float]) -> Optional[float]:
+        """Log the accepted severity_min (bounds already enforced by Field)."""
+        if v is not None:
+            logger.debug("severity_min_accepted", extra={"severity_min": v})
         return v
 
     @field_validator('end_time')
     @classmethod
-    def validate_time_range(cls, v, info):
-        """Validate that end_time is not before start_time."""
+    def validate_time_range(cls, v: Optional[datetime], info) -> Optional[datetime]:
+        """Ensure end_time is not earlier than start_time."""
         start_time = info.data.get('start_time')
         if start_time is not None and v is not None and v < start_time:
             logger.warning(
@@ -306,8 +304,8 @@ class AnomalyHistoryQuery(BaseModel):
                 extra={
                     "start_time": start_time.isoformat(),
                     "end_time": v.isoformat(),
-                    "action": "end_time_set_to_start_time"
-                }
+                    "action": "end_time_set_to_start_time",
+                },
             )
             return start_time
         return v
@@ -339,12 +337,13 @@ class LoginRequest(BaseModel):
 
     @field_validator('username')
     @classmethod
-    def validate_username(cls, v):
-        """Validate username format."""
+    def validate_username(cls, v: str) -> str:
+        """Strip, lower-case, and validate username length and non-emptiness."""
         if not v or not v.strip():
             raise ValueError("Username cannot be empty")
 
         username = v.strip().lower()
+
         if len(username) < 3:
             raise ValueError("Username must be at least 3 characters")
 
@@ -369,7 +368,7 @@ class UserCreateRequest(BaseModel):
 
     @field_validator('username')
     @classmethod
-    def validate_username(cls, v):
+    def validate_username(cls, v: str) -> str:
         """Validate username for security and formatting."""
         if not v or not v.strip():
             raise ValueError("Username cannot be empty or whitespace only")
@@ -387,27 +386,28 @@ class UserCreateRequest(BaseModel):
                 "username_starts_with_special",
                 extra={
                     "username": username[:10] + "***" if len(username) > 10 else username,
-                    "warning": "Username starts with special character"
-                }
+                    "warning": "Username starts with special character",
+                },
             )
 
         return username.lower()
 
     @field_validator('password')
     @classmethod
-    def validate_password(cls, v):
-        """Validate password strength."""
+    def validate_password(cls, v: Optional[str]) -> Optional[str]:
+        """Log a nudge when password is at the minimum length; Field enforces the floor."""
         if v is None:
             return v
 
         if len(v) < 8:
+            # Field(min_length=8) will already reject this; the log is informational.
             logger.warning(
                 "password_too_short",
                 extra={
                     "min_length": 8,
                     "provided_length": len(v),
-                    "warning": "Password meets minimum length but consider longer passwords"
-                }
+                    "warning": "Password meets minimum length but consider longer passwords",
+                },
             )
 
         return v
@@ -430,12 +430,13 @@ class APIKeyCreateRequest(BaseModel):
 
     @field_validator('name')
     @classmethod
-    def validate_api_key_name(cls, v):
-        """Validate API key name."""
+    def validate_api_key_name(cls, v: str) -> str:
+        """Validate and trim API key name."""
         if not v or not v.strip():
             raise ValueError("API key name cannot be empty")
 
         name = v.strip()
+
         if len(name) > 100:
             raise ValueError("API key name cannot exceed 100 characters")
 
@@ -443,32 +444,32 @@ class APIKeyCreateRequest(BaseModel):
             "api_key_name_valid",
             extra={
                 "name_length": len(name),
-                "action": "accepted"
-            }
+                "action": "accepted",
+            },
         )
         return name
 
     @field_validator('permissions')
     @classmethod
-    def validate_permissions(cls, v):
-        """Validate permissions list."""
+    def validate_permissions(cls, v: List[str]) -> List[str]:
+        """Normalise to lowercase and warn about unrecognised permissions."""
         if not v:
             raise ValueError("At least one permission must be specified")
 
-        valid_permissions = {'read', 'write', 'admin', 'execute'}
-        invalid_permissions = set(p.lower() for p in v) - valid_permissions
+        # Use cached valid_permissions set (performance optimization)
+        invalid_permissions = set(p.lower() for p in v) - _VALID_PERMISSIONS
 
         if invalid_permissions:
             logger.warning(
                 "invalid_permissions_provided",
                 extra={
                     "invalid_permissions": list(invalid_permissions),
-                    "valid_permissions": list(valid_permissions),
+                    "valid_permissions": list(_VALID_PERMISSIONS),
                     "action": "accepted_with_warning"
                 }
             )
 
-        return [p.lower() for p in v]
+        return normalised
 
 
 class APIKeyResponse(BaseModel):
@@ -489,3 +490,88 @@ class APIKeyCreateResponse(BaseModel):
     permissions: List[str]
     created_at: datetime
     expires_at: Optional[datetime]
+
+
+# ============================================================================
+# Feedback Models
+# ============================================================================
+
+class FeedbackLabel(str, Enum):
+    """Operator assessment of recovery action efficacy."""
+    CORRECT = "correct"
+    INSUFFICIENT = "insufficient"
+    WRONG = "wrong"
+
+
+class FeedbackSubmitRequest(BaseModel):
+    """Request model for submitting operator feedback on anomaly detection."""
+    
+    fault_id: str = Field(..., min_length=1, max_length=64, description="Unique identifier for the fault/anomaly")
+    anomaly_type: str = Field(..., min_length=1, max_length=64, description="Type of anomaly detected")
+    recovery_action: str = Field(..., min_length=1, max_length=128, description="Recovery action that was taken")
+    label: FeedbackLabel = Field(..., description="Operator's assessment of the recovery action")
+    operator_notes: Optional[str] = Field(None, max_length=500, description="Optional notes from the operator")
+    mission_phase: MissionPhaseEnum = Field(..., description="Mission phase when the anomaly occurred")
+    confidence_score: float = Field(1.0, ge=0.0, le=1.0, description="Confidence score of the feedback (0.0-1.0)")
+    
+    @field_validator('fault_id')
+    @classmethod
+    def validate_fault_id(cls, v):
+        """Validate fault_id format."""
+        if not v or not v.strip():
+            raise ValueError("fault_id cannot be empty")
+        return v.strip()
+    
+    @field_validator('anomaly_type')
+    @classmethod
+    def validate_anomaly_type(cls, v):
+        """Validate anomaly_type format."""
+        if not v or not v.strip():
+            raise ValueError("anomaly_type cannot be empty")
+        return v.strip()
+    
+    @field_validator('recovery_action')
+    @classmethod
+    def validate_recovery_action(cls, v):
+        """Validate recovery_action format."""
+        if not v or not v.strip():
+            raise ValueError("recovery_action cannot be empty")
+        return v.strip()
+
+
+class FeedbackSubmitResponse(BaseModel):
+    """Response model for feedback submission."""
+    
+    success: bool = Field(..., description="Whether the feedback was successfully submitted")
+    feedback_id: str = Field(..., description="Unique identifier for the submitted feedback")
+    message: str = Field(..., description="Status message")
+    timestamp: datetime = Field(default_factory=datetime.now, description="Timestamp of the response")
+    
+    model_config = ConfigDict(json_encoders={datetime: lambda v: v.isoformat()})
+
+
+
+class FeedbackPendingItem(BaseModel):
+    """Individual pending feedback item."""
+    
+    feedback_id: str = Field(..., description="Unique feedback identifier")
+    fault_id: str = Field(..., description="Fault identifier")
+    anomaly_type: str = Field(..., description="Type of anomaly")
+    recovery_action: str = Field(..., description="Recovery action taken")
+    label: Optional[FeedbackLabel] = Field(None, description="Operator's assessment")
+    operator_notes: Optional[str] = Field(None, description="Operator notes")
+    mission_phase: str = Field(..., description="Mission phase")
+    confidence_score: float = Field(..., description="Confidence score")
+    submitted_by: str = Field(..., description="Username who submitted")
+    submitted_at: str = Field(..., description="Submission timestamp")
+    timestamp: str = Field(..., description="Original event timestamp")
+
+
+class FeedbackPendingResponse(BaseModel):
+    """Response model for pending feedback list."""
+    
+    count: int = Field(..., description="Number of pending feedback items")
+    pending_feedback: List[FeedbackPendingItem] = Field(..., description="List of pending feedback items")
+    timestamp: datetime = Field(default_factory=datetime.now, description="Response timestamp")
+    
+    model_config = ConfigDict(json_encoders={datetime: lambda v: v.isoformat()})

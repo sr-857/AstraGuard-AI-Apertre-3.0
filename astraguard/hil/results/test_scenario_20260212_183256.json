@@ -1,0 +1,7 @@
+{
+  "scenario_name": "test_scenario",
+  "timestamp": "2026-02-12T18:32:56.696214",
+  "success": true,
+  "execution_time_s": 5.2,
+  "simulated_time_s": 100
+}

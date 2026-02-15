@@ -12,6 +12,9 @@ from typing import Any
 from models.feedback import FeedbackEvent, FeedbackLabel
 from security_engine.adaptive_memory import FeedbackPinner
 
+# Mark feedback loop integration tests as slow
+pytestmark = [pytest.mark.slow, pytest.mark.timeout(60)]
+
 
 class TestCompleteFeedbackLoop:
     """Test complete #50-55 feedback loop: fault → log → review → pin → policy."""

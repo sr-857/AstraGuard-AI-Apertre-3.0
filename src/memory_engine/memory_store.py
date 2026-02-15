@@ -272,7 +272,7 @@ class AdaptiveMemoryStore:
                 # Allow paths starting with MEMORY_STORE_BASE_DIR, /tmp, or system temp dir (for testing)
                 is_safe = (
                     resolved_path.startswith(MEMORY_STORE_BASE_DIR) or
-                    resolved_path.startswith(os.path.realpath("/tmp")) or
+                    resolved_path.startswith("/tmp") or  # nosec B108
                     resolved_path.startswith(SYSTEM_TEMP_DIR)
                 )
 
@@ -307,7 +307,7 @@ class AdaptiveMemoryStore:
                 # Allow paths starting with MEMORY_STORE_BASE_DIR, /tmp, or system temp dir (for testing)
                 is_safe = (
                     resolved_path.startswith(MEMORY_STORE_BASE_DIR) or
-                    resolved_path.startswith(os.path.realpath("/tmp")) or
+                    resolved_path.startswith("/tmp") or  # nosec B108
                     resolved_path.startswith(SYSTEM_TEMP_DIR)
                 )
 

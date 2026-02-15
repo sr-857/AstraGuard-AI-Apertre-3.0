@@ -1,0 +1,130 @@
+{
+  "generated_at": "2026-02-15T14:30:00.000Z",
+  "repository": "sr-857/AstraGuard-AI-Apertre-3.0",
+  "total_contributors": 42,
+  "total_prs": 156,
+  "total_issues": 89,
+  "active_this_month": 18,
+  "tier_distribution": {
+    "legend": 2,
+    "core": 5,
+    "regular": 12,
+    "active": 15,
+    "new": 8
+  },
+  "top_contributors": [
+    {
+      "username": "sr-857",
+      "avatar_url": "https://github.com/sr-857.png",
+      "profile_url": "https://github.com/sr-857",
+      "prs": 85,
+      "contributions": 450,
+      "tier": "Legend",
+      "tier_key": "legend",
+      "tier_emoji": "👑",
+      "first_contribution": "Jan 2025"
+    },
+    {
+      "username": "Yashaswini-V21",
+      "avatar_url": "https://github.com/Yashaswini-V21.png",
+      "profile_url": "https://github.com/Yashaswini-V21",
+      "prs": 12,
+      "contributions": 75,
+      "tier": "Regular Contributor",
+      "tier_key": "regular",
+      "tier_emoji": "💎",
+      "first_contribution": "Feb 2026"
+    },
+    {
+      "username": "contributor3",
+      "avatar_url": "https://github.com/github.png",
+      "profile_url": "https://github.com/contributor3",
+      "prs": 8,
+      "contributions": 45,
+      "tier": "Regular Contributor",
+      "tier_key": "regular",
+      "tier_emoji": "💎",
+      "first_contribution": "Jan 2026"
+    },
+    {
+      "username": "contributor4",
+      "avatar_url": "https://github.com/github.png",
+      "profile_url": "https://github.com/contributor4",
+      "prs": 4,
+      "contributions": 25,
+      "tier": "Active Contributor",
+      "tier_key": "active",
+      "tier_emoji": "⭐",
+      "first_contribution": "Feb 2026"
+    },
+    {
+      "username": "contributor5",
+      "avatar_url": "https://github.com/github.png",
+      "profile_url": "https://github.com/contributor5",
+      "prs": 3,
+      "contributions": 18,
+      "tier": "Active Contributor",
+      "tier_key": "active",
+      "tier_emoji": "⭐",
+      "first_contribution": "Feb 2026"
+    }
+  ],
+  "recent_activity": [
+    {
+      "date": "Feb 15",
+      "title": "Contribution Metrics Dashboard Implemented",
+      "description": "@Yashaswini-V21 completed issue #700",
+      "url": "https://github.com/sr-857/AstraGuard-AI-Apertre-3.0/pull/XXX"
+    },
+    {
+      "date": "Feb 15",
+      "title": "Contributor Recognition Program Implemented",
+      "description": "@Yashaswini-V21 completed issue #702",
+      "url": "https://github.com/sr-857/AstraGuard-AI-Apertre-3.0/pull/XXX"
+    },
+    {
+      "date": "Feb 14",
+      "title": "Enhanced Memory Engine",
+      "description": "@contributor3 merged PR #685",
+      "url": "https://github.com/sr-857/AstraGuard-AI-Apertre-3.0/pull/685"
+    },
+    {
+      "date": "Feb 13",
+      "title": "Documentation Updates",
+      "description": "@contributor4 improved API documentation",
+      "url": "https://github.com/sr-857/AstraGuard-AI-Apertre-3.0/pull/680"
+    },
+    {
+      "date": "Feb 12",
+      "title": "Bug Fix: Circuit Breaker",
+      "description": "@contributor5 fixed critical circuit breaker bug",
+      "url": "https://github.com/sr-857/AstraGuard-AI-Apertre-3.0/pull/678"
+    },
+    {
+      "date": "Feb 11",
+      "title": "New Contributors Welcomed",
+      "description": "5 new contributors joined the project",
+      "url": "https://github.com/sr-857/AstraGuard-AI-Apertre-3.0"
+    },
+    {
+      "date": "Feb 10",
+      "title": "Testing Improvements",
+      "description": "@contributor3 added 50+ new test cases",
+      "url": "https://github.com/sr-857/AstraGuard-AI-Apertre-3.0/pull/675"
+    },
+    {
+      "date": "Feb 9",
+      "title": "Feature: Swarm Consensus",
+      "description": "@sr-857 implemented swarm consensus protocol",
+      "url": "https://github.com/sr-857/AstraGuard-AI-Apertre-3.0/pull/670"
+    }
+  ],
+  "contribution_types": {
+    "code": 95,
+    "documentation": 28,
+    "bug_fixes": 21,
+    "testing": 12,
+    "security": 8,
+    "reviews": 94
+  }
+}
