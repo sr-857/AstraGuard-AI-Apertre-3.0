@@ -5,6 +5,8 @@ import joblib
 import pickle
 import pandas as pd
 import numpy as np
+import json
+import glob
 
 logger = logging.getLogger(__name__)
 
@@ -90,3 +92,28 @@ def load_pipeline(path: str):
     pipeline = joblib.load(path)
     logger.info(f"Pipeline loaded from {path}")
     return pipeline
+
+def save_metrics(metrics: dict, path: str):
+    """Save metrics to a JSON file."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(metrics, f, indent=4)
+    logger.info(f"Metrics saved to {path}")
+
+def load_metrics(path: str) -> dict:
+    """Load metrics from a JSON file."""
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Metrics file not found at {path}")
+    with open(path, "r") as f:
+        return json.load(f)
+
+def get_latest_file(directory: str, pattern: str = "*.pkl") -> str:
+    """Find the latest file in a directory based on modification time."""
+    if not os.path.exists(directory):
+        return None
+    files = glob.glob(os.path.join(directory, pattern))
+    if not files:
+        return None
+    latest_file = max(files, key=os.path.getmtime)
+    logger.info(f"Found latest file: {latest_file}")
+    return latest_file
