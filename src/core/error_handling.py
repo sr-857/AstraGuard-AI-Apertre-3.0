@@ -79,9 +79,15 @@ class PredictiveMaintenanceError(AstraGuardException):
     pass
 
 
+class ReportGenerationError(AstraGuardException):
+    """Raised when report generation or export operations fail."""
+    pass
+
+
 # ============================================================================
 # Error Classification & Handling
 # ============================================================================
+
 
 @functools.total_ordering
 class ErrorSeverity(Enum):

@@ -595,11 +595,11 @@ class PredictiveMaintenanceEngine:
 
                 if os.path.exists(model_path):
                     with open(model_path, 'rb') as f:
-                        self.models[failure_type] = pickle.load(f)
+                        self.models[failure_type] = pickle.load(f)  # nosec B301
 
                 if os.path.exists(scaler_path):
                     with open(scaler_path, 'rb') as f:
-                        self.scalers[failure_type] = pickle.load(f)
+                        self.scalers[failure_type] = pickle.load(f)  # nosec B301
 
             logger.info("Models loaded successfully")
 

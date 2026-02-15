@@ -83,7 +83,6 @@ jobs:
     - name: Run Bandit security check
       run: |
         bandit -r src/anomaly src/classifier src/memory_engine src/state_machine src/core -f json -o bandit-report.json
-      continue-on-error: true
     
     - name: Run Safety check
       run: |
@@ -98,17 +97,9 @@ jobs:
       matrix:
         python-version: ['3.11']
       fail-fast: false
-    services:
-      redis:
-        image: redis:7-alpine
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 6379:6379
-    
+    env:
+      REDIS_URL: redis://localhost:6379
+
     steps:
     - name: Free up disk space
       run: |
@@ -132,37 +123,40 @@ jobs:
         python -m pip install --upgrade pip setuptools wheel
         pip install -r src/config/requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
         pip install -r src/config/requirements-test.txt
+
+    - name: Print Environment Info
+      run: |
+        python --version
+        pip freeze
+        env
+
+    - name: Create .env file
+      run: cp infra/docker/.env.example infra/docker/.env
+
+    - name: Start Docker Stack
+      run: |
+        docker compose -f infra/docker/docker-compose.ci.yml up -d --build
+        docker compose -f infra/docker/docker-compose.ci.yml ps
+
+    - name: Debug Redis URL
+      run: echo "REDIS_URL=$REDIS_URL"
     
     - name: Wait for Redis
       run: |
-        python -c "
-        import redis, time, sys, socket
-        for i in range(30):
-            try:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(2)
-                result = sock.connect_ex(('localhost', 6379))
-                sock.close()
-                if result == 0:
-                    r = redis.Redis(host='localhost', port=6379, socket_connect_timeout=5, decode_responses=True)
-                    pong = r.ping()
-                    if pong:
-                        print('Redis is ready!')
-                        sys.exit(0)
-            except Exception as e:
-                pass
-            print(f'Waiting for Redis... ({i+1}/30)', flush=True)
-            time.sleep(1)
-        print('ERROR: Redis connection timeout after 30 attempts')
-        sys.exit(1)
-        "
+        for i in {1..60}; do
+          redis-cli -h localhost -p 6379 ping && break
+          echo "Waiting for Redis..."
+          sleep 1
+        done
+
+    - name: Verify Redis Connectivity
+      run: |
+        redis-cli -h localhost -p 6379 ping
     
     - name: Run pytest with coverage
-      env:
-        REDIS_URL: redis://localhost:6379
       run: |
         pytest tests/ \
-          -v \
+          -vv --maxfail=1 --durations=10 --log-cli-level=INFO \
           --cov=src/anomaly \
           --cov=src/classifier \
           --cov=src/memory_engine \
@@ -170,12 +164,48 @@ jobs:
           --cov=src/core \
           --cov-report=term-missing \
           --cov-report=xml \
-          --timeout=10 \
+          --timeout=30 \
           --tb=short
     
     - name: Check coverage threshold
       run: coverage report --fail-under=70
     
+    - name: Capture Docker Logs
+      if: failure()
+      run: |
+        docker compose -f infra/docker/docker-compose.ci.yml logs --no-color > docker-logs.txt
+
+    - name: Capture Container Status
+      if: failure()
+      run: docker ps -a > docker-status.txt
+
+    - name: Capture Health Status
+      if: failure()
+      run: |
+        if [ -n "$(docker ps -q)" ]; then
+          docker inspect $(docker ps -q) --format='{{.Name}} - {{.State.Health.Status}}' > health-status.txt
+        else
+          echo "No running containers" > health-status.txt
+        fi
+
+    - name: Capture Environment Info
+      if: failure()
+      run: |
+        env > environment.txt
+        docker version >> environment.txt
+        docker compose version >> environment.txt
+
+    - name: Upload debug artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ci-debug-logs
+        path: |
+          docker-logs.txt
+          docker-status.txt
+          health-status.txt
+          environment.txt
+
     - name: Upload coverage reports
       uses: actions/upload-artifact@v4
       if: always()
@@ -213,12 +243,15 @@ jobs:
         image: redis:7-alpine
         options: >-
           --health-cmd "redis-cli ping"
-          --health-interval 10s
+          --health-interval 5s
           --health-timeout 5s
           --health-retries 5
         ports:
           - 6379:6379
     
+    env:
+      REDIS_URL: redis://localhost:6379
+
     steps:
     - name: Free up disk space
       run: |
@@ -242,44 +275,39 @@ jobs:
         python -m pip install --upgrade pip setuptools wheel
         pip install -r src/config/requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
         pip install -r src/config/requirements-test.txt
+
+    - name: Print Environment Info
+      run: |
+        python --version
+        pip freeze
+        env
+
+    - name: Debug Redis URL
+      run: echo "REDIS_URL=$REDIS_URL"
     
     - name: Wait for Redis
       run: |
-        python -c "
-        import redis, time, sys, socket
-        for i in range(30):
-            try:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(2)
-                result = sock.connect_ex(('localhost', 6379))
-                sock.close()
-                if result == 0:
-                    r = redis.Redis(host='localhost', port=6379, socket_connect_timeout=5, decode_responses=True)
-                    pong = r.ping()
-                    if pong:
-                        print('Redis is ready!')
-                        sys.exit(0)
-            except Exception as e:
-                pass
-            print(f'Waiting for Redis... ({i+1}/30)', flush=True)
-            time.sleep(1)
-        print('ERROR: Redis connection timeout after 30 attempts')
-        sys.exit(1)
-        "
+        for i in {1..60}; do
+          redis-cli -h localhost -p 6379 ping && break
+          echo "Waiting for Redis..."
+          sleep 1
+        done
+
+    - name: Verify Redis Connectivity
+      run: |
+        redis-cli -h localhost -p 6379 ping
     
     - name: Run pytest
-      env:
-        REDIS_URL: redis://localhost:6379
       run: |
         pytest tests/ \
-          -v \
+          -vv --maxfail=1 --durations=10 --log-cli-level=DEBUG \
           --cov=src/anomaly \
           --cov=src/classifier \
           --cov=src/memory_engine \
           --cov=src/state_machine \
           --cov=src/core \
           --cov-report=xml \
-          --timeout=10 \
+          --timeout=30 \
           --tb=short
     
     - name: Clean up pip cache

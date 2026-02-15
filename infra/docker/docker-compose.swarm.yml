@@ -1,5 +1,3 @@
-
-
 # Multi-Agent Docker Swarm Simulator for AstraGuard v3.0
 # Issue #414: Testing infrastructure for complete swarm intelligence pipeline
 # 
@@ -17,7 +15,6 @@ services:
     build:
       context: ../../
       dockerfile: infra/docker/Dockerfile
-    container_name: astra-agent-1
     hostname: astra-agent-1
     environment:
       # Core configuration
@@ -69,11 +66,11 @@ services:
         condition: service_started
     
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/live"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
     
     restart: unless-stopped
 
@@ -83,7 +80,6 @@ services:
     build:
       context: ../../
       dockerfile: infra/docker/Dockerfile
-    container_name: astra-agent-2
     hostname: astra-agent-2
     environment:
       - SWARM_MODE_ENABLED=true
@@ -122,11 +118,11 @@ services:
         condition: service_started
     
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/live"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
     
     restart: unless-stopped
 
@@ -135,7 +131,7 @@ services:
     build:
       context: ../../
       dockerfile: infra/docker/Dockerfile
-    container_name: astra-agent-3
+    # container_name: astra-agent-3  <-- REMOVED FOR CONCURRENCY FIX
     hostname: astra-agent-3
     environment:
       - SWARM_MODE_ENABLED=true
@@ -174,11 +170,11 @@ services:
         condition: service_started
     
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/live"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
     
     restart: unless-stopped
 
@@ -187,7 +183,7 @@ services:
     build:
       context: ../../
       dockerfile: infra/docker/Dockerfile
-    container_name: astra-agent-4
+    # container_name: astra-agent-4  <-- REMOVED FOR CONCURRENCY FIX
     hostname: astra-agent-4
     environment:
       - SWARM_MODE_ENABLED=true
@@ -226,11 +222,11 @@ services:
         condition: service_started
     
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/live"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
     
     restart: unless-stopped
 
@@ -239,7 +235,7 @@ services:
     build:
       context: ../../
       dockerfile: infra/docker/Dockerfile
-    container_name: astra-agent-5
+    # container_name: astra-agent-5  <-- REMOVED FOR CONCURRENCY FIX
     hostname: astra-agent-5
     environment:
       - SWARM_MODE_ENABLED=true
@@ -278,11 +274,11 @@ services:
         condition: service_started
     
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/live"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
     
     restart: unless-stopped
 
@@ -290,7 +286,7 @@ services:
   
   redis:
     image: redis:7-alpine
-    container_name: astra-redis
+    # container_name: astra-redis  <-- REMOVED FOR CONCURRENCY FIX
     hostname: redis
     ports:
       - "6379:6379"
@@ -310,7 +306,7 @@ services:
 
   event-bus:
     image: rabbitmq:3.12-management-alpine
-    container_name: astra-event-bus
+    # container_name: astra-event-bus  <-- REMOVED FOR CONCURRENCY FIX
     hostname: event-bus
     environment:
       - RABBITMQ_DEFAULT_USER=guest
@@ -333,7 +329,7 @@ services:
 
   prometheus:
     image: prom/prometheus:latest
-    container_name: astra-prometheus
+    # container_name: astra-prometheus  <-- REMOVED FOR CONCURRENCY FIX
     hostname: prometheus
     ports:
       - "9090:9090"
@@ -351,7 +347,7 @@ services:
 
   grafana:
     image: grafana/grafana:latest
-    container_name: astra-grafana
+    # container_name: astra-grafana  <-- REMOVED FOR CONCURRENCY FIX
     hostname: grafana
     ports:
       - "3000:3000"
