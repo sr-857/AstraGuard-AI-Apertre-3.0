@@ -17,6 +17,9 @@ from anomaly.anomaly_detector import (
 from core.circuit_breaker import CircuitState, CircuitOpenError
 from core.error_handling import ModelLoadError
 
+# Mark integration tests as slow
+pytestmark = [pytest.mark.slow, pytest.mark.timeout(45)]
+
 
 class TestAnomalyDetectorCircuitBreaker:
     """Test circuit breaker integration with anomaly detector"""

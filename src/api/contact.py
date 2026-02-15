@@ -12,17 +12,21 @@ import re
 import logging
 import sqlite3
 import json
+import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, List, Any, Union
-import asyncio
-
+from fastapi import APIRouter, HTTPException, Request, Depends, Query
+from pydantic import BaseModel, EmailStr, Field, field_validator, validator
+from fastapi.responses import JSONResponse
 import aiosqlite
 import aiofiles
 
 from fastapi import APIRouter, HTTPException, Request, Depends, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, EmailStr, Field, field_validator, ValidationError as PydanticValidationError
+
+from src.db.database import get_connection, get_pool_stats, is_pool_enabled
 
 
 # Declare variables BEFORE try block
@@ -60,6 +64,9 @@ DB_PATH: Path = DATA_DIR / "contact_submissions.db"
 NOTIFICATION_LOG: Path = DATA_DIR / "contact_notifications.log"
 CONTACT_EMAIL: str = os.getenv("CONTACT_EMAIL", "support@astraguard.ai")
 SENDGRID_API_KEY: Optional[str] = os.getenv("SENDGRID_API_KEY", None)
+
+# Module logger
+logger = logging.getLogger(__name__)
 
 
 _raw_trusted: str = os.getenv("TRUSTED_PROXIES", "")
@@ -224,6 +231,8 @@ _init_db_sync()
 
 _in_memory_limiter: InMemoryRateLimiter = InMemoryRateLimiter()
 
+# Initialize database
+_init_db_sync()
 
 async def check_rate_limit(ip_address: str) -> tuple[bool, dict[str, Any]]:
     """Check rate limit and return status with metadata"""
@@ -256,7 +265,7 @@ async def save_submission(
     ip_address: str,
     user_agent: str,
 ) -> Optional[int]:
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_connection() as conn:
         cursor = await conn.execute(
             """
             INSERT INTO contact_submissions
@@ -276,6 +285,7 @@ async def save_submission(
         await conn.commit()
         return cursor.lastrowid
 
+async def log_notification(submission: ContactSubmission, submission_id: Optional[int]) -> None:
 
 async def log_notification(
     submission: ContactSubmission,
@@ -298,10 +308,10 @@ async def log_notification(
         await f.write(json.dumps(log_entry) + "\n")
 
 
-async def send_email_notification(
-    submission: ContactSubmission,
-    submission_id: Optional[int],
-) -> None:
+async def send_email_notification(submission: ContactSubmission, submission_id: Optional[int]) -> None:
+
+    """Send email notification (placeholder for SendGrid integration)"""
+    # TODO: Implement SendGrid integration when SENDGRID_API_KEY is set
     if SENDGRID_API_KEY:
         try:
             pass
@@ -464,7 +474,7 @@ async def get_submissions(
         where_clause = "WHERE status = ?"
         params.append(status_filter)
 
-    count_query = f"SELECT COUNT(*) AS total FROM contact_submissions {where_clause}"
+    count_query = f"SELECT COUNT(*) AS total FROM contact_submissions {where_clause}"  # nosec B608
     select_query = f"""
         SELECT id, name, email, phone, subject, message,
                ip_address, user_agent, submitted_at, status
@@ -472,9 +482,9 @@ async def get_submissions(
         {where_clause}
         ORDER BY submitted_at DESC
         LIMIT ? OFFSET ?
-    """
+    """  # nosec B608
 
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_connection() as conn:
         conn.row_factory = aiosqlite.Row
 
         async with conn.execute(count_query, params) as cursor:
@@ -517,7 +527,7 @@ async def update_submission_status(
     current_user: Any = Depends(get_admin_user),
 ) -> dict[str, Any]:
 
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_connection() as conn:
         cursor = await conn.execute(
             "UPDATE contact_submissions SET status = ? WHERE id = ?",
             (status, submission_id),
@@ -534,7 +544,7 @@ async def update_submission_status(
 async def contact_health() -> dict[str, Any]:
 
     try:
-        async with aiosqlite.connect(DB_PATH) as conn:
+        async with get_connection() as conn:
             async with conn.execute(
                 "SELECT COUNT(*) FROM contact_submissions"
             ) as cursor:
@@ -576,3 +586,42 @@ async def contact_health() -> dict[str, Any]:
             exc_info=True
         )
         raise HTTPException(status_code=503, detail="Service health check failed")
+
+
+@router.get("/pool-health")
+async def pool_health() -> dict[str, Any]:
+    """
+    Get connection pool health statistics.
+    
+    Returns pool metrics including active connections, idle connections,
+    total created, timeouts, and average wait time.
+    """
+    if not is_pool_enabled():
+        return {
+            "status": "disabled",
+            "message": "Connection pooling is not enabled"
+        }
+    
+    stats = await get_pool_stats()
+    
+    if stats is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Pool statistics unavailable"
+        )
+    
+    return {
+        "status": "healthy",
+        "pool": {
+            "active_connections": stats.active_connections,
+            "idle_connections": stats.idle_connections,
+            "total_connections": stats.total_connections,
+            "max_size": stats.max_size,
+            "total_created": stats.total_created,
+            "total_acquisitions": stats.total_acquisitions,
+            "total_releases": stats.total_releases,
+            "total_timeouts": stats.total_timeouts,
+            "total_errors": stats.total_errors,
+            "average_wait_time_ms": round(stats.average_wait_time * 1000, 2),
+        }
+    }

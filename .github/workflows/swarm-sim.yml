@@ -11,7 +11,8 @@ on:
   pull_request:
     branches: [ main ]
 
-concurrency:
+# Fix: Remove duplicate key and ensure cancel-in-progress is false
+# so long simulations finish even if new code is pushed.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
@@ -21,6 +22,10 @@ jobs:
     name: Swarm Simulator Tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
+
+    # Fix: Define project name at Job Level to ensure isolation across all steps
+    env:
+      COMPOSE_PROJECT_NAME: swarm-test-${{ github.run_id }}
     
     services:
       redis:
@@ -67,11 +72,11 @@ jobs:
           cp infra/docker/.env.example infra/docker/.env
       
       - name: Start Swarm Constellation
-        env:
-          COMPOSE_PROJECT_NAME: swarm-${{ github.run_id }}
+        # Env var inherited from job level, ensuring unique network names
         run: |
           docker compose -f infra/docker/docker-compose.swarm.yml up -d --build
           echo "Waiting for services to be healthy..."
+          sleep 10
           docker compose -f infra/docker/docker-compose.swarm.yml ps
       
       - name: Show Docker containers
@@ -92,16 +97,13 @@ jobs:
           import os
           
           async def wait_agents():
-              # First check if container is running
-              env = {'COMPOSE_PROJECT_NAME': f'swarm-{os.environ.get("GITHUB_RUN_ID", "local")}'}
+              # Environment variable is now automatically available
               result = subprocess.run(['docker', 'compose', '-f', 'infra/docker/docker-compose.swarm.yml', 'ps', '--format', 'json'],
-                                     capture_output=True, text=True, env={**os.environ, **env})
+                                    capture_output=True, text=True)
               print('Container status:', result.stdout)
               
-              # Check if port is actually mapped
-              env = {'COMPOSE_PROJECT_NAME': f'swarm-{os.environ.get("GITHUB_RUN_ID", "local")}'}
               result = subprocess.run(['docker', 'compose', '-f', 'infra/docker/docker-compose.swarm.yml', 'port', 'agent-1', '8000'],
-                                     capture_output=True, text=True, env={**os.environ, **env})
+                                    capture_output=True, text=True)
               print('Port mapping:', result.stdout)
               
               # Wait up to 300 seconds (5 minutes)
@@ -126,7 +128,7 @@ jobs:
                               print(f'Waiting for agents... ({ready_count}/5 ready)')
 
                   except Exception as e:
-                      if i % 10 == 0:  # Log every 10 attempts
+                      if i % 10 == 0:
                           print(f'Attempt {i}: {str(e)}')
                   await asyncio.sleep(1)
               return False
@@ -135,9 +137,7 @@ jobs:
               print('Agents ready')
           else:
               print('Timeout waiting for agents')
-              # Show container logs before failing
-              env = {'COMPOSE_PROJECT_NAME': f'swarm-{os.environ.get("GITHUB_RUN_ID", "local")}'}
-              subprocess.run(['docker', 'compose', '-f', 'infra/docker/docker-compose.swarm.yml', 'logs', '--tail=50'], env={**os.environ, **env})
+              subprocess.run(['docker', 'compose', '-f', 'infra/docker/docker-compose.swarm.yml', 'logs', '--tail=50'])
               exit(1)
           "
       
@@ -153,8 +153,7 @@ jobs:
         run: |
           mkdir -p test-artifacts
           
-          # Docker compose logs
-          export COMPOSE_PROJECT_NAME=swarm-${{ github.run_id }}
+          # Docker compose logs (uses global COMPOSE_PROJECT_NAME)
           docker compose -f infra/docker/docker-compose.swarm.yml logs > test-artifacts/docker-compose.log || true
           
           # Prometheus metrics
@@ -165,7 +164,6 @@ jobs:
             curl -s http://localhost:$port/metrics > test-artifacts/agent-$port-metrics.txt || true
           done
           
-          # Test output
           cp test-output.txt test-artifacts/ || true
       
       - name: Generate Coverage Report
@@ -195,7 +193,7 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          export COMPOSE_PROJECT_NAME=swarm-${{ github.run_id }}
+          # Uses the correct project name to tear down the specific containers for this run
           docker compose -f infra/docker/docker-compose.swarm.yml down -v || true
       
       - name: Test Summary
@@ -215,6 +213,10 @@ jobs:
     name: Performance Validation
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    
+    # Fix: Unique project name for performance job to avoid collision with test job
+    env:
+      COMPOSE_PROJECT_NAME: swarm-perf-${{ github.run_id }}
     
     steps:
       - uses: actions/checkout@v4
@@ -236,8 +238,7 @@ jobs:
       
       - name: Run Performance Tests
         run: |
-          # Start constellation
-          export COMPOSE_PROJECT_NAME=swarm-${{ github.run_id }}
+          # Uses job-level COMPOSE_PROJECT_NAME automatically
           docker compose -f infra/docker/docker-compose.swarm.yml up -d --build
           
           # Run timing tests
@@ -290,7 +291,6 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          export COMPOSE_PROJECT_NAME=swarm-${{ github.run_id }}
           docker compose -f infra/docker/docker-compose.swarm.yml down -v || true
 
   render-deployment:
@@ -303,10 +303,8 @@ jobs:
       
       - name: Validate Render Config
         run: |
-          # Check render.yaml exists
           if [ -f render.yaml ]; then
             echo "✓ render.yaml found"
-            # Validate YAML
             python -c "import yaml; yaml.safe_load(open('render.yaml'))"
             echo "✓ render.yaml is valid"
           else
@@ -315,7 +313,6 @@ jobs:
       
       - name: Check Docker Image
         run: |
-          # Verify docker image can be built
           if [ -f infra/docker/Dockerfile.swarm ]; then
             docker build -t astraguard:swarm-test -f infra/docker/Dockerfile.swarm . --target base --no-cache 2>&1 | head -50
             echo "✓ Docker image builds successfully"

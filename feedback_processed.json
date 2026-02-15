@@ -1,0 +1,42 @@
+[
+  {
+    "fault_id": "dash_test_0",
+    "label": "correct"
+  },
+  {
+    "fault_id": "dash_test_1",
+    "label": "correct"
+  },
+  {
+    "fault_id": "dash_test_2",
+    "label": "correct"
+  },
+  {
+    "fault_id": "dash_test_3",
+    "label": "correct"
+  },
+  {
+    "fault_id": "dash_test_4",
+    "label": "correct"
+  },
+  {
+    "fault_id": "dash_test_5",
+    "label": "correct"
+  },
+  {
+    "fault_id": "dash_test_6",
+    "label": "correct"
+  },
+  {
+    "fault_id": "dash_test_7",
+    "label": "wrong"
+  },
+  {
+    "fault_id": "dash_test_8",
+    "label": "wrong"
+  },
+  {
+    "fault_id": "dash_test_9",
+    "label": "wrong"
+  }
+]

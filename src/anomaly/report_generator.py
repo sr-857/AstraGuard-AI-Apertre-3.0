@@ -15,8 +15,9 @@ Features:
 import json
 import logging
 import os
+from collections import Counter, deque
 from datetime import datetime, timedelta
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Deque
 from dataclasses import dataclass, asdict
 
 from src.core.error_handling import ReportGenerationError
@@ -94,8 +95,9 @@ class AnomalyReportGenerator:
         Args:
             max_history_days: Maximum days to keep historical data
         """
-        self.anomalies: List[AnomalyEvent] = []
-        self.recovery_actions: List[RecoveryAction] = []
+        # Deques keep insertion order and make history eviction O(1)
+        self.anomalies: Deque[AnomalyEvent] = deque()
+        self.recovery_actions: Deque[RecoveryAction] = deque()
         self.max_history_days = max_history_days
         logger.info("Anomaly report generator initialized")
 
@@ -277,8 +279,9 @@ class AnomalyReportGenerator:
             ReportGenerationError: If report generation fails.
         """
         try:
+            now = datetime.now()
             if end_time is None:
-                end_time = datetime.now()
+                end_time = now
             if start_time is None:
                 start_time = end_time - timedelta(hours=24)
 
@@ -288,33 +291,27 @@ class AnomalyReportGenerator:
                     f"start_time ({start_time}) must be before end_time ({end_time})"
                 )
 
-            # Filter anomalies and recovery actions by time range
-            filtered_anomalies = [
-                a for a in self.anomalies
-                if start_time <= a.timestamp <= end_time
-            ]
-
-            filtered_recoveries = [
-                r for r in self.recovery_actions
-                if start_time <= r.timestamp <= end_time
-            ]
-
-            # Calculate statistics
-            total_anomalies = len(filtered_anomalies)
-            resolved_anomalies = sum(1 for a in filtered_anomalies if a.resolved)
-            critical_anomalies = sum(1 for a in filtered_anomalies if a.severity == "CRITICAL")
-
-            anomaly_types: Dict[str, int] = {}
-            for anomaly in filtered_anomalies:
-                anomaly_types[anomaly.anomaly_type] = anomaly_types.get(anomaly.anomaly_type, 0) + 1
-
-            recovery_stats: Dict[str, int] = {}
-            for recovery in filtered_recoveries:
-                recovery_stats[recovery.action_type] = recovery_stats.get(recovery.action_type, 0) + 1
-
-            # Calculate MTTR (Mean Time To Resolution) for resolved anomalies
+            # Filter and aggregate in a single pass; deques stay time-ordered
+            filtered_anomalies: List[AnomalyEvent] = []
+            anomaly_types: Counter[str] = Counter()
             resolution_times: List[float] = []
-            for anomaly in filtered_anomalies:
+            resolved_anomalies = 0
+            critical_anomalies = 0
+
+            for anomaly in self.anomalies:
+                if anomaly.timestamp < start_time:
+                    continue
+                if anomaly.timestamp > end_time:
+                    break
+
+                filtered_anomalies.append(anomaly)
+                anomaly_types[anomaly.anomaly_type] += 1
+
+                if anomaly.resolved:
+                    resolved_anomalies += 1
+                if anomaly.severity == "CRITICAL":
+                    critical_anomalies += 1
+
                 if anomaly.resolved and anomaly.resolution_time:
                     try:
                         mttr = (anomaly.resolution_time - anomaly.timestamp).total_seconds()
@@ -322,6 +319,20 @@ class AnomalyReportGenerator:
                             resolution_times.append(mttr)
                     except (TypeError, AttributeError) as e:
                         logger.warning(f"Invalid resolution time for anomaly: {e}")
+
+            filtered_recoveries: List[RecoveryAction] = []
+            recovery_stats: Counter[str] = Counter()
+            for recovery in self.recovery_actions:
+                if recovery.timestamp < start_time:
+                    continue
+                if recovery.timestamp > end_time:
+                    break
+
+                filtered_recoveries.append(recovery)
+                recovery_stats[recovery.action_type] += 1
+
+            # Calculate statistics
+            total_anomalies = len(filtered_anomalies)
 
             avg_mttr: Optional[float] = None
             if resolution_times:
@@ -342,8 +353,8 @@ class AnomalyReportGenerator:
                     "resolution_rate": resolved_anomalies / total_anomalies if total_anomalies > 0 else 0.0,
                     "critical_anomalies": critical_anomalies,
                     "average_mttr_seconds": avg_mttr,
-                    "anomaly_types": anomaly_types,
-                    "recovery_actions": recovery_stats
+                    "anomaly_types": dict(anomaly_types),
+                    "recovery_actions": dict(recovery_stats)
                 },
                 "anomalies": [a.to_dict() for a in filtered_anomalies],
                 "recovery_actions": [r.to_dict() for r in filtered_recoveries]
@@ -552,9 +563,10 @@ class AnomalyReportGenerator:
     def _cleanup_old_data(self) -> None:
         """Remove data older than max_history_days."""
         cutoff = datetime.now() - timedelta(days=self.max_history_days)
-
-        self.anomalies = [a for a in self.anomalies if a.timestamp > cutoff]
-        self.recovery_actions = [r for r in self.recovery_actions if r.timestamp > cutoff]
+        while self.anomalies and self.anomalies[0].timestamp <= cutoff:
+            self.anomalies.popleft()
+        while self.recovery_actions and self.recovery_actions[0].timestamp <= cutoff:
+            self.recovery_actions.popleft()
 
     def clear_history(self) -> None:
         """Clear all historical data."""

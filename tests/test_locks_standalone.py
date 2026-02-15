@@ -6,6 +6,9 @@ import asyncio
 import pytest
 from asyncio import Lock
 
+# Mark lock tests as slow due to concurrent operations
+pytestmark = [pytest.mark.slow, pytest.mark.timeout(30)]
+
 
 @pytest.mark.asyncio
 async def test_lock_basic_functionality():
