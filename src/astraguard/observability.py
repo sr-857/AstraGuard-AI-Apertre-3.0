@@ -12,6 +12,9 @@ import time
 import logging
 import asyncio
 from typing import Optional, Dict, Any, Generator, AsyncGenerator, cast
+from prometheus_client.metrics_core import MetricWrapperBase
+import socket
+import errno
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -83,8 +86,18 @@ def _safe_create_metric(
                 metric = metric_class(*args, **kwargs)
                 _metric_cache[name] = metric  # Cache it
                 return metric
+            except (ValueError, AttributeError, TypeError) as inner_e:
+                logger.error(
+                    f"Failed to create metric {name} with new registry: {inner_e}",
+                    exc_info=True,
+                    extra={"metric_name": name, "metric_class": metric_class.__name__}
+                )
+                raise
             except Exception as inner_e:
-                logger.error(f"Failed to create metric {name} with new registry: {inner_e}")
+                logger.critical(
+                    f"Unexpected error creating metric {name}: {inner_e}",
+                    exc_info=True
+                )
                 raise
         else:
             logger.error(f"ValueError creating metric {name}: {e}")
@@ -342,15 +355,39 @@ def track_request(endpoint: str, method: str = "POST") -> Generator[None, None, 
         if REQUEST_LATENCY:
             _get_cached_labels(REQUEST_LATENCY, endpoint=endpoint).observe(duration)
         if REQUEST_COUNT:
-            _get_cached_labels(REQUEST_COUNT, method=method, endpoint=endpoint, status="200").inc()
+            REQUEST_COUNT.labels(method=method, endpoint=endpoint, status="200").inc()
+    except (ValueError, KeyError, TypeError) as e:
+        # Expected application errors
+        duration = time.time() - start
+        if REQUEST_LATENCY:
+            REQUEST_LATENCY.labels(endpoint=endpoint).observe(duration)
+        if REQUEST_COUNT:
+            REQUEST_COUNT.labels(method=method, endpoint=endpoint, status="400").inc()
+        if ERRORS:
+            ERRORS.labels(type=type(e).__name__, endpoint=endpoint).inc()
+        logger.warning(f"Client error on {endpoint}: {e}", extra={"endpoint": endpoint, "method": method})
+        raise
+    except (ConnectionError, TimeoutError, asyncio.TimeoutError) as e:
+        # Network/connectivity errors
+        duration = time.time() - start
+        if REQUEST_LATENCY:
+            REQUEST_LATENCY.labels(endpoint=endpoint).observe(duration)
+        if REQUEST_COUNT:
+            REQUEST_COUNT.labels(method=method, endpoint=endpoint, status="503").inc()
+        if ERRORS:
+            ERRORS.labels(type=type(e).__name__, endpoint=endpoint).inc()
+        logger.error(f"Service unavailable on {endpoint}: {e}", extra={"endpoint": endpoint})
+        raise
     except Exception as e:
-        duration = time.perf_counter() - start
+        # Unexpected errors (server errors)
+        duration = time.time() - start
         if REQUEST_LATENCY:
             _get_cached_labels(REQUEST_LATENCY, endpoint=endpoint).observe(duration)
         if REQUEST_COUNT:
             _get_cached_labels(REQUEST_COUNT, method=method, endpoint=endpoint, status="500").inc()
         if ERRORS:
-            _get_cached_labels(ERRORS, type=type(e).__name__, endpoint=endpoint).inc()
+            ERRORS.labels(type=type(e).__name__, endpoint=endpoint).inc()
+        logger.exception(f"Unexpected error on {endpoint}: {e}", extra={"endpoint": endpoint, "method": method})
         raise
     finally:
         if ACTIVE_CONNECTIONS:
@@ -367,8 +404,20 @@ def track_anomaly_detection() -> Generator[None, None, None]:
         duration = time.perf_counter() - start
         if DETECTION_LATENCY:
             DETECTION_LATENCY.observe(duration)
+    except (ValueError, KeyError) as e:
+        # Invalid input data
+        logger.warning(f"Invalid data for anomaly detection: {e}", exc_info=True)
+        if ERRORS:
+            ERRORS.labels(type="data_validation_error", endpoint="anomaly_detection").inc()
+        raise
+    except (ImportError, AttributeError) as e:
+        # ML model/library issues
+        logger.error(f"ML model error in anomaly detection: {e}", exc_info=True)
+        if ERRORS:
+            ERRORS.labels(type="model_error", endpoint="anomaly_detection").inc()
+        raise
     except Exception as e:
-        logger.error(f"Anomaly detection failed: {e}")
+        logger.exception(f"Unexpected anomaly detection failure: {e}")
         if ERRORS:
             _get_cached_labels(ERRORS, type=type(e).__name__, endpoint="anomaly_detection").inc()
         raise
@@ -383,9 +432,20 @@ def track_retry_attempt(endpoint: str) -> Generator[None, None, None]:
         yield
         duration = time.perf_counter() - start
         if RETRY_LATENCY:
-            _get_cached_labels(RETRY_LATENCY, endpoint=endpoint).observe(duration)
-    except Exception:
+            RETRY_LATENCY.labels(endpoint=endpoint).observe(duration)
+    except (ConnectionError, TimeoutError) as e:
+        # Expected retry scenarios
+        logger.debug(f"Retry needed for {endpoint}: {e}")
+        if RETRY_ATTEMPTS:
+            RETRY_ATTEMPTS.labels(endpoint=endpoint, outcome="failed").inc()
         raise
+    except Exception as e:
+        # Unexpected error during retry
+        logger.error(f"Unexpected error during retry for {endpoint}: {e}", exc_info=True)
+        if RETRY_ATTEMPTS:
+            RETRY_ATTEMPTS.labels(endpoint=endpoint, outcome="error").inc()
+        raise
+
 
 
 
@@ -397,9 +457,31 @@ def track_chaos_recovery(chaos_type: str) -> Generator[None, None, None]:
         yield
         duration = time.perf_counter() - start
         if CHAOS_RECOVERY_TIME:
-            _get_cached_labels(CHAOS_RECOVERY_TIME, type=chaos_type).observe(duration)
+            CHAOS_RECOVERY_TIME.labels(type=chaos_type).observe(duration)
+    except TimeoutError as e:
+        # Recovery timeout
+        logger.error(
+            f"Chaos recovery timeout for {chaos_type}: {e}",
+            extra={"chaos_type": chaos_type, "timeout_duration": time.time() - start}
+        )
+        if ERRORS:
+            ERRORS.labels(type="recovery_timeout", endpoint="chaos_recovery").inc()
+        raise
+    except (ConnectionError, OSError) as e:
+        # System/connectivity issues during recovery
+        logger.error(
+            f"System error during chaos recovery for {chaos_type}: {e}",
+            exc_info=True,
+            extra={"chaos_type": chaos_type}
+        )
+        if ERRORS:
+            ERRORS.labels(type="system_error", endpoint="chaos_recovery").inc()
+        raise
     except Exception as e:
-        logger.error(f"Chaos recovery failed for {chaos_type}: {e}")
+        logger.exception(
+            f"Unexpected chaos recovery failure for {chaos_type}: {e}",
+            extra={"chaos_type": chaos_type}
+        )
         if ERRORS:
             _get_cached_labels(ERRORS, type=type(e).__name__, endpoint="chaos_recovery").inc()
         raise
@@ -499,10 +581,23 @@ def startup_metrics_server(port: int = 9090) -> None:
     """
     try:
         start_http_server(port)
+        logger.info(f"Metrics server started on port {port}")
         print(f"✅ Metrics server started on port {port}")
         print(f"   Access metrics: http://localhost:{port}/metrics")
+    except OSError as e:
+        if e.errno == errno.EADDRINUSE:
+            logger.error(f"Port {port} already in use. Metrics server not started.")
+            print(f"⚠️  Port {port} already in use. Choose a different port.")
+        else:
+            logger.error(f"OS error starting metrics server on port {port}: {e}", exc_info=True)
+            print(f"⚠️  Failed to start metrics server: {e}")
+    except ImportError as e:
+        logger.error(f"Missing dependency for metrics server: {e}")
+        print(f"⚠️  Missing required library: {e}")
     except Exception as e:
-        print(f"⚠️  Failed to start metrics server: {e}")
+        logger.exception(f"Unexpected error starting metrics server: {e}")
+        print(f"⚠️  Unexpected error starting metrics server: {e}")
+
 
 
 def shutdown_metrics_server() -> None:
@@ -530,8 +625,21 @@ def get_metrics_endpoint() -> bytes:
     try:
         from prometheus_client import generate_latest, REGISTRY
         return generate_latest(REGISTRY)
+    except ImportError as e:
+        # Missing prometheus_client (should not happen if module loads)
+        logger.critical(f"Prometheus client import failed: {e}")
+        if ERRORS:
+            ERRORS.labels(type="import_error", endpoint="metrics_endpoint").inc()
+        raise RuntimeError("Prometheus client not available") from e
+    except (AttributeError, TypeError) as e:
+        # Registry corruption or invalid state
+        logger.error(f"Registry error generating metrics: {e}", exc_info=True)
+        if ERRORS:
+            ERRORS.labels(type="registry_error", endpoint="metrics_endpoint").inc()
+        raise
     except Exception as e:
-        logger.error(f"Failed to generate metrics endpoint: {e}")
+        logger.exception(f"Unexpected error generating metrics: {e}")
         if ERRORS:
             ERRORS.labels(type=type(e).__name__, endpoint="metrics_endpoint").inc()
         raise
+

@@ -8,7 +8,7 @@ and shared state across multiple instances.
 
 import time
 import os
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -19,22 +19,40 @@ from core.secrets import get_secret
 
 # Prometheus metrics
 try:
-    from prometheus_client import Counter, Histogram
-    rate_limit_hits = Counter(
+    from prometheus_client import Counter, Histogram, REGISTRY
+
+    # Helper to safely create or get metrics (prevents duplicate registry errors during tests)
+    def get_or_create_metric(metric_type, name, documentation, labels):
+        try:
+            # Check if metric already exists in registry to avoid ValueError
+            if name in REGISTRY._names_to_collectors:
+                return REGISTRY._names_to_collectors[name]
+            return metric_type(name, documentation, labels)
+        except ValueError:
+             # Fallback: if race condition occurs, return existing
+             if name in REGISTRY._names_to_collectors:
+                return REGISTRY._names_to_collectors[name]
+             raise
+
+    rate_limit_hits = get_or_create_metric(
+        Counter,
         'astra_rate_limit_hits_total',
         'Total number of requests allowed by rate limiter',
         ['endpoint']
     )
-    rate_limit_blocks = Counter(
+    rate_limit_blocks = get_or_create_metric(
+        Counter,
         'astra_rate_limit_blocks_total',
         'Total number of requests blocked by rate limiter',
         ['endpoint']
     )
-    rate_limit_latency = Histogram(
+    rate_limit_latency = get_or_create_metric(
+        Histogram,
         'astra_rate_limit_check_duration_seconds',
         'Time spent checking rate limits',
         ['endpoint']
     )
+
 except ImportError:
     # Fallback if prometheus not available
     rate_limit_hits = None
@@ -192,7 +210,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return response
 
 
-def parse_rate_limit_config(rate_str: str) -> tuple[float, int]:
+def parse_rate_limit_config(rate_str: str) -> Tuple[float, int]:
     """
     Parse rate limit configuration string.
 
@@ -238,7 +256,7 @@ def parse_rate_limit_config(rate_str: str) -> tuple[float, int]:
         return 10.0, 100
 
 
-def get_rate_limit_config() -> Dict[str, tuple[float, int]]:
+def get_rate_limit_config() -> Dict[str, Tuple[float, int]]:
     """
     Get rate limit configurations from environment variables.
 

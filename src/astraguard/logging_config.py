@@ -22,7 +22,19 @@ def _cached_get_secret(key: str, default=None):
     """Cached wrapper for get_secret to reduce I/O overhead."""
     try:
         return get_secret(key, default)
-    except Exception:
+    except (KeyError, ValueError, OSError, IOError) as e:
+        # Log the specific error for debugging
+        print(
+            f"Warning: Failed to retrieve secret '{key}' ({type(e).__name__}): {e}. Using default value.",
+            file=sys.stderr
+        )
+        return default
+    except Exception as e:
+        # Catch truly unexpected errors and log them prominently
+        print(
+            f"Error: Unexpected error retrieving secret '{key}' ({type(e).__name__}): {e}. Using default value.",
+            file=sys.stderr
+        )
         return default
 
 # ============================================================================
@@ -86,9 +98,12 @@ def setup_json_logging(
         # Add global context with safe secret retrieval
         try:
             app_version = get_secret("app_version", "1.0.0")
-        except (KeyError, ValueError, Exception) as e:
+        except (KeyError, ValueError, OSError, IOError) as e:
             app_version = "1.0.0"
-            print(f"Warning: Failed to retrieve app_version secret: {e}", file=sys.stderr)
+            print(
+                f"Warning: Failed to retrieve app_version secret ({type(e).__name__}): {e}. Using default '1.0.0'.",
+                file=sys.stderr
+            )
 
         structlog.contextvars.clear_contextvars()
         structlog.contextvars.bind_contextvars(
@@ -97,14 +112,40 @@ def setup_json_logging(
             version=app_version
         )
 
-    except (AttributeError, ImportError, ValueError) as e:
+    except (AttributeError, ImportError, ValueError, TypeError) as e:
         # Fallback to basic logging if JSON setup fails
-        print(f"Warning: JSON logging setup failed ({type(e).__name__}): {e}. Falling back to basic logging.", file=sys.stderr)
-        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
+        print(
+            f"Warning: JSON logging setup failed ({type(e).__name__}): {e}. "
+            f"Falling back to basic logging.",
+            file=sys.stderr
+        )
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(levelname)s - %(name)s - %(message)s'
+        )
+    except (OSError, IOError, RuntimeError) as e:
+        # Handle I/O and runtime errors specifically
+        print(
+            f"Error: I/O or runtime error during logging setup ({type(e).__name__}): {e}. "
+            f"Using default logging.",
+            file=sys.stderr
+        )
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(levelname)s - %(name)s - %(message)s'
+        )
     except Exception as e:
-        # Catch any other unexpected exceptions
-        print(f"Error: Unexpected error during logging setup ({type(e).__name__}): {e}. Using default logging.", file=sys.stderr)
-        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
+        # Catch truly unexpected exceptions as last resort
+        print(
+            f"Critical: Unexpected error during logging setup ({type(e).__name__}): {e}. "
+            f"Using default logging. Please report this issue.",
+            file=sys.stderr
+        )
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(levelname)s - %(name)s - %(message)s'
+        )
+
 
 
 def get_logger(name: str = __name__) -> structlog.BoundLogger:
@@ -467,8 +508,26 @@ def set_log_level(level: str) -> None:
 
     Returns:
         None.
+
+    Raises:
+        ValueError: If the provided level is not a valid logging level.
     """
-    logging.getLogger().setLevel(getattr(logging, level))
+    if not isinstance(level, str):
+        raise TypeError(f"Log level must be a string, got {type(level).__name__}")
+    
+    level_upper = level.upper()
+    valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+    
+    if level_upper not in valid_levels:
+        raise ValueError(
+            f"Invalid log level: '{level}'. Must be one of {valid_levels}"
+        )
+    
+    try:
+        logging.getLogger().setLevel(getattr(logging, level_upper))
+    except AttributeError as e:
+        # This should not happen after validation, but handle it anyway
+        raise ValueError(f"Failed to set log level '{level}': {e}") from e
 
 
 def clear_context() -> None:
@@ -513,6 +572,14 @@ try:
     enable_json = _cached_get_secret("enable_json_logging", False)
     if enable_json:
         setup_json_logging()
-except (KeyError, ValueError, Exception) as e:
-    print(f"Warning: Failed to initialize JSON logging on import: {e}. Using default logging.", file=sys.stderr)
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
+except (KeyError, ValueError, OSError, IOError, TypeError) as e:
+    print(
+        f"Warning: Failed to initialize JSON logging on import ({type(e).__name__}): {e}. "
+        f"Using default logging.",
+        file=sys.stderr
+    )
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(name)s - %(message)s'
+    )
+

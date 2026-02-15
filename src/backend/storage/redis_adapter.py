@@ -67,6 +67,41 @@ class RedisAdapter:
             retry_delay=config.get("retry_delay", 0.5)
         )
 
+    @classmethod
+    async def from_url(
+        cls,
+        url: str,
+        max_retries: int = 5,
+        retry_delay: float = 2.0
+    ) -> "RedisAdapter":
+        """
+        Create adapter from URL with connection retries.
+
+        Args:
+            url: Redis connection URL
+            max_retries: Number of connection attempts
+            retry_delay: Delay between attempts in seconds
+
+        Returns:
+            Connected RedisAdapter instance
+
+        Raises:
+            RuntimeError: If connection fails after retries
+        """
+        adapter = cls(redis_url=url)
+
+        for attempt in range(max_retries):
+            if await adapter.connect():
+                return adapter
+
+            logger.warning(
+                f"Redis connection failed (attempt {attempt + 1}/{max_retries}). Retrying in {retry_delay}s..."
+            )
+            if attempt < max_retries - 1:
+                await asyncio.sleep(retry_delay)
+
+        raise RuntimeError(f"Failed to connect to Redis at {url} after {max_retries} attempts")
+
     async def connect(self) -> bool:
         """
         Establish connection to Redis.
@@ -353,3 +388,714 @@ class RedisAdapter:
             logger.error(f"Redis health check failed: {e}")
             self.connected = False
             return False
+
+    # ========================================================================
+    # Distributed Coordination Methods
+    # ========================================================================
+
+    async def set_nx(
+        self,
+        key: str,
+        value: Any,
+        *,
+        expire: Optional[int] = None
+    ) -> bool:
+        """
+        Set key only if it doesn't exist (SET NX).
+        
+        Used for leader election and distributed locking.
+        
+        Args:
+            key: The key to set
+            value: The value to store
+            expire: Optional TTL in seconds
+            
+        Returns:
+            True if key was set, False if key already exists
+        """
+        if not self.connected:
+            logger.warning("Redis not connected")
+            return False
+
+        try:
+            serialized = self._serialize(value)
+            result = await self._execute_with_retry(
+                self.redis.set,
+                key,
+                serialized,
+                nx=True,  # Only set if not exists
+                ex=expire
+            )
+            success = bool(result)
+            if success:
+                logger.debug(f"Set key {key} with NX" + (f" and TTL {expire}s" if expire else ""))
+            return success
+        except Exception as e:
+            logger.error(f"Failed to set key {key} with NX: {e}")
+            return False
+
+    async def eval_script(
+        self,
+        script: str,
+        keys: List[str],
+        args: List[Any]
+    ) -> Any:
+        """
+        Execute Lua script atomically.
+        
+        Args:
+            script: Lua script to execute
+            keys: List of keys (available as KEYS in script)
+            args: List of arguments (available as ARGV in script)
+            
+        Returns:
+            Script result (deserialized if JSON)
+        """
+        if not self.connected:
+            logger.warning("Redis not connected")
+            return None
+
+        try:
+            # Serialize arguments
+            serialized_args = [self._serialize(arg) for arg in args]
+            
+            result = await self._execute_with_retry(
+                self.redis.eval,
+                script,
+                len(keys),
+                *keys,
+                *serialized_args
+            )
+            
+            logger.debug(f"Executed Lua script with {len(keys)} keys")
+            return self._deserialize(result) if isinstance(result, str) else result
+        except Exception as e:
+            logger.error(f"Failed to execute Lua script: {e}")
+            return None
+
+    async def publish(self, channel: str, message: Any) -> int:
+        """
+        Publish message to pub/sub channel.
+        
+        Args:
+            channel: Channel name
+            message: Message to publish (will be serialized to JSON)
+            
+        Returns:
+            Number of subscribers that received the message
+        """
+        if not self.connected:
+            logger.warning("Redis not connected")
+            return 0
+
+        try:
+            serialized = self._serialize(message)
+            subscribers = await self._execute_with_retry(
+                self.redis.publish,
+                channel,
+                serialized
+            )
+            logger.debug(f"Published to {channel}, {subscribers} subscribers")
+            return subscribers
+        except Exception as e:
+            logger.error(f"Failed to publish to {channel}: {e}")
+            return 0
+
+    async def subscribe(self, channel: str):
+        """
+        Subscribe to pub/sub channel.
+        
+        Args:
+            channel: Channel name to subscribe to
+            
+        Returns:
+            PubSub object for receiving messages, or None on failure
+        """
+        if not self.connected:
+            logger.warning("Redis not connected")
+            return None
+
+        try:
+            pubsub = self.redis.pubsub()
+            await pubsub.subscribe(channel)
+            logger.info(f"Subscribed to channel: {channel}")
+            return pubsub
+        except Exception as e:
+            logger.error(f"Failed to subscribe to {channel}: {e}")
+            return None
+
+    async def pipeline_get(self, keys: List[str]) -> Dict[str, Any]:
+        """
+        Batch get multiple keys using pipeline.
+        
+        Args:
+            keys: List of keys to retrieve
+            
+        Returns:
+            Dict mapping keys to values (None for missing keys)
+        """
+        if not self.connected:
+            logger.warning("Redis not connected")
+            return {}
+
+        if not keys:
+            return {}
+
+        try:
+            pipe = self.redis.pipeline()
+            for key in keys:
+                pipe.get(key)
+            
+            values = await self._execute_with_retry(pipe.execute)
+            
+            result = {}
+            for key, value in zip(keys, values):
+                result[key] = self._deserialize(value)
+            
+            logger.debug(f"Pipeline get {len(keys)} keys")
+            return result
+        except Exception as e:
+            logger.error(f"Failed to pipeline get keys: {e}")
+            return {}
+
+    async def pipeline_set(
+        self,
+        items: Dict[str, Any],
+        *,
+        expire: Optional[int] = None
+    ) -> bool:
+        """
+        Batch set multiple keys using pipeline.
+        
+        Args:
+            items: Dict mapping keys to values
+            expire: Optional TTL in seconds (applied to all keys)
+            
+        Returns:
+            True if all sets successful, False otherwise
+        """
+        if not self.connected:
+            logger.warning("Redis not connected")
+            return False
+
+        if not items:
+            return True
+
+        try:
+            pipe = self.redis.pipeline()
+            for key, value in items.items():
+                serialized = self._serialize(value)
+                pipe.set(key, serialized, ex=expire)
+            
+            await self._execute_with_retry(pipe.execute)
+            
+            logger.debug(f"Pipeline set {len(items)} keys" + (f" with TTL {expire}s" if expire else ""))
+            return True
+        except Exception as e:
+            logger.error(f"Failed to pipeline set keys: {e}")
+            return False
+
+    async def pipeline_delete(self, keys: List[str]) -> int:
+        """
+        Batch delete multiple keys using pipeline.
+        
+        Args:
+            keys: List of keys to delete
+            
+        Returns:
+            Number of keys deleted
+        """
+        if not self.connected:
+            logger.warning("Redis not connected")
+            return 0
+
+        if not keys:
+            return 0
+
+        try:
+            pipe = self.redis.pipeline()
+            for key in keys:
+                pipe.delete(key)
+            
+            results = await self._execute_with_retry(pipe.execute)
+            deleted = sum(1 for r in results if r)
+            
+            logger.debug(f"Pipeline deleted {deleted}/{len(keys)} keys")
+            return deleted
+        except Exception as e:
+            logger.error(f"Failed to pipeline delete keys: {e}")
+            return 0
+
+    # ========================================================================
+    # Distributed Coordination Methods
+    # ========================================================================
+
+    async def set_nx(
+        self,
+        key: str,
+        value: Any,
+        *,
+        expire: Optional[int] = None
+    ) -> bool:
+        """
+        Set key only if it doesn't exist (SET NX).
+        
+        Used for leader election and distributed locking.
+        
+        Args:
+            key: The key to set
+            value: The value to store
+            expire: Optional TTL in seconds
+            
+        Returns:
+            True if key was set, False if key already exists
+        """
+        if not self.connected:
+            logger.warning("Redis not connected")
+            return False
+
+        try:
+            serialized = self._serialize(value)
+            result = await self._execute_with_retry(
+                self.redis.set,
+                key,
+                serialized,
+                nx=True,  # Only set if not exists
+                ex=expire
+            )
+            success = bool(result)
+            if success:
+                logger.debug(f"Set key {key} with NX" + (f" and TTL {expire}s" if expire else ""))
+            return success
+        except Exception as e:
+            logger.error(f"Failed to set key {key} with NX: {e}")
+            return False
+
+    async def eval_script(
+        self,
+        script: str,
+        keys: List[str],
+        args: List[Any]
+    ) -> Any:
+        """
+        Execute Lua script atomically.
+        
+        Args:
+            script: Lua script to execute
+            keys: List of keys (available as KEYS in script)
+            args: List of arguments (available as ARGV in script)
+            
+        Returns:
+            Script result (deserialized if JSON)
+        """
+        if not self.connected:
+            logger.warning("Redis not connected")
+            return None
+
+        try:
+            # Serialize arguments
+            serialized_args = [self._serialize(arg) for arg in args]
+            
+            result = await self._execute_with_retry(
+                self.redis.eval,
+                script,
+                len(keys),
+                *keys,
+                *serialized_args
+            )
+            
+            logger.debug(f"Executed Lua script with {len(keys)} keys")
+            return self._deserialize(result) if isinstance(result, str) else result
+        except Exception as e:
+            logger.error(f"Failed to execute Lua script: {e}")
+            return None
+
+    async def publish(self, channel: str, message: Any) -> int:
+        """
+        Publish message to pub/sub channel.
+        
+        Args:
+            channel: Channel name
+            message: Message to publish (will be serialized to JSON)
+            
+        Returns:
+            Number of subscribers that received the message
+        """
+        if not self.connected:
+            logger.warning("Redis not connected")
+            return 0
+
+        try:
+            serialized = self._serialize(message)
+            subscribers = await self._execute_with_retry(
+                self.redis.publish,
+                channel,
+                serialized
+            )
+            logger.debug(f"Published to {channel}, {subscribers} subscribers")
+            return subscribers
+        except Exception as e:
+            logger.error(f"Failed to publish to {channel}: {e}")
+            return 0
+
+    async def subscribe(self, channel: str):
+        """
+        Subscribe to pub/sub channel.
+        
+        Args:
+            channel: Channel name to subscribe to
+            
+        Returns:
+            PubSub object for receiving messages, or None on failure
+        """
+        if not self.connected:
+            logger.warning("Redis not connected")
+            return None
+
+        try:
+            pubsub = self.redis.pubsub()
+            await pubsub.subscribe(channel)
+            logger.info(f"Subscribed to channel: {channel}")
+            return pubsub
+        except Exception as e:
+            logger.error(f"Failed to subscribe to {channel}: {e}")
+            return None
+
+    async def pipeline_get(self, keys: List[str]) -> Dict[str, Any]:
+        """
+        Batch get multiple keys using pipeline.
+        
+        Args:
+            keys: List of keys to retrieve
+            
+        Returns:
+            Dict mapping keys to values (None for missing keys)
+        """
+        if not self.connected:
+            logger.warning("Redis not connected")
+            return {}
+
+        if not keys:
+            return {}
+
+        try:
+            pipe = self.redis.pipeline()
+            for key in keys:
+                pipe.get(key)
+            
+            values = await self._execute_with_retry(pipe.execute)
+            
+            result = {}
+            for key, value in zip(keys, values):
+                result[key] = self._deserialize(value)
+            
+            logger.debug(f"Pipeline get {len(keys)} keys")
+            return result
+        except Exception as e:
+            logger.error(f"Failed to pipeline get keys: {e}")
+            return {}
+
+    async def pipeline_set(
+        self,
+        items: Dict[str, Any],
+        *,
+        expire: Optional[int] = None
+    ) -> bool:
+        """
+        Batch set multiple keys using pipeline.
+        
+        Args:
+            items: Dict mapping keys to values
+            expire: Optional TTL in seconds (applied to all keys)
+            
+        Returns:
+            True if all sets successful, False otherwise
+        """
+        if not self.connected:
+            logger.warning("Redis not connected")
+            return False
+
+        if not items:
+            return True
+
+        try:
+            pipe = self.redis.pipeline()
+            for key, value in items.items():
+                serialized = self._serialize(value)
+                pipe.set(key, serialized, ex=expire)
+            
+            await self._execute_with_retry(pipe.execute)
+            
+            logger.debug(f"Pipeline set {len(items)} keys" + (f" with TTL {expire}s" if expire else ""))
+            return True
+        except Exception as e:
+            logger.error(f"Failed to pipeline set keys: {e}")
+            return False
+
+    async def pipeline_delete(self, keys: List[str]) -> int:
+        """
+        Batch delete multiple keys using pipeline.
+        
+        Args:
+            keys: List of keys to delete
+            
+        Returns:
+            Number of keys deleted
+        """
+        if not self.connected:
+            logger.warning("Redis not connected")
+            return 0
+
+        if not keys:
+            return 0
+
+        try:
+            pipe = self.redis.pipeline()
+            for key in keys:
+                pipe.delete(key)
+            
+            results = await self._execute_with_retry(pipe.execute)
+            deleted = sum(1 for r in results if r)
+            
+            logger.debug(f"Pipeline deleted {deleted}/{len(keys)} keys")
+            return deleted
+        except Exception as e:
+            logger.error(f"Failed to pipeline delete keys: {e}")
+            return 0
+
+    # ========================================================================
+    # Distributed Coordination Methods
+    # ========================================================================
+
+    async def set_nx(
+        self,
+        key: str,
+        value: Any,
+        *,
+        expire: Optional[int] = None
+    ) -> bool:
+        """
+        Set key only if it doesn't exist (SET NX).
+        
+        Used for leader election and distributed locking.
+        
+        Args:
+            key: The key to set
+            value: The value to store
+            expire: Optional TTL in seconds
+            
+        Returns:
+            True if key was set, False if key already exists
+        """
+        if not self.connected:
+            logger.warning("Redis not connected")
+            return False
+
+        try:
+            serialized = self._serialize(value)
+            result = await self._execute_with_retry(
+                self.redis.set,
+                key,
+                serialized,
+                nx=True,  # Only set if not exists
+                ex=expire
+            )
+            success = bool(result)
+            if success:
+                logger.debug(f"Set key {key} with NX" + (f" and TTL {expire}s" if expire else ""))
+            return success
+        except Exception as e:
+            logger.error(f"Failed to set key {key} with NX: {e}")
+            return False
+
+    async def eval_script(
+        self,
+        script: str,
+        keys: List[str],
+        args: List[Any]
+    ) -> Any:
+        """
+        Execute Lua script atomically.
+        
+        Args:
+            script: Lua script to execute
+            keys: List of keys (available as KEYS in script)
+            args: List of arguments (available as ARGV in script)
+            
+        Returns:
+            Script result (deserialized if JSON)
+        """
+        if not self.connected:
+            logger.warning("Redis not connected")
+            return None
+
+        try:
+            # Serialize arguments
+            serialized_args = [self._serialize(arg) for arg in args]
+            
+            result = await self._execute_with_retry(
+                self.redis.eval,
+                script,
+                len(keys),
+                *keys,
+                *serialized_args
+            )
+            
+            logger.debug(f"Executed Lua script with {len(keys)} keys")
+            return self._deserialize(result) if isinstance(result, str) else result
+        except Exception as e:
+            logger.error(f"Failed to execute Lua script: {e}")
+            return None
+
+    async def publish(self, channel: str, message: Any) -> int:
+        """
+        Publish message to pub/sub channel.
+        
+        Args:
+            channel: Channel name
+            message: Message to publish (will be serialized to JSON)
+            
+        Returns:
+            Number of subscribers that received the message
+        """
+        if not self.connected:
+            logger.warning("Redis not connected")
+            return 0
+
+        try:
+            serialized = self._serialize(message)
+            subscribers = await self._execute_with_retry(
+                self.redis.publish,
+                channel,
+                serialized
+            )
+            logger.debug(f"Published to {channel}, {subscribers} subscribers")
+            return subscribers
+        except Exception as e:
+            logger.error(f"Failed to publish to {channel}: {e}")
+            return 0
+
+    async def subscribe(self, channel: str):
+        """
+        Subscribe to pub/sub channel.
+        
+        Args:
+            channel: Channel name to subscribe to
+            
+        Returns:
+            PubSub object for receiving messages, or None on failure
+        """
+        if not self.connected:
+            logger.warning("Redis not connected")
+            return None
+
+        try:
+            pubsub = self.redis.pubsub()
+            await pubsub.subscribe(channel)
+            logger.info(f"Subscribed to channel: {channel}")
+            return pubsub
+        except Exception as e:
+            logger.error(f"Failed to subscribe to {channel}: {e}")
+            return None
+
+    async def pipeline_get(self, keys: List[str]) -> Dict[str, Any]:
+        """
+        Batch get multiple keys using pipeline.
+        
+        Args:
+            keys: List of keys to retrieve
+            
+        Returns:
+            Dict mapping keys to values (None for missing keys)
+        """
+        if not self.connected:
+            logger.warning("Redis not connected")
+            return {}
+
+        if not keys:
+            return {}
+
+        try:
+            pipe = self.redis.pipeline()
+            for key in keys:
+                pipe.get(key)
+            
+            values = await self._execute_with_retry(pipe.execute)
+            
+            result = {}
+            for key, value in zip(keys, values):
+                result[key] = self._deserialize(value)
+            
+            logger.debug(f"Pipeline get {len(keys)} keys")
+            return result
+        except Exception as e:
+            logger.error(f"Failed to pipeline get keys: {e}")
+            return {}
+
+    async def pipeline_set(
+        self,
+        items: Dict[str, Any],
+        *,
+        expire: Optional[int] = None
+    ) -> bool:
+        """
+        Batch set multiple keys using pipeline.
+        
+        Args:
+            items: Dict mapping keys to values
+            expire: Optional TTL in seconds (applied to all keys)
+            
+        Returns:
+            True if all sets successful, False otherwise
+        """
+        if not self.connected:
+            logger.warning("Redis not connected")
+            return False
+
+        if not items:
+            return True
+
+        try:
+            pipe = self.redis.pipeline()
+            for key, value in items.items():
+                serialized = self._serialize(value)
+                pipe.set(key, serialized, ex=expire)
+            
+            await self._execute_with_retry(pipe.execute)
+            
+            logger.debug(f"Pipeline set {len(items)} keys" + (f" with TTL {expire}s" if expire else ""))
+            return True
+        except Exception as e:
+            logger.error(f"Failed to pipeline set keys: {e}")
+            return False
+
+    async def pipeline_delete(self, keys: List[str]) -> int:
+        """
+        Batch delete multiple keys using pipeline.
+        
+        Args:
+            keys: List of keys to delete
+            
+        Returns:
+            Number of keys deleted
+        """
+        if not self.connected:
+            logger.warning("Redis not connected")
+            return 0
+
+        if not keys:
+            return 0
+
+        try:
+            pipe = self.redis.pipeline()
+            for key in keys:
+                pipe.delete(key)
+            
+            results = await self._execute_with_retry(pipe.execute)
+            deleted = sum(1 for r in results if r)
+            
+            logger.debug(f"Pipeline deleted {deleted}/{len(keys)} keys")
+            return deleted
+        except Exception as e:
+            logger.error(f"Failed to pipeline delete keys: {e}")
+            return 0

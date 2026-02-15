@@ -252,55 +252,38 @@ def sample_memory_entries():
 # PYTEST HOOKS AND CONFIGURATION
 # ============================================================================
 
-@pytest.fixture(scope='session', autouse=True)
-def setup_test_environment():
-    """Initialize test environment."""
-    # Suppress debug logs during tests
+@pytest.fixture(autouse=True)
+def configure_logging():
     import logging
-    logging.getLogger('astraguard').setLevel(logging.WARNING)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
     yield
-    # Cleanup after tests - ensure all logging handlers are closed
-    _cleanup_logging_handlers()
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    outcome = yield
+    report = outcome.get_result()
+    if report.when == "call" and report.failed:
+        print("\n========== TEST FAILURE CONTEXT ==========")
+        print(f"Test: {item.name}")
+        print("=========================================\n")
 
 
 @pytest.fixture(autouse=True)
 def reset_singletons():
     """Reset singleton instances between tests."""
-    from core.component_health import SystemHealthMonitor
-    # Save original instances
-    yield
-    # Reset after each test
-    SystemHealthMonitor._instance = None
-
-
-# ============================================================================
-# LOGGING CLEANUP UTILITIES
-# ============================================================================
-
-def _cleanup_logging_handlers():
-    """Clean up all logging handlers to prevent I/O errors during pytest teardown."""
-    import logging
-
-    # Get all loggers
-    root_logger = logging.getLogger()
-    loggers = [root_logger] + [logging.getLogger(name) for name in logging.root.manager.loggerDict]
-
-    for logger in loggers:
-        # Close and remove all handlers
-        for handler in logger.handlers[:]:  # Copy the list to avoid modification during iteration
-            try:
-                # Flush any pending output
-                handler.flush()
-                # Close the handler
-                handler.close()
-                # Remove from logger
-                logger.removeHandler(handler)
-            except (OSError, ValueError):
-                # Handler might already be closed or invalid
-                pass
-
-    # Clear any cached handlers
-    logging.root.handlers.clear()
+    try:
+        from core.component_health import SystemHealthMonitor
+        # Save original instances
+        yield
+        # Reset after each test
+        SystemHealthMonitor._instance = None
+    except (ImportError, ModuleNotFoundError):
+        # Skip if dependencies like redis are not installed
+        yield
 
 
 # ============================================================================

@@ -15,19 +15,19 @@ except (ImportError, ModuleNotFoundError):
 
 # Legacy imports for compatibility (these modules may not exist)
 try:
-    from .decision_loop import DecisionLoop  # type: ignore
+    from .decision_loop import DecisionLoop
     __all__.append("DecisionLoop")
 except (ImportError, ModuleNotFoundError):
     pass
 
 try:
-    from .reasoning_engine import ReasoningEngine  # type: ignore
+    from .reasoning_engine import ReasoningEngine
     __all__.append("ReasoningEngine")
 except (ImportError, ModuleNotFoundError):
     pass
 
 try:
-    from .confidence_scorer import ConfidenceScorer  # type: ignore
+    from .confidence_scorer import ConfidenceScorer
     __all__.append("ConfidenceScorer")
 except (ImportError, ModuleNotFoundError):
     pass

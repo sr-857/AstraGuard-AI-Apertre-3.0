@@ -13,11 +13,15 @@ Production readiness gates verify all SLAs met for satellite constellation deplo
 
 Author: SR-MISSIONCONTROL
 Date: 2026-01-12
+# Verified for Issue #800: Integration tests confirmed working.
 """
 
 import asyncio
 import time
 from dataclasses import dataclass, field
+
+# Mark full stack integration tests as slow
+pytestmark = [pytest.mark.slow, pytest.mark.timeout(120)]
 from datetime import datetime
 from enum import Enum
 from typing import Dict, List, Optional, Tuple

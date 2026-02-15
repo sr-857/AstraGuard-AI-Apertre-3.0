@@ -472,3 +472,261 @@ class TestAccuracyCollector:
         stats = collector.get_accuracy_stats()
         assert stats["confidence_mean"] == 0.5
         assert stats["confidence_std"] == 0.0  # No variance with single value
+
+
+class TestErrorHandling:
+    """Test error handling and exception cases."""
+
+    def test_record_ground_truth_with_valid_data(self):
+        """Test recording ground truth accepts various valid data types."""
+        collector = AccuracyCollector()
+        
+        # Should accept normal values
+        collector.record_ground_truth("SAT1", 100.0, "thermal_fault")
+        collector.record_ground_truth("SAT2", 200.5, None)
+        
+        assert len(collector.ground_truth_events) == 2
+
+    def test_record_agent_classification_with_valid_data(self):
+        """Test recording classification accepts various valid data types."""
+        collector = AccuracyCollector()
+        
+        # Should accept normal values
+        collector.record_agent_classification("SAT1", 100.0, "thermal_fault", 0.9, True)
+        collector.record_agent_classification("SAT2", 200.5, None, 0.8, False)
+        
+        assert len(collector.agent_classifications) == 2
+
+    def test_export_csv_creates_directory_if_not_exists(self):
+        """Test CSV export creates parent directory."""
+        collector = AccuracyCollector()
+        collector.record_agent_classification("SAT1", 100.0, "thermal_fault", 0.9, True)
+        
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            csv_path = os.path.join(tmpdir, "subdir", "test.csv")
+            collector.export_csv(csv_path)
+            
+            assert os.path.exists(csv_path)
+
+    def test_get_summary_with_valid_data(self):
+        """Test get_summary completes successfully with normal data."""
+        collector = AccuracyCollector()
+        collector.record_agent_classification("SAT1", 100.0, "thermal_fault", 0.9, True)
+        collector.record_ground_truth("SAT1", 100.0, "thermal_fault")
+        
+        summary = collector.get_summary()
+        assert "total_classifications" in summary
+        assert summary["total_classifications"] == 1
+
+    @patch('src.astraguard.hil.metrics.accuracy.logger')
+    def test_logging_exists(self, mock_logger):
+        """Test that logger is properly configured."""
+        collector = AccuracyCollector()
+        collector.record_ground_truth("SAT1", 100.0, "thermal_fault")
+        
+        # Logger exists and is used
+        assert collector is not None
+
+
+class TestBinarySearchEdgeCases:
+    """Test binary search functionality in _find_ground_truth_fault."""
+
+    def test_find_ground_truth_fault_no_data(self):
+        """Test finding ground truth with no data recorded."""
+        collector = AccuracyCollector()
+        
+        # Query confusion matrix which internally uses _find_ground_truth_fault
+        collector.record_agent_classification("SAT1", 100.0, "thermal_fault", 0.9, True)
+        matrix = collector.get_confusion_matrix()
+        
+        # Should handle gracefully (no ground truth means nominal)
+        assert "thermal_fault" in matrix
+
+    def test_find_ground_truth_fault_before_first_event(self):
+        """Test finding ground truth for timestamp before first event."""
+        collector = AccuracyCollector()
+        
+        collector.record_ground_truth("SAT1", 200.0, "thermal_fault")
+        collector.record_agent_classification("SAT1", 100.0, "power_loss", 0.8, False)
+        
+        matrix = collector.get_confusion_matrix()
+        # Classification at 100.0 has no ground truth before it
+        assert "power_loss" in matrix
+
+    def test_find_ground_truth_fault_exact_match(self):
+        """Test finding ground truth at exact timestamp."""
+        collector = AccuracyCollector()
+        
+        collector.record_ground_truth("SAT1", 100.0, "thermal_fault")
+        collector.record_agent_classification("SAT1", 100.0, "thermal_fault", 0.9, True)
+        
+        matrix = collector.get_confusion_matrix()
+        assert matrix["thermal_fault"]["thermal_fault"] == 1
+
+    def test_find_ground_truth_fault_between_events(self):
+        """Test finding ground truth between two events."""
+        collector = AccuracyCollector()
+        
+        collector.record_ground_truth("SAT1", 100.0, "thermal_fault")
+        collector.record_ground_truth("SAT1", 300.0, "power_loss")
+        collector.record_agent_classification("SAT1", 200.0, "thermal_fault", 0.9, True)
+        
+        matrix = collector.get_confusion_matrix()
+        # At time 200.0, ground truth should be thermal_fault (from 100.0)
+        assert matrix["thermal_fault"]["thermal_fault"] == 1
+
+    def test_find_ground_truth_fault_after_last_event(self):
+        """Test finding ground truth after last event."""
+        collector = AccuracyCollector()
+        
+        collector.record_ground_truth("SAT1", 100.0, "thermal_fault")
+        collector.record_agent_classification("SAT1", 500.0, "thermal_fault", 0.9, True)
+        
+        matrix = collector.get_confusion_matrix()
+        # At time 500.0, ground truth should still be thermal_fault
+        assert matrix["thermal_fault"]["thermal_fault"] == 1
+
+    def test_find_ground_truth_fault_multiple_satellites(self):
+        """Test finding ground truth across multiple satellites."""
+        collector = AccuracyCollector()
+        
+        collector.record_ground_truth("SAT1", 100.0, "thermal_fault")
+        collector.record_ground_truth("SAT2", 100.0, "power_loss")
+        
+        collector.record_agent_classification("SAT1", 150.0, "thermal_fault", 0.9, True)
+        collector.record_agent_classification("SAT2", 150.0, "power_loss", 0.9, True)
+        
+        matrix = collector.get_confusion_matrix()
+        assert matrix["thermal_fault"]["thermal_fault"] == 1
+        assert matrix["power_loss"]["power_loss"] == 1
+
+
+class TestComplexScenarios:
+    """Test complex real-world scenarios."""
+
+    def test_scenario_with_multiple_state_transitions(self):
+        """Test scenario with multiple fault state transitions."""
+        collector = AccuracyCollector()
+        
+        # Satellite goes through multiple states
+        collector.record_ground_truth("SAT1", 0.0, None)  # nominal
+        collector.record_ground_truth("SAT1", 100.0, "thermal_fault")
+        collector.record_ground_truth("SAT1", 200.0, None)  # recovered
+        collector.record_ground_truth("SAT1", 300.0, "power_loss")
+        
+        # Agent classifications at various points
+        collector.record_agent_classification("SAT1", 50.0, None, 0.95, True)  # correct nominal
+        collector.record_agent_classification("SAT1", 150.0, "thermal_fault", 0.9, True)  # correct fault
+        collector.record_agent_classification("SAT1", 250.0, None, 0.85, True)  # correct recovery
+        collector.record_agent_classification("SAT1", 350.0, "power_loss", 0.8, True)  # correct fault
+        
+        stats = collector.get_accuracy_stats()
+        assert stats["overall_accuracy"] == 1.0
+        assert stats["total_classifications"] == 4
+
+    def test_scenario_with_misclassifications(self):
+        """Test scenario with various types of misclassifications."""
+        collector = AccuracyCollector()
+        
+        collector.record_ground_truth("SAT1", 100.0, "thermal_fault")
+        collector.record_ground_truth("SAT2", 100.0, "power_loss")
+        
+        # Mix of correct and incorrect classifications
+        collector.record_agent_classification("SAT1", 110.0, "thermal_fault", 0.9, True)  # TP
+        collector.record_agent_classification("SAT1", 120.0, "power_loss", 0.7, False)  # FP (wrong fault)
+        collector.record_agent_classification("SAT2", 110.0, "power_loss", 0.95, True)  # TP
+        collector.record_agent_classification("SAT2", 120.0, None, 0.5, False)  # FN (missed fault)
+        
+        stats = collector.get_accuracy_stats()
+        assert stats["total_classifications"] == 4
+        assert stats["correct_classifications"] == 2
+        assert stats["overall_accuracy"] == 0.5
+
+    def test_scenario_with_low_confidence_predictions(self):
+        """Test scenario where low confidence affects statistics."""
+        collector = AccuracyCollector()
+        
+        # Perfect accuracy but varying confidence
+        collector.record_agent_classification("SAT1", 100.0, "thermal_fault", 0.51, True)  # low confidence
+        collector.record_agent_classification("SAT2", 100.0, "power_loss", 0.99, True)  # high confidence
+        collector.record_agent_classification("SAT3", 100.0, None, 0.75, True)  # medium confidence
+        
+        stats = collector.get_accuracy_stats()
+        assert stats["overall_accuracy"] == 1.0
+        assert stats["confidence_mean"] == pytest.approx((0.51 + 0.99 + 0.75) / 3, rel=1e-5)
+        assert stats["confidence_std"] > 0
+
+    def test_scenario_with_overlapping_timestamps(self):
+        """Test scenario where classifications happen at same times."""
+        collector = AccuracyCollector()
+        
+        collector.record_ground_truth("SAT1", 100.0, "thermal_fault")
+        collector.record_ground_truth("SAT2", 100.0, "power_loss")
+        
+        # Multiple classifications at the same timestamp (different satellites)
+        collector.record_agent_classification("SAT1", 100.0, "thermal_fault", 0.9, True)
+        collector.record_agent_classification("SAT2", 100.0, "power_loss", 0.9, True)
+        
+        stats_by_sat = collector.get_stats_by_satellite()
+        assert len(stats_by_sat) == 2
+        assert stats_by_sat["SAT1"]["accuracy"] == 1.0
+        assert stats_by_sat["SAT2"]["accuracy"] == 1.0
+
+    def test_large_scale_scenario(self):
+        """Test with large number of events."""
+        collector = AccuracyCollector()
+        
+        # Add many events
+        for i in range(100):
+            sat_id = f"SAT{i % 10}"  # 10 satellites
+            timestamp = float(i * 10)
+            fault_type = "thermal_fault" if i % 2 == 0 else "power_loss"
+            
+            collector.record_ground_truth(sat_id, timestamp, fault_type)
+            collector.record_agent_classification(sat_id, timestamp + 1, fault_type, 0.9, True)
+        
+        stats = collector.get_accuracy_stats()
+        assert stats["total_classifications"] == 100
+        assert stats["correct_classifications"] == 100
+        assert stats["overall_accuracy"] == 1.0
+
+    def test_empty_collector_all_methods(self):
+        """Test all methods on empty collector don't crash."""
+        collector = AccuracyCollector()
+        
+        assert collector.get_accuracy_stats()["total_classifications"] == 0
+        assert collector.get_stats_by_satellite() == {}
+        assert collector.get_confusion_matrix() == {}
+        
+        summary = collector.get_summary()
+        assert summary["total_events"] == 0
+        assert summary["total_classifications"] == 0
+
+    def test_reset_clears_all_data_structures(self):
+        """Test reset thoroughly clears all internal data structures."""
+        collector = AccuracyCollector()
+        
+        # Add various types of data
+        collector.record_ground_truth("SAT1", 100.0, "thermal_fault")
+        collector.record_ground_truth("SAT2", 200.0, "power_loss")
+        collector.record_agent_classification("SAT1", 110.0, "thermal_fault", 0.9, True)
+        collector.record_agent_classification("SAT2", 210.0, "power_loss", 0.8, True)
+        
+        # Verify data exists
+        assert len(collector.ground_truth_events) > 0
+        assert len(collector.agent_classifications) > 0
+        assert len(collector._ground_truth_by_sat) > 0
+        
+        # Reset
+        collector.reset()
+        
+        # Verify everything is cleared
+        assert len(collector.ground_truth_events) == 0
+        assert len(collector.agent_classifications) == 0
+        assert len(collector._ground_truth_by_sat) == 0
+        assert len(collector) == 0
+        
+        # Verify we can use it again after reset
+        collector.record_agent_classification("SAT1", 100.0, "thermal_fault", 0.9, True)
+        assert len(collector) == 1

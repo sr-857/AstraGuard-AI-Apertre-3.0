@@ -6,26 +6,9 @@ It securely imports the main `app` instance from `api.service`, handling potenti
 import errors gracefully with detailed logging for debugging deployment issues.
 """
 import logging
-import sys
+from typing import List
 
-logger = logging.getLogger(__name__)
-
-# Track import errors for better debugging
-_import_errors = []
-
-
-def _log_import_error(error: Exception, error_type: str) -> None:
-    """Log import error with comprehensive context."""
-    logger.critical(
-        f"Failed to import 'api.service.app': {error_type}",
-        error_type=error_type,
-        error_message=str(error),
-        python_version=sys.version,
-        sys_path=sys.path,
-        exc_info=True,
-    )
-
-
+logger: logging.Logger = logging.getLogger(__name__)
 try:
     from api.service import app
 except ModuleNotFoundError as e:
@@ -46,9 +29,8 @@ except AttributeError as e:
     # Handle case where module exists but doesn't have 'app' attribute
     logger.critical(
         "Module 'api.service' found but 'app' attribute is missing. "
-        "Verify that api.service module exports 'app' correctly.",
-        error_type="AttributeError",
-        error_message=str(e),
+        f"Verify that api.service module exports 'app' correctly. Error: {e} | "
+        f"Python version: {sys.version}",
         exc_info=True,
     )
     _import_errors.append(("AttributeError", str(e)))
@@ -56,19 +38,12 @@ except AttributeError as e:
 except Exception as e:
     # Catch-all for unexpected errors during import
     logger.critical(
-        "Unexpected error during import of 'api.service.app'. "
-        "This may indicate a configuration or environment issue.",
-        error_type=type(e).__name__,
-        error_message=str(e),
+        f"Unexpected error during import of 'api.service.app': {type(e).__name__} - {e} | "
+        f"This may indicate a configuration or environment issue. | "
+        f"Python version: {sys.version}",
         exc_info=True,
     )
     _import_errors.append((type(e).__name__, str(e)))
     raise
 
-
-def get_import_errors() -> list:
-    """Return list of import errors that occurred during module load."""
-    return _import_errors.copy()
-
-
-__all__ = ["app", "get_import_errors"]
+__all__: List[str] = ["app"]
