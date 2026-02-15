@@ -1,0 +1,55 @@
+autoDiscovery:
+  clusterName: apertre-cluster
+  enabled: true
+
+cloudProvider: aws
+awsRegion: us-east-1
+
+image:
+  repository: registry.k8s.io/autoscaling/cluster-autoscaler
+  tag: v1.27.3
+  pullPolicy: IfNotPresent
+
+rbac:
+  create: true
+  serviceAccount:
+    create: true
+    name: ""
+    annotations: {}
+    # Example annotation for IRSA:
+    # eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/AmazonEKSClusterAutoscalerRole
+
+resources:
+  limits:
+    cpu: 100m
+    memory: 300Mi
+  requests:
+    cpu: 100m
+    memory: 300Mi
+
+extraArgs:
+  v: 4
+  stderrthreshold: info
+  logtostderr: true
+  scan-interval: 10s
+  scale-down-delay-after-add: 10m
+  scale-down-unneeded-time: 10m
+  balance-similar-node-groups: true
+  skip-nodes-with-system-pods: false
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+podAnnotations:
+  prometheus.io/scrape: 'true'
+  prometheus.io/port: '8085'
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1001
+  fsGroup: 1001
+
+service:
+  type: ClusterIP
+  port: 8085
