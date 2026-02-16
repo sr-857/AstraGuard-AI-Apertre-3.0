@@ -6,7 +6,7 @@ pytest
 pytest-asyncio
 pytest-timeout
 pytest-mock
-prometheus-client<0.14.0
+prometheus-client<0.25.0
 redis
 aiosqlite
 jsonschema
