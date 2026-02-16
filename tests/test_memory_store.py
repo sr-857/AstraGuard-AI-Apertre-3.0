@@ -59,6 +59,7 @@ class TestAdaptiveMemoryStore:
         assert self.memory.max_capacity == 100
         assert len(self.memory.memory) == 0
     
+    @pytest.mark.asyncio
     async def test_write_event(self):
         """Test writing events to memory"""
         embedding = np.random.rand(384)
@@ -69,6 +70,7 @@ class TestAdaptiveMemoryStore:
         assert len(self.memory.memory) == 1
         assert self.memory.memory[0].metadata['type'] == 'power_fault'
     
+    @pytest.mark.asyncio
     async def test_retrieve_similar(self):
         """Test retrieving similar events"""
         # Add some events
@@ -84,6 +86,7 @@ class TestAdaptiveMemoryStore:
         assert len(results) <= 3
         assert all(isinstance(r, tuple) and len(r) == 3 for r in results)
     
+    @pytest.mark.asyncio
     async def test_recurrence_detection(self):
         """Test that similar events boost recurrence count"""
         embedding = np.random.rand(384)
@@ -97,6 +100,7 @@ class TestAdaptiveMemoryStore:
         assert len(self.memory.memory) == 1
         assert self.memory.memory[0].recurrence_count == 2
     
+    @pytest.mark.asyncio
     async def test_prune_old_events(self):
         """Test pruning removes old events"""
         # Add old event
@@ -117,6 +121,7 @@ class TestAdaptiveMemoryStore:
         assert len(self.memory.memory) == 1
         assert self.memory.memory[0].metadata['type'] == 'new_event'
     
+    @pytest.mark.asyncio
     async def test_critical_events_not_pruned(self):
         """Test that critical events are never pruned"""
         # Add old critical event
@@ -132,6 +137,7 @@ class TestAdaptiveMemoryStore:
         assert len(self.memory.memory) == 1
         assert self.memory.memory[0].is_critical
     
+    @pytest.mark.asyncio
     async def test_replay_time_range(self):
         """Test replaying events within time range"""
         # Add events at different times
@@ -149,6 +155,7 @@ class TestAdaptiveMemoryStore:
         
         assert len(events) <= 3  # Events from 0, 1, 2 hours ago
     
+    @pytest.mark.asyncio
     async def test_get_stats(self):
         """Test memory statistics"""
         # Add some events
@@ -164,6 +171,7 @@ class TestAdaptiveMemoryStore:
         assert 'avg_age_hours' in stats
         assert 'max_recurrence' in stats
 
+    @pytest.mark.asyncio
     async def test_load_failure_clears_memory(self):
         """Test that load failure clears memory to prevent stale data"""
         # Add some events to memory
@@ -195,6 +203,7 @@ class TestAdaptiveMemoryStore:
             self.memory.storage_path = original_path
             os.unlink(corrupted_path)
 
+    @pytest.mark.asyncio
     async def test_concurrent_save_load_operations(self):
         """Test concurrent save and load operations across multiple processes"""
         import tempfile

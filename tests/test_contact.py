@@ -14,7 +14,8 @@ import shutil
 import os
 
 # Import the contact router
-from api.contact import router, init_database, DB_PATH, DATA_DIR
+from api.contact import router, DB_PATH, DATA_DIR, close_db, init_schema
+import asyncio
 
 
 # Test app setup
@@ -49,16 +50,20 @@ def setup_test_db(tmp_path, monkeypatch):
     monkeypatch.setattr("api.contact.DB_PATH", test_db_path)
     monkeypatch.setattr("api.contact.NOTIFICATION_LOG", test_data_dir / "contact_notifications.log")
     
+    # Close any existing connection from previous tests to force reconnection with new path
+    asyncio.run(close_db())
+
     # Clear the in-memory rate limiter between tests
     from api.contact import _in_memory_limiter
     _in_memory_limiter.requests.clear()
     
-    # Initialize database
-    init_database()
+    # Initialize schema so tables exist even if we don't hit an endpoint that connects
+    init_schema()
     
     yield test_db_path
     
     # Cleanup
+    asyncio.run(close_db())
     if test_db_path.exists():
         test_db_path.unlink()
 
@@ -256,7 +261,9 @@ def test_rate_limiting(client, monkeypatch):
     # 6th submission should be rate limited
     response = client.post("/api/contact", json=payload)
     assert response.status_code == 429
-    assert "Too many submissions" in response.json()["detail"]
+    detail = response.json()["detail"]
+    assert detail["error"] == "Rate limit exceeded"
+    assert "Too many submissions" in detail["message"]
 
 
 def test_database_persistence(client, setup_test_db):

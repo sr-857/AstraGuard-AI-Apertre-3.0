@@ -89,6 +89,13 @@ except RuntimeError:
 @app.on_event("startup")
 async def startup_event():
     """Initialize database on startup"""
-    from src.api.contact import init_database
-    init_database()
+    from src.api.contact import connect_db
+    await connect_db()
     logger.info("Contact API database initialized")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Close database on shutdown"""
+    from src.api.contact import close_db
+    await close_db()

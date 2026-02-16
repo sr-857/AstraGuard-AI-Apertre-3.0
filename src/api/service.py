@@ -261,10 +261,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             print(f"[WARNING] Rate limiting initialization failed: {e}")
             print("Rate limiting will be disabled")
 
-    # Initialize components and Redis in parallel
+    # Initialize components, Redis, and Contact DB in parallel
+    from api.contact import connect_db, close_db
+
     await asyncio.gather(
         initialize_components(),
-        init_redis_and_rate_limit()
+        init_redis_and_rate_limit(),
+        connect_db()
     )
 
     # Pre-load anomaly detection model async in background
@@ -294,6 +297,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await memory_store.save()
     if redis_client:
         await redis_client.close()
+
+    await close_db()
 
 
 # Initialize FastAPI app
