@@ -43,7 +43,15 @@ def _safe_create_metric(
     except ValueError as e:
         if "Duplicated timeseries" in str(e):
             logger.warning(f"Metric {name} already exists, attempting to retrieve from registry")
-            # Metric already exists, retrieve it from registry
+            
+            # OPTIMIZED: Use internal registry dict for O(1) lookup instead of O(n) iteration
+            if hasattr(REGISTRY, '_names_to_collectors'):
+                collector = REGISTRY._names_to_collectors.get(name)
+                if collector:
+                    _metric_cache[name] = collector  # Cache it
+                    return collector
+            
+            # Fallback to iteration (if internal API changes or name not in dict)
             for collector in REGISTRY._collector_to_names:
                 if hasattr(collector, '_name') and collector._name == name:
                     _metric_cache[name] = collector  # Cache it
@@ -53,6 +61,7 @@ def _safe_create_metric(
                         if metric_name == name:
                             _metric_cache[name] = metric_obj  # Cache it
                             return metric_obj
+            
             # If not found in registry, log error and create with new registry
             logger.error(f"Metric {name} not found in registry after duplicate error, creating new")
             try:

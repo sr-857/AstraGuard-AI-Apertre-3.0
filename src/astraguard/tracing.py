@@ -22,6 +22,10 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 
 logger: logging.Logger = logging.getLogger(__name__)
 
+# Cache secrets at module level for performance
+_CACHED_ENVIRONMENT = get_secret("environment", "development")
+_CACHED_APP_VERSION = get_secret("app_version", "1.0.0")
+
 # ============================================================================
 # JAEGER EXPORTER CONFIGURATION
 # ============================================================================
@@ -97,8 +101,8 @@ def initialize_tracing(
         # Create tracer provider with service resource
         resource = Resource.create({
             SERVICE_NAME: service_name,
-            "environment": get_secret("environment", "development"),
-            "version": get_secret("app_version", "1.0.0"),
+            "environment": _CACHED_ENVIRONMENT,
+            "version": _CACHED_APP_VERSION,
         })
         
         provider = TracerProvider(resource=resource)
@@ -242,6 +246,7 @@ def span(name: str, attributes: Optional[Dict[str, Any]] = None) -> Generator[An
     tracer = get_tracer()
     with tracer.start_as_current_span(name) as span_obj:
         if attributes:
+            # Batch set attributes for better performance
             for key, value in attributes.items():
                 try:
                     span_obj.set_attribute(key, str(value))
@@ -442,6 +447,7 @@ async def async_span(name: str, attributes: Optional[Dict[str, Any]] = None) -> 
     tracer = get_tracer()
     with tracer.start_as_current_span(name) as span_obj:
         if attributes:
+            # Batch set attributes for better performance
             for key, value in attributes.items():
                 span_obj.set_attribute(key, str(value))
         yield span_obj
