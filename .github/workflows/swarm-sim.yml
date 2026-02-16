@@ -82,6 +82,14 @@ jobs:
 
           docker compose -f infra/docker/docker-compose.swarm.yml ps
       
+      - name: Show Docker containers
+        run: docker ps -a
+
+      - name: Show Docker logs
+        env:
+          COMPOSE_PROJECT_NAME: swarm-${{ github.run_id }}
+        run: docker compose -f infra/docker/docker-compose.swarm.yml logs --no-color
+
       - name: Wait for Agents Ready
         run: |
           python -c "
@@ -110,13 +118,18 @@ jobs:
 
          print('Port mapping:', result.stdout)
               
-              for i in range(60):
+              # Wait up to 300 seconds (5 minutes)
+              for i in range(300):
                   try:
                       async with httpx.AsyncClient() as client:
                           resp = await client.get('http://localhost:8001/health/live', timeout=2)
                           if resp.status_code == 200:
                               print('Agent SAT-001-A ready')
                               return True
+
+                          if i % 10 == 0:
+                              print(f'Waiting for agents... ({ready_count}/5 ready)')
+
                   except Exception as e:
                       if i % 10 == 0:
                           print(f'Attempt {i}: {str(e)}')
@@ -138,6 +151,8 @@ jobs:
           "
       
       - name: Run Swarm Tests
+        env:
+          COMPOSE_PROJECT_NAME: swarm-${{ github.run_id }}
         run: |
           pytest tests/swarm/test_swarm_sim.py -v --tb=short --durations=10 2>&1 | tee test-output.txt
         timeout-minutes: 10
@@ -244,8 +259,28 @@ jobs:
           import asyncio
           import time
           import httpx
+          import sys
           
+          async def wait_for_health():
+              print('Waiting for health...')
+              async with httpx.AsyncClient() as client:
+                  # Wait up to 300 seconds (5 minutes)
+                  for i in range(300):
+                      try:
+                          resp = await client.get('http://localhost:8001/health', timeout=2)
+                          if resp.status_code == 200:
+                              print('Healthy!')
+                              return True
+                      except:
+                          pass
+                      await asyncio.sleep(1)
+              return False
+
           async def test_latency():
+              if not await wait_for_health():
+                   print('Timeout waiting for health')
+                   sys.exit(1)
+
               async with httpx.AsyncClient() as client:
                   times = []
                   for _ in range(10):
