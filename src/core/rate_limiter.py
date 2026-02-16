@@ -19,39 +19,40 @@ from core.secrets import get_secret
 
 # Prometheus metrics
 try:
-    from prometheus_client import Counter, Histogram, REGISTRY
-
-    # Helper to safely create or get metrics (prevents duplicate registry errors during tests)
-    def get_or_create_metric(metric_type, name, documentation, labels):
-        try:
-            # Check if metric already exists in registry to avoid ValueError
-            if name in REGISTRY._names_to_collectors:
-                return REGISTRY._names_to_collectors[name]
-            return metric_type(name, documentation, labels)
-        except ValueError:
-             # Fallback: if race condition occurs, return existing
-             if name in REGISTRY._names_to_collectors:
-                return REGISTRY._names_to_collectors[name]
-             raise
-
-    rate_limit_hits = get_or_create_metric(
-        Counter,
-        'astra_rate_limit_hits_total',
-        'Total number of requests allowed by rate limiter',
-        ['endpoint']
-    )
-    rate_limit_blocks = get_or_create_metric(
-        Counter,
-        'astra_rate_limit_blocks_total',
-        'Total number of requests blocked by rate limiter',
-        ['endpoint']
-    )
-    rate_limit_latency = get_or_create_metric(
-        Histogram,
-        'astra_rate_limit_check_duration_seconds',
-        'Time spent checking rate limits',
-        ['endpoint']
-    )
+    from prometheus_client import Counter, Histogram
+    try:
+        rate_limit_hits = Counter(
+            'astra_rate_limit_hits_total',
+            'Total number of requests allowed by rate limiter',
+            ['endpoint']
+        )
+        rate_limit_blocks = Counter(
+            'astra_rate_limit_blocks_total',
+            'Total number of requests blocked by rate limiter',
+            ['endpoint']
+        )
+        rate_limit_latency = Histogram(
+            'astra_rate_limit_check_duration_seconds',
+            'Time spent checking rate limits',
+            ['endpoint']
+        )
+    except ValueError:
+        # Metrics already registered (e.g. during testing or reload)
+        # We can't easily get the existing metric objects from the default registry
+        # without private API access or strict registry management.
+        # For now, we accept that they exist. If we need to instrument, we should
+        # use a getter that retrieves from registry.
+        # But for simpler code, we might just leave them as None or re-fetch.
+        # Re-fetching is safer if we really need them, but complex.
+        # Let's import the global registry and get them if possible, or just pass.
+        # A simple pass might break code using these variables if it assumes they are set.
+        # Let's just catch the error and let the variables be defined.
+        # Actually, if they failed, the variables aren't bound.
+        # We need to bind them to SOMETHING.
+        from prometheus_client import REGISTRY
+        rate_limit_hits = REGISTRY._names_to_collectors.get('astra_rate_limit_hits_total') 
+        rate_limit_blocks = REGISTRY._names_to_collectors.get('astra_rate_limit_blocks_total')
+        rate_limit_latency = REGISTRY._names_to_collectors.get('astra_rate_limit_check_duration_seconds')
 
 except ImportError:
     # Fallback if prometheus not available

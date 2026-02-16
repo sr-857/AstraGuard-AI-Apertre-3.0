@@ -320,11 +320,11 @@ services:
       isl-net:
         ipv4_address: 10.0.1.101
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
     restart: unless-stopped
 
   prometheus:

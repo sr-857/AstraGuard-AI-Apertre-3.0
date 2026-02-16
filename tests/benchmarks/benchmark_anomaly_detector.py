@@ -36,10 +36,13 @@ async def benchmark_anomaly_detector():
     avg_latency = sum(latencies) / len(latencies)
     min_latency = min(latencies)
     max_latency = max(latencies)
+    p95 = sorted(latencies)[int(len(latencies) * 0.95)] if latencies else 0.0
 
-    print(".6f")
-    print(".6f")
-    print(".6f")
+    print(f"  Avg latency: {avg_latency:.6f}s")
+    print(f"  Min latency: {min_latency:.6f}s")
+    print(f"  Max latency: {max_latency:.6f}s")
+    print(f"  P95 latency: {p95:.6f}s")
+    print(f"  Total time:  {sum(latencies):.4f}s for {num_calls} calls")
 
     return avg_latency, min_latency, max_latency
 

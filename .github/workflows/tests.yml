@@ -97,9 +97,31 @@ jobs:
       matrix:
         python-version: ['3.11']
       fail-fast: false
-    env:
-      REDIS_URL: redis://localhost:6379
-
+    services:
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+      rabbitmq:
+        image: rabbitmq:3.12-management-alpine
+        env:
+          RABBITMQ_DEFAULT_USER: guest
+          RABBITMQ_DEFAULT_PASS: guest
+        ports:
+          - 5672:5672
+          - 15672:15672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+          --name astra-event-bus
+    
     steps:
     - name: Free up disk space
       run: |
@@ -154,9 +176,14 @@ jobs:
         redis-cli -h localhost -p 6379 ping
     
     - name: Run pytest with coverage
+      env:
+        REDIS_URL: redis://localhost:6379
+        ASTRA_CONSOLE_LOGGING: 'true'
       run: |
         pytest tests/ \
-          -vv --maxfail=1 --durations=10 --log-cli-level=INFO \
+          -v \
+          -o log_cli=true \
+          -o log_cli_level=INFO \
           --cov=src/anomaly \
           --cov=src/classifier \
           --cov=src/memory_engine \
@@ -236,9 +263,23 @@ jobs:
       github.ref == 'refs/heads/develop'
     strategy:
       matrix:
-        python-version: ['3.9', '3.12']
+        python-version: ['3.9', '3.12', '3.13']
       fail-fast: false
     services:
+      rabbitmq:
+        image: rabbitmq:3.12-management-alpine
+        env:
+          RABBITMQ_DEFAULT_USER: guest
+          RABBITMQ_DEFAULT_PASS: guest
+        ports:
+          - 5672:5672
+          - 15672:15672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+          --name astra-event-bus
       redis:
         image: redis:7-alpine
         options: >-

@@ -44,66 +44,81 @@ def _cached_get_secret(key: str, default=None):
 def setup_json_logging(
     log_level: str = "INFO",
     service_name: str = "astra-guard",
-    environment: str = get_secret("environment", "development")
+    environment: Optional[str] = None
 ) -> None:
-    """Sets up JSON structured logging.
+    """Sets up structured logging (JSON or Console).
 
-    Configures structlog and the root logger for JSON output, making it compatible with
-    Azure Monitor, ELK Stack, Splunk, etc.  It also binds global context variables for
-    service name, environment, and application version.
+    Configures structlog and the root logger.
+    - If ASTRA_CONSOLE_LOGGING is true: Uses ConsoleRenderer for human-readable output.
+    - Otherwise: Uses JSONRenderer for machine-readable output (Azure Monitor etc).
 
     Args:
-        log_level: The logging level (e.g., "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL").
+        log_level: The logging level.
         service_name: The name of the service.
-        environment: The environment name (e.g., "development", "staging", "production").
-
-    Returns:
-        None.
+        environment: The environment name.
     """
+    # Use cached secret retrieval to avoid repeated I/O
+    if environment is None:
+        environment = _cached_get_secret("environment", "development")
     try:
+        # Use cached secret retrieval for consistency
+        if environment is None:
+            environment = _cached_get_secret("environment", "development")
+        
         # Validate log_level
         if not hasattr(logging, log_level.upper()):
             raise ValueError(f"Invalid log level: {log_level}")
 
-        # Configure structlog for structured output
+        force_console = os.getenv("ASTRA_CONSOLE_LOGGING", "").lower() == "true"
+        
+        # Common processors
+        processors = [
+            structlog.contextvars.merge_contextvars,
+            structlog.processors.add_log_level,
+            structlog.processors.TimeStamper(fmt="iso"),
+            structlog.processors.StackInfoRenderer(),
+            structlog.processors.ExceptionRenderer(),
+        ]
+        
+        # Renderer selection
+        if force_console:
+            # Human-readable console renderer
+            processors.append(structlog.dev.ConsoleRenderer(colors=True))
+        else:
+            # JSON renderer for production/ingestion
+            processors.append(structlog.processors.JSONRenderer())
+
+        # Configure structlog
         structlog.configure(
-            processors=[
-                structlog.contextvars.merge_contextvars,
-                structlog.processors.add_log_level,
-                structlog.processors.TimeStamper(fmt="iso"),
-                structlog.processors.StackInfoRenderer(),
-                structlog.processors.ExceptionRenderer(),
-                structlog.processors.JSONRenderer()
-            ],
+            processors=processors,
             wrapper_class=structlog.make_filtering_bound_logger(getattr(logging, log_level)),
             context_class=dict,
             logger_factory=structlog.PrintLoggerFactory(),
             cache_logger_on_first_use=True,
         )
 
-        # Configure root logger with JSON handler
-        json_handler = logging.StreamHandler(sys.stdout)
-        json_formatter = jsonlogger.JsonFormatter(
-            fmt='%(timestamp)s %(level)s %(name)s %(message)s',
-            timestamp=True
-        )
-        json_handler.setFormatter(json_formatter)
-
-        # Configure Python logging
+        # Configure Python standard logging
         root_logger = logging.getLogger()
         root_logger.setLevel(getattr(logging, log_level))
         root_logger.handlers.clear()
-        root_logger.addHandler(json_handler)
-
-        # Add global context with safe secret retrieval
-        try:
-            app_version = get_secret("app_version", "1.0.0")
-        except (KeyError, ValueError, OSError, IOError) as e:
-            app_version = "1.0.0"
-            print(
-                f"Warning: Failed to retrieve app_version secret ({type(e).__name__}): {e}. Using default '1.0.0'.",
-                file=sys.stderr
+        
+        stream_handler = logging.StreamHandler(sys.stdout)
+        
+        if force_console:
+            # Standard text formatter for console
+            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        else:
+            # JSON formatter for standard logging
+            formatter = jsonlogger.JsonFormatter(
+                fmt='%(timestamp)s %(level)s %(name)s %(message)s',
+                timestamp=True
             )
+            
+        stream_handler.setFormatter(formatter)
+        root_logger.addHandler(stream_handler)
+
+        # Add global context with cached secret retrieval
+        app_version = _cached_get_secret("app_version", "1.0.0")
 
         structlog.contextvars.clear_contextvars()
         structlog.contextvars.bind_contextvars(
@@ -112,40 +127,12 @@ def setup_json_logging(
             version=app_version
         )
 
-    except (AttributeError, ImportError, ValueError, TypeError) as e:
-        # Fallback to basic logging if JSON setup fails
-        print(
-            f"Warning: JSON logging setup failed ({type(e).__name__}): {e}. "
-            f"Falling back to basic logging.",
-            file=sys.stderr
-        )
-        logging.basicConfig(
-            level=logging.INFO,
-            format='%(asctime)s - %(levelname)s - %(name)s - %(message)s'
-        )
-    except (OSError, IOError, RuntimeError) as e:
-        # Handle I/O and runtime errors specifically
-        print(
-            f"Error: I/O or runtime error during logging setup ({type(e).__name__}): {e}. "
-            f"Using default logging.",
-            file=sys.stderr
-        )
-        logging.basicConfig(
-            level=logging.INFO,
-            format='%(asctime)s - %(levelname)s - %(name)s - %(message)s'
-        )
+    except (AttributeError, ImportError, ValueError) as e:
+        print(f"Warning: Logging setup failed ({type(e).__name__}): {e}. Falling back to basic.", file=sys.stderr)
+        logging.basicConfig(level=logging.INFO)
     except Exception as e:
-        # Catch truly unexpected exceptions as last resort
-        print(
-            f"Critical: Unexpected error during logging setup ({type(e).__name__}): {e}. "
-            f"Using default logging. Please report this issue.",
-            file=sys.stderr
-        )
-        logging.basicConfig(
-            level=logging.INFO,
-            format='%(asctime)s - %(levelname)s - %(name)s - %(message)s'
-        )
-
+        print(f"Error: Unexpected error during logging setup: {e}", file=sys.stderr)
+        logging.basicConfig(level=logging.INFO)
 
 
 def get_logger(name: str = __name__) -> structlog.BoundLogger:
@@ -444,6 +431,7 @@ async def async_log_request(
 ):
     """
     Async version of log_request to avoid blocking in async contexts.
+    Optimized to execute directly without thread overhead since logging is fast.
 
     Args:
         logger: Structlog logger instance
@@ -453,9 +441,8 @@ async def async_log_request(
         duration_ms: Request duration in milliseconds
         **extra: Additional context fields
     """
-    await asyncio.to_thread(
-        log_request, logger, method, endpoint, status, duration_ms, **extra
-    )
+    # Logging is typically fast, execute directly to avoid thread spawn overhead
+    log_request(logger, method, endpoint, status, duration_ms, **extra)
 
 
 async def async_log_error(
@@ -466,6 +453,7 @@ async def async_log_error(
 ):
     """
     Async version of log_error.
+    Optimized to execute directly without thread overhead since logging is fast.
 
     Args:
         logger: Structlog logger instance
@@ -473,7 +461,8 @@ async def async_log_error(
         context: Context description
         **extra: Additional context fields
     """
-    await asyncio.to_thread(log_error, logger, error, context, **extra)
+    # Logging is typically fast, execute directly to avoid thread spawn overhead
+    log_error(logger, error, context, **extra)
 
 
 async def async_log_detection(
@@ -485,6 +474,7 @@ async def async_log_detection(
 ):
     """
     Async version of log_detection.
+    Optimized to execute directly without thread overhead since logging is fast.
 
     Args:
         logger: Structlog logger instance
@@ -493,7 +483,8 @@ async def async_log_detection(
         confidence: Confidence score
         **extra: Additional context fields
     """
-    await asyncio.to_thread(log_detection, logger, severity, detected_type, confidence, **extra)
+    # Logging is typically fast, execute directly to avoid thread spawn overhead
+    log_detection(logger, severity, detected_type, confidence, **extra)
 
 
 # ============================================================================
