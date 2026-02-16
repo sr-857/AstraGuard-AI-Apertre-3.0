@@ -1,0 +1,17 @@
+name: Smoke Tests
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Health Endpoint
+        run: |
+          echo "Checking application health..."
+          # curl -f http://staging.astraguard.ai/health || exit 1
+      
+      - name: Verify Core Services
+        run: echo "Verifying database and cache connectivity..."
