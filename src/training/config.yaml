@@ -1,0 +1,21 @@
+data:
+  path: "data/telemetry.csv"
+  test_size: 0.2
+  random_state: 42
+  features:
+    - voltage
+    - temperature
+    - gyro
+    - current
+    - wheel_speed
+
+model:
+  type: "isolation_forest"
+  contamination: 0.1
+  random_state: 42
+  n_estimators: 100
+
+paths:
+  model_output: "src/anomaly/anomaly_if.pkl"
+  pipeline_output: "src/anomaly/pipeline.pkl"
+  metadata_output: "src/anomaly/metadata.json"

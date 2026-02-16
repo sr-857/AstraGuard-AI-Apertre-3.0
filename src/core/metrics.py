@@ -10,15 +10,12 @@ Exposes metrics for:
 
 from prometheus_client import (
     Counter, Gauge, Histogram, Summary,
-    CollectorRegistry, generate_latest,
+    REGISTRY, generate_latest,
     CONTENT_TYPE_LATEST
 )
 import time
 from functools import wraps
 from typing import Callable, Any
-
-# Create a registry for AstraGuard metrics
-REGISTRY = CollectorRegistry()
 
 # ============================================================================
 # Circuit Breaker Metrics
@@ -73,6 +70,13 @@ CIRCUIT_FAILURE_RATIO = Gauge(
     registry=REGISTRY
 )
 
+ANOMALY_MODEL_INFO = Gauge(
+    'astraguard_model_info',
+    'Model version information',
+    ['version', 'dataset_hash', 'training_samples'],
+    registry=REGISTRY
+)
+
 # ============================================================================
 # Anomaly Detection Metrics
 # ============================================================================
@@ -88,6 +92,14 @@ ANOMALY_DETECTION_LATENCY = Histogram(
     'astraguard_anomaly_detection_latency_seconds',
     'Latency of anomaly detection',
     ['detector_type'],
+    registry=REGISTRY
+)
+
+ANOMALY_SCORE_DISTRIBUTION = Histogram(
+    'astraguard_anomaly_score_distribution',
+    'Distribution of anomaly scores',
+    ['detector_type'],
+    buckets=(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0),
     registry=REGISTRY
 )
 

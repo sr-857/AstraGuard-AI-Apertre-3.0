@@ -1,5 +1,6 @@
 import random
 import os
+import json
 import pickle
 import logging
 import asyncio
@@ -27,12 +28,15 @@ from core.metrics import (
     ANOMALY_MODEL_LOAD_ERRORS_TOTAL,
     ANOMALY_MODEL_FALLBACK_ACTIVATIONS,
     ANOMALY_DETECTION_LATENCY,
+    ANOMALY_MODEL_INFO,
+    ANOMALY_SCORE_DISTRIBUTION,
 )
 import time
 
 logger: logging.Logger = logging.getLogger(__name__)
 
 MODEL_PATH: str = os.path.join(os.path.dirname(__file__), "anomaly_if.pkl")
+METADATA_PATH: str = os.path.join(os.path.dirname(__file__), "metadata.json")
 _MODEL: Optional[Any] = None
 _MODEL_LOADED: bool = False
 _USING_HEURISTIC_MODE: bool = False
@@ -136,6 +140,35 @@ async def _load_model_impl() -> bool:
                 "model_path": MODEL_PATH,
             },
         )
+
+        # Load metadata
+        try:
+            if os.path.exists(METADATA_PATH):
+                with open(METADATA_PATH, "r") as f:
+                    metadata = json.load(f)
+
+                version = metadata.get("version", "unknown")
+                dataset_hash = metadata.get("dataset_hash", "unknown")
+                training_samples = str(metadata.get("training_samples", "0"))
+
+                ANOMALY_MODEL_INFO.labels(
+                    version=version,
+                    dataset_hash=dataset_hash,
+                    training_samples=training_samples
+                ).set(1)
+
+                logger.info(f"Loaded model metadata: {version}")
+            else:
+                logger.warning(f"Model metadata not found at {METADATA_PATH}")
+                ANOMALY_MODEL_INFO.labels(
+                    version="unknown",
+                    dataset_hash="unknown",
+                    training_samples="0"
+                ).set(1)
+        except Exception as e:
+            logger.error(f"Failed to load metadata: {e}")
+            # Non-critical error, continue
+
         logger.info(
             "Anomaly detection model loaded successfully",
             extra={
@@ -567,6 +600,7 @@ async def detect_anomaly(data: Dict[str, Any]) -> Tuple[bool, float]:
                 ANOMALY_DETECTION_LATENCY.labels(detector_type="model").observe(
                     time.time() - start_time
                 )
+                ANOMALY_SCORE_DISTRIBUTION.labels(detector_type="model").observe(score)
 
                 return bool(is_anomalous), float(score)
             
@@ -660,6 +694,7 @@ async def detect_anomaly(data: Dict[str, Any]) -> Tuple[bool, float]:
         ANOMALY_DETECTION_LATENCY.labels(detector_type="heuristic").observe(
             time.time() - start_time
         )
+        ANOMALY_SCORE_DISTRIBUTION.labels(detector_type="heuristic").observe(score)
 
         return is_anomalous, score
 

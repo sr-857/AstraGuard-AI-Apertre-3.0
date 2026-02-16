@@ -1,0 +1,50 @@
+groups:
+- name: AstraGuardAlerts
+  rules:
+  # Anomaly Detection Alerts
+  - alert: HighAnomalyRate
+    expr: rate(astraguard_anomaly_detections_total[5m]) > 5
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High anomaly detection rate detected"
+      description: "Anomaly rate is above 5 per second for the last 5 minutes. Current rate: {{ $value }}"
+
+  - alert: CriticalAnomalyRate
+    expr: rate(astraguard_anomaly_detections_total[5m]) > 20
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Critical anomaly detection rate"
+      description: "Anomaly rate is above 20 per second. Immediate investigation required."
+
+  # System Health Alerts
+  - alert: HighErrorRate
+    expr: (sum(rate(astra_http_requests_total{status=~"5.."}[5m])) / sum(rate(astra_http_requests_total[5m]))) * 100 > 5
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High HTTP error rate"
+      description: "HTTP 5xx error rate is above 5%. Current: {{ $value }}%"
+
+  - alert: HighLatency
+    expr: histogram_quantile(0.95, sum(rate(astra_http_request_duration_seconds_bucket[5m])) by (le)) > 2.0
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High API Latency"
+      description: "95th percentile latency is above 2 seconds."
+
+  # Model Health
+  - alert: ModelFallbackActive
+    expr: rate(astraguard_anomaly_model_fallback_activations_total[5m]) > 0
+    for: 1m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Model Fallback Active"
+      description: "System is using heuristic fallback instead of ML model."

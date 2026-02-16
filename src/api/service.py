@@ -159,10 +159,8 @@ def _check_credential_security() -> None:
     """
     global _USING_DEFAULT_CREDENTIALS
 
-    metrics_user: Optional[str] = get_secret("METRICS_USER")
-    metrics_password: Optional[str] = get_secret("METRICS_PASSWORD")
-    metrics_user = get_secret("metrics_user")
-    metrics_password = get_secret("metrics_password")
+    metrics_user: Optional[str] = get_secret("METRICS_USER") or get_secret("metrics_user")
+    metrics_password: Optional[str] = get_secret("METRICS_PASSWORD") or get_secret("metrics_password")
 
     # Check if credentials are set
     if not metrics_user or not metrics_password:
@@ -362,10 +360,8 @@ def get_current_username(credentials: HTTPBasicCredentials = Depends(security)) 
         HTTPException 401: Invalid credentials
         HTTPException 500: Credentials not configured
     """
-    correct_username = get_secret("METRICS_USER")
-    correct_password = get_secret("METRICS_PASSWORD")
-    correct_username = get_secret("metrics_user")
-    correct_password = get_secret("metrics_password")
+    correct_username = get_secret("METRICS_USER") or get_secret("metrics_user")
+    correct_password = get_secret("METRICS_PASSWORD") or get_secret("metrics_password")
 
     # Security: Require credentials to be explicitly set
     if not correct_username or not correct_password:
@@ -524,27 +520,6 @@ async def root() -> HealthCheckResponse:
         version="1.0.0",
         timestamp=datetime.now()
     )
-
-
-@app.get("/metrics", tags=["monitoring"])
-async def get_metrics() -> Response:
-    """
-    Prometheus metrics endpoint.
-    
-    Returns Prometheus-formatted metrics including:
-    - HTTP request count and latency
-    - Anomaly detection metrics
-    - Circuit breaker state
-    - Retry attempts
-    - Recovery actions
-    """
-    if not OBSERVABILITY_ENABLED:
-        return Response(content="Observability not enabled", media_type="text/plain", status_code=503)
-    
-    from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
-    from starlette.responses import Response
-    
-    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.get("/health", response_model=HealthCheckResponse)
@@ -735,9 +710,9 @@ async def health_ready() -> Response:
     )
 
 
-@app.get("/metrics")
+@app.get("/metrics", tags=["monitoring"])
 async def metrics(username: str = Depends(get_current_username)) -> Response:
-    """Prometheus metrics endpoint."""
+    """Prometheus metrics endpoint (Authenticated)."""
     return Response(
         content=get_metrics_text(), 
         media_type=get_metrics_content_type()
