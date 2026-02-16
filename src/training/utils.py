@@ -7,6 +7,7 @@ import pandas as pd
 import numpy as np
 import json
 import glob
+from src.data.synthetic import generate_dataset
 
 logger = logging.getLogger(__name__)
 
@@ -33,33 +34,10 @@ def load_data(data_path: str, fallback_to_synthetic: bool = True) -> pd.DataFram
             logger.error(f"Error loading data from {data_path}: {e}")
             raise
     elif fallback_to_synthetic:
-        logger.warning(f"Data file not found at {data_path}. Generating synthetic data.")
-        return generate_synthetic_data()
+        logger.warning(f"Data file not found at {data_path}. Generating synthetic data using src.data.synthetic.")
+        return generate_dataset()
     else:
         raise FileNotFoundError(f"Data file not found at {data_path}")
-
-def generate_synthetic_data(n_samples: int = 1000) -> pd.DataFrame:
-    """Generate synthetic telemetry data for testing/demo purposes."""
-    np.random.seed(42)
-
-    data = {
-        "voltage": np.random.normal(8.0, 0.5, n_samples),
-        "temperature": np.random.normal(25.0, 5.0, n_samples),
-        "gyro": np.random.normal(0.0, 0.05, n_samples),
-        "current": np.random.normal(1.0, 0.2, n_samples),
-        "wheel_speed": np.random.normal(5.0, 1.0, n_samples)
-    }
-
-    # Introduce some anomalies
-    n_anomalies = int(n_samples * 0.05)
-    indices = np.random.choice(n_samples, n_anomalies, replace=False)
-
-    data["voltage"][indices] = np.random.uniform(6.0, 7.0, n_anomalies)  # Low voltage
-    data["temperature"][indices] = np.random.uniform(40.0, 50.0, n_anomalies)  # High temp
-
-    df = pd.DataFrame(data)
-    logger.info(f"Generated synthetic data with {n_samples} samples.")
-    return df
 
 def save_model(model, path: str):
     """Save the model to a file using pickle (for compatibility)."""

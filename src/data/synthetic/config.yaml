@@ -1,0 +1,45 @@
+samples: 10000
+random_seed: 42
+
+features:
+  voltage:
+    mean: 48.0
+    std: 0.5
+    # Natural drift: Voltage drops as battery drains
+    drift_slope: -0.0001
+  temperature:
+    mean: 35.0
+    std: 1.0
+    # Natural drift: Temp rises slightly over time
+    drift_slope: 0.0005
+  current:
+    mean: 12.0
+    std: 0.5
+  wheel_speed:
+    mean: 30.0
+    std: 5.0
+  gyro:
+    mean: 0.0
+    std: 0.05
+
+correlations:
+  # Multiplier for how much wheel_speed affects current
+  speed_current_factor: 0.4
+  # Multiplier for how much current affects temperature
+  current_temp_factor: 0.1
+  # Multiplier for how much current drops voltage (load)
+  current_voltage_drop: 0.05
+
+anomalies:
+  enabled: true
+  percentage: 0.05
+  types:
+    point:
+      enabled: true
+      multiplier: 3.0  # Spike magnitude
+    collective:
+      enabled: true
+      description: "High current with low wheel speed (stall)"
+    drift:
+      enabled: true
+      slope_multiplier: 5.0 # Accelerated drift (e.g. thermal runaway)
