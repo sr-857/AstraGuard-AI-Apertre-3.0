@@ -122,6 +122,12 @@ def main():
         logger.error(f"Failed to load data: {e}")
         sys.exit(1)
 
+    # Clean data (drop labels if present)
+    if 'is_anomaly' in df.columns:
+        n_labeled = df['is_anomaly'].sum()
+        logger.info(f"Dropping 'is_anomaly' column (found {n_labeled} labeled anomalies) for unsupervised training.")
+        df = df.drop(columns=['is_anomaly'])
+
     # ---------------------------------------------------------
     # Drift Detection (Phase 6)
     # ---------------------------------------------------------
