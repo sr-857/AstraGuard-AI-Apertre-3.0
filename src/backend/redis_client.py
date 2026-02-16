@@ -16,6 +16,7 @@ import warnings
 import logging
 from typing import Optional, Dict, Any
 from datetime import datetime
+from urllib.parse import urlparse
 
 # Import the new storage abstraction
 from backend.storage import RedisAdapter, Storage, MemoryStorage
@@ -24,6 +25,7 @@ from backend.storage import RedisAdapter, Storage, MemoryStorage
 from core.timeout_handler import get_timeout_config
 
 logger = logging.getLogger(__name__)
+
 
 # Compatibility exports
 __all__ = ["RedisClient", "Storage", "RedisAdapter", "MemoryStorage"]
@@ -46,7 +48,11 @@ class RedisClient:
 
         Args:
             redis_url: Redis connection URL (default: localhost:6379)
+                       Use rediss:// for TLS-encrypted connections
             timeout: Default timeout for operations (uses env config if None)
+            use_tls: Force TLS usage (None = auto-detect from URL and config)
+            ssl_context: Optional SSL context for custom TLS configuration
+            service_name: Service name for TLS configuration lookup
         """
         warnings.warn(
             "RedisClient is deprecated and will be removed in a future version. "
@@ -70,7 +76,7 @@ class RedisClient:
         self.redis = None  # For backward compatibility
 
     async def connect(self) -> bool:
-        """Establish connection to Redis.
+        """Establish connection to Redis with TLS support.
 
         Returns:
             True if successful, False otherwise
@@ -79,6 +85,7 @@ class RedisClient:
         self.connected = self._adapter.connected
         self.redis = self._adapter.redis  # Expose for backward compatibility
         return result
+
 
     async def close(self):
         """Close Redis connection."""

@@ -2,6 +2,7 @@
 
 import time
 import csv
+import heapq
 import logging
 import heapq
 from typing import Dict, List, Any, Optional
@@ -334,31 +335,45 @@ class LatencyCollector:
             return {"total_measurements": 0, "metrics": {}}
 
         # Single-pass computation for both stats and stats_by_satellite
-        by_type: Dict[str, List[float]] = defaultdict(list)
-        by_satellite: Dict[str, Dict[str, List[float]]] = defaultdict(lambda: defaultdict(list))
+        by_type = defaultdict(list)
+        by_satellite = defaultdict(lambda: defaultdict(list))
 
         for m in self.measurements:
             by_type[m.metric_type].append(m.duration_ms)
             by_satellite[m.satellite_id][m.metric_type].append(m.duration_ms)
 
-        # Calculate stats by type using shared computation
+        # Calculate stats by type
         stats = {}
         for metric_type, latencies in by_type.items():
-            stats[metric_type] = self._compute_stats(latencies)
+            if not latencies:
+                continue
+            sorted_latencies = sorted(latencies)
+            count = len(sorted_latencies)
+            stats[metric_type] = {
+                "count": count,
+                "mean_ms": sum(latencies) / count,
+                "p50_ms": sorted_latencies[count // 2],
+                "p95_ms": sorted_latencies[int(count * 0.95)],
+                "p99_ms": sorted_latencies[int(count * 0.99)],
+                "max_ms": max(latencies),
+                "min_ms": min(latencies),
+            }
 
-        # Calculate stats by satellite using shared computation
+        # Calculate stats by satellite
         stats_by_satellite = {}
         for sat_id, metrics in by_satellite.items():
             stats_by_satellite[sat_id] = {}
             for metric_type, latencies in metrics.items():
-                computed = self._compute_stats(latencies)
-                # Simplified view for satellite stats
+                if not latencies:
+                    continue
+                sorted_latencies = sorted(latencies)
+                count = len(sorted_latencies)
                 stats_by_satellite[sat_id][metric_type] = {
-                    "count": computed["count"],
-                    "mean_ms": computed["mean_ms"],
-                    "p50_ms": computed["p50_ms"],
-                    "p95_ms": computed["p95_ms"],
-                    "max_ms": computed["max_ms"],
+                    "count": count,
+                    "mean_ms": sum(latencies) / count,
+                    "p50_ms": sorted_latencies[count // 2],
+                    "p95_ms": sorted_latencies[int(count * 0.95)],
+                    "max_ms": max(latencies),
                 }
 
         return {
