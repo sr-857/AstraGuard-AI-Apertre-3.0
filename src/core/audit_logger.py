@@ -211,6 +211,7 @@ class AuditLogger:
             "action": action,
             "status": status,
             "details": self._sanitize_sensitive_data(details or {}),
+            "environment": os.getenv("APP_ENV", "production"),
             **extra
         }
 
