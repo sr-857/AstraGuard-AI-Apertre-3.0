@@ -1,0 +1,11 @@
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: cluster-backup
+  namespace: velero
+spec:
+  schedule: "0 1 * * *" # Daily at 1 AM
+  template:
+    includedNamespaces:
+    - astraguard
+    ttl: 720h # 30 days
