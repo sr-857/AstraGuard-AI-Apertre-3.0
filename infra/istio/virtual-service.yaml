@@ -1,0 +1,16 @@
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: astraguard
+  namespace: astraguard
+spec:
+  hosts:
+    - "astraguard.local"
+  gateways:
+    - astraguard-gateway
+  http:
+    - route:
+        - destination:
+            host: astraguard-astra-guard.astraguard.svc.cluster.local
+            port:
+              number: 8000
