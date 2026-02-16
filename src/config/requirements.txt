@@ -59,3 +59,4 @@ jsonschema>=4.0.0,<5.0
 pytest>=8.0.0
 pytest-asyncio>=0.24.0
 tenacity>=8.2.3
+msgpack

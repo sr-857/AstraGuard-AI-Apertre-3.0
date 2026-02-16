@@ -367,6 +367,28 @@ except ValueError:
     MEMORY_ENGINE_SIZE = None
 
 # ============================================================================
+# I/O METRICS
+# ============================================================================
+
+try:
+    IO_LATENCY: Optional[Summary] = Summary(
+        'astra_io_latency_ms',
+        'I/O operation latency',
+        ['operation_type', 'storage_type']
+    )
+except ValueError:
+    IO_LATENCY = None
+
+try:
+    IO_BATCH_SIZE: Optional[Summary] = Summary(
+        'astra_io_batch_size',
+        'Batch size for I/O operations',
+        ['operation_type', 'storage_type']
+    )
+except ValueError:
+    IO_BATCH_SIZE = None
+
+# ============================================================================
 # ERROR METRICS
 # ============================================================================
 
