@@ -7,6 +7,7 @@ import logging
 import heapq
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, asdict
+
 from datetime import datetime
 from collections import defaultdict
 from pathlib import Path
@@ -33,6 +34,9 @@ class LatencyCollector:
         self.measurements: List[LatencyMeasurement] = []
         self._start_time: float = time.time()
         self._measurement_log: Dict[str, int] = defaultdict(int)
+        self._cached_stats: Optional[Dict[str, Any]] = None
+        self._cache_valid = False
+
 
     def record_fault_detection(
         self, sat_id: str, scenario_time_s: float, detection_delay_ms: float
@@ -134,6 +138,34 @@ class LatencyCollector:
         self._measurement_log["recovery_action"] += 1
         logger.debug(f"Recorded recovery action latency: {sat_id}, {action_time_ms}ms")
 
+    def _compute_stats(self, latencies: List[float]) -> Dict[str, float]:
+        """
+        Compute statistics for a list of latencies in a single pass.
+        
+        Args:
+            latencies: List of latency values in milliseconds
+            
+        Returns:
+            Dict with count, mean_ms, p50_ms, p95_ms, p99_ms, max_ms, min_ms
+        """
+        if not latencies:
+            return {}
+        
+        count = len(latencies)
+        sorted_latencies = sorted(latencies)
+        
+        total = sum(latencies)
+        
+        return {
+            "count": count,
+            "mean_ms": total / count,
+            "p50_ms": sorted_latencies[count // 2],
+            "p95_ms": sorted_latencies[int(count * 0.95)] if count > 1 else sorted_latencies[0],
+            "p99_ms": sorted_latencies[int(count * 0.99)] if count > 1 else sorted_latencies[0],
+            "max_ms": sorted_latencies[-1],
+            "min_ms": sorted_latencies[0],
+        }
+
     def get_stats(self) -> Dict[str, Any]:
         """
         Calculate aggregate latency statistics.
@@ -144,10 +176,12 @@ class LatencyCollector:
         if not self.measurements:
             return {}
 
-        by_type = defaultdict(list)
+        # Single-pass: group by type and collect latencies
+        by_type: Dict[str, List[float]] = defaultdict(list)
         for m in self.measurements:
             by_type[m.metric_type].append(m.duration_ms)
 
+        # Compute stats for each type
         stats = {}
         for metric_type, latencies in by_type.items():
             if not latencies:
@@ -170,6 +204,7 @@ class LatencyCollector:
 
         logger.debug(f"Calculated statistics for {len(stats)} metric types")
         return stats
+
 
     def get_stats_by_satellite(self) -> Dict[str, Dict[str, Any]]:
         """
@@ -208,6 +243,7 @@ class LatencyCollector:
 
         logger.debug(f"Calculated statistics for {len(stats)} satellites")
         return stats
+
 
     def export_csv(self, filename: str) -> None:
         """
@@ -352,6 +388,8 @@ class LatencyCollector:
         """Clear all measurements."""
         self.measurements.clear()
         self._measurement_log.clear()
+        self._cached_stats = None
+        self._cache_valid = False
 
 
 
