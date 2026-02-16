@@ -6,6 +6,13 @@ and system health monitoring for AstraGuard components.
 """
 
 from .error_handling import (
+    ApiError,
+    ValidationError,
+    AuthError,
+    RateLimitError,
+    NotFoundError,
+    ServerError,
+    DependencyError,
     AstraGuardException,
     ModelLoadError,
     AnomalyEngineError,
@@ -30,7 +37,15 @@ from .rate_limiter import (
 )
 
 __all__ = [
-    # Exceptions
+    # API Errors
+    "ApiError",
+    "ValidationError",
+    "AuthError",
+    "RateLimitError",
+    "NotFoundError",
+    "ServerError",
+    "DependencyError",
+    # Legacy Exceptions
     "AstraGuardException",
     "ModelLoadError",
     "AnomalyEngineError",
