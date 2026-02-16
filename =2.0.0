@@ -1,0 +1,65 @@
+Collecting fastapi==0.115.0
+  Using cached fastapi-0.115.0-py3-none-any.whl.metadata (27 kB)
+Collecting starlette
+  Downloading starlette-0.52.1-py3-none-any.whl.metadata (6.3 kB)
+Collecting pydantic
+  Downloading pydantic-2.12.5-py3-none-any.whl.metadata (90 kB)
+Collecting starlette
+  Using cached starlette-0.38.6-py3-none-any.whl.metadata (6.0 kB)
+Collecting typing-extensions>=4.8.0 (from fastapi==0.115.0)
+  Using cached typing_extensions-4.15.0-py3-none-any.whl.metadata (3.3 kB)
+Collecting anyio<5,>=3.4.0 (from starlette)
+  Using cached anyio-4.12.1-py3-none-any.whl.metadata (4.3 kB)
+Collecting annotated-types>=0.6.0 (from pydantic)
+  Using cached annotated_types-0.7.0-py3-none-any.whl.metadata (15 kB)
+Collecting pydantic-core==2.41.5 (from pydantic)
+  Downloading pydantic_core-2.41.5-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (7.3 kB)
+Collecting typing-inspection>=0.4.2 (from pydantic)
+  Downloading typing_inspection-0.4.2-py3-none-any.whl.metadata (2.6 kB)
+Collecting idna>=2.8 (from anyio<5,>=3.4.0->starlette)
+  Using cached idna-3.11-py3-none-any.whl.metadata (8.4 kB)
+Using cached fastapi-0.115.0-py3-none-any.whl (94 kB)
+Using cached starlette-0.38.6-py3-none-any.whl (71 kB)
+Downloading pydantic-2.12.5-py3-none-any.whl (463 kB)
+Downloading pydantic_core-2.41.5-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (2.1 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.1/2.1 MB 59.7 MB/s  0:00:00
+Using cached anyio-4.12.1-py3-none-any.whl (113 kB)
+Using cached annotated_types-0.7.0-py3-none-any.whl (13 kB)
+Using cached idna-3.11-py3-none-any.whl (71 kB)
+Using cached typing_extensions-4.15.0-py3-none-any.whl (44 kB)
+Downloading typing_inspection-0.4.2-py3-none-any.whl (14 kB)
+Installing collected packages: typing-extensions, idna, annotated-types, typing-inspection, pydantic-core, anyio, starlette, pydantic, fastapi
+  Attempting uninstall: typing-extensions
+    Found existing installation: typing_extensions 4.15.0
+    Uninstalling typing_extensions-4.15.0:
+      Successfully uninstalled typing_extensions-4.15.0
+  Attempting uninstall: idna
+    Found existing installation: idna 3.11
+    Uninstalling idna-3.11:
+      Successfully uninstalled idna-3.11
+  Attempting uninstall: annotated-types
+    Found existing installation: annotated-types 0.7.0
+    Uninstalling annotated-types-0.7.0:
+      Successfully uninstalled annotated-types-0.7.0
+  Attempting uninstall: pydantic-core
+    Found existing installation: pydantic_core 2.23.2
+    Uninstalling pydantic_core-2.23.2:
+      Successfully uninstalled pydantic_core-2.23.2
+  Attempting uninstall: anyio
+    Found existing installation: anyio 4.12.1
+    Uninstalling anyio-4.12.1:
+      Successfully uninstalled anyio-4.12.1
+  Attempting uninstall: starlette
+    Found existing installation: starlette 0.38.6
+    Uninstalling starlette-0.38.6:
+      Successfully uninstalled starlette-0.38.6
+  Attempting uninstall: pydantic
+    Found existing installation: pydantic 2.9.0
+    Uninstalling pydantic-2.9.0:
+      Successfully uninstalled pydantic-2.9.0
+  Attempting uninstall: fastapi
+    Found existing installation: fastapi 0.115.0
+    Uninstalling fastapi-0.115.0:
+      Successfully uninstalled fastapi-0.115.0
+
+Successfully installed annotated-types-0.7.0 anyio-4.12.1 fastapi-0.115.0 idna-3.11 pydantic-2.12.5 pydantic-core-2.41.5 starlette-0.38.6 typing-extensions-4.15.0 typing-inspection-0.4.2

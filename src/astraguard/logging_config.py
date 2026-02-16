@@ -31,7 +31,7 @@ def _cached_get_secret(key: str, default=None):
 
 def setup_json_logging(
     log_level: str = "INFO",
-    service_name: str = "astra-guard",
+    service_name: str = os.getenv("SERVICE_NAME", "astra-guard"),
     environment: str = get_secret("environment", "development")
 ) -> None:
     """Sets up JSON structured logging.
@@ -71,11 +71,17 @@ def setup_json_logging(
 
         # Configure root logger with JSON handler
         json_handler = logging.StreamHandler(sys.stdout)
-        json_formatter = jsonlogger.JsonFormatter(
-            fmt='%(timestamp)s %(level)s %(name)s %(message)s',
-            timestamp=True
-        )
-        json_handler.setFormatter(json_formatter)
+
+        class JsonFormatter(logging.Formatter):
+            def format(self, record):
+                return json.dumps({
+                    "level": record.levelname,
+                    "message": record.getMessage(),
+                    "service": service_name,
+                    "timestamp": self.formatTime(record)
+                })
+
+        json_handler.setFormatter(JsonFormatter())
 
         # Configure Python logging
         root_logger = logging.getLogger()
