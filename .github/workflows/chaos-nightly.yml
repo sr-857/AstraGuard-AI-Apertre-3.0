@@ -14,6 +14,7 @@ on:
       - 'tests/swarm/chaos/**'
       - '.github/workflows/chaos-nightly.yml'
 
+# Fix #809: Prevent cancellation of chaos tests
 concurrency:
   group: chaos-tests-${{ github.ref }}
   cancel-in-progress: false
@@ -23,6 +24,10 @@ jobs:
     name: Chaos Engineering Test Suite
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    
+    # Fix #809: Unique project name per matrix scenario to prevent network collisions
+    env:
+      COMPOSE_PROJECT_NAME: chaos-${{ github.run_id }}-${{ matrix.scenario }}
     
     strategy:
       matrix:
@@ -181,6 +186,10 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule'
     timeout-minutes: 60
+
+    # Fix #809: Unique project name for stress tests
+    env:
+      COMPOSE_PROJECT_NAME: chaos-stress-${{ github.run_id }}
     
     steps:
       - uses: actions/checkout@v4
@@ -245,4 +254,4 @@ jobs:
       
       - name: Cleanup
         if: always()
-        run: docker-compose -f infra/docker/docker-compose.swarm.yml down -v || true
+        run: docker compose -f infra/docker/docker-compose.swarm.yml down -v || true

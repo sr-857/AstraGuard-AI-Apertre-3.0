@@ -1,0 +1,143 @@
+# TLS/SSL Configuration for AstraGuard AI Internal Service Communication
+# 
+# This configuration file defines TLS settings for all microservices to ensure
+# encrypted communication between internal services (Memory Engine, Anomaly Detection, etc.)
+#
+# Environment variables can override these settings using the TLS_ prefix:
+#   TLS_ENABLED=true
+#   TLS_ENFORCE=true
+#   TLS_CERT_FILE=/path/to/cert.pem
+#   TLS_KEY_FILE=/path/to/key.pem
+#   TLS_CA_FILE=/path/to/ca-bundle.crt
+#   TLS_VERIFY_MODE=required
+#   TLS_MIN_VERSION=1.2
+#   TLS_MUTUAL_TLS=false
+
+# Default TLS configuration applied to all services unless overridden
+default:
+  enabled: true
+  enforce_tls: true
+  verify_mode: required  # Options: none, optional, required
+  min_tls_version: "1.2"  # Options: 1.0, 1.1, 1.2, 1.3
+  mutual_tls: false
+  cipher_suites: "ECDHE+AESGCM:ECDHE+CHACHA20:DHE+AESGCM:DHE+CHACHA20:!aNULL:!MD5:!DSS"
+  
+  # Certificate paths (can be overridden via environment variables)
+  # These paths are relative to the project root or can be absolute paths
+  cert_file: "certs/server.crt"
+  key_file: "certs/server.key"
+  ca_file: "certs/ca.crt"
+
+# Service-specific configurations
+# Each service can have its own TLS settings that override the defaults
+
+# API Service - Main REST API
+api:
+  enabled: true
+  enforce_tls: true
+  cert_file: "certs/api.crt"
+  key_file: "certs/api.key"
+  ca_file: "certs/ca.crt"
+  mutual_tls: false  # Set to true to require client certificates
+  hsts_max_age: 31536000  # HTTP Strict Transport Security max-age (1 year)
+
+# Redis - Distributed coordination and caching
+redis:
+  enabled: true
+  enforce_tls: true
+  # Redis uses rediss:// URLs for TLS connections
+  # Certificate validation is handled by the Redis client
+  verify_mode: required
+  min_tls_version: "1.2"
+
+# Memory Engine - Internal storage service
+memory_engine:
+  enabled: true
+  enforce_tls: true
+  mutual_tls: true  # Enable mTLS for service-to-service auth
+  cert_file: "certs/memory_engine.crt"
+  key_file: "certs/memory_engine.key"
+
+# Anomaly Detection - ML inference service
+anomaly_detector:
+  enabled: true
+  enforce_tls: true
+  mutual_tls: true
+  cert_file: "certs/anomaly_detector.crt"
+  key_file: "certs/anomaly_detector.key"
+
+# Telemetry Ingestion - Data ingestion service
+telemetry:
+  enabled: true
+  enforce_tls: true
+  cert_file: "certs/telemetry.crt"
+  key_file: "certs/telemetry.key"
+
+# Development environment settings
+# These settings are less strict for local development
+development:
+  enabled: false  # TLS disabled by default in development
+  enforce_tls: false
+  verify_mode: none  # Don't verify certificates in dev
+  mutual_tls: false
+  
+  # Self-signed certificates for development
+  cert_file: "certs/dev/server.crt"
+  key_file: "certs/dev/server.key"
+  ca_file: "certs/dev/ca.crt"
+
+# Testing environment settings
+testing:
+  enabled: true
+  enforce_tls: true
+  verify_mode: required
+  mutual_tls: false
+  
+  # Use test certificates
+  cert_file: "certs/test/server.crt"
+  key_file: "certs/test/server.key"
+  ca_file: "certs/test/ca.crt"
+
+# Production environment settings
+production:
+  enabled: true
+  enforce_tls: true
+  verify_mode: required
+  min_tls_version: "1.2"
+  mutual_tls: true  # Enable mTLS in production for service auth
+  
+  # Production certificates should be provided via environment variables
+  # or mounted from secrets management system (Vault, AWS Secrets Manager, etc.)
+  cert_file: "${TLS_CERT_FILE}"
+  key_file: "${TLS_KEY_FILE}"
+  ca_file: "${TLS_CA_FILE}"
+
+# Certificate pinning configuration (optional security enhancement)
+# Pin specific certificate fingerprints to prevent MITM attacks
+certificate_pinning:
+  enabled: false
+  pins:
+    - "sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="  # Example pin
+    - "sha256/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB="  # Backup pin
+
+# TLS logging and monitoring
+logging:
+  log_tls_handshakes: true
+  log_certificate_validation: true
+  log_tls_errors: true
+  
+  # Alert on TLS violations
+  alert_on_http_request: true
+  alert_on_invalid_certificate: true
+  alert_on_tls_version_mismatch: true
+
+# Compliance settings
+compliance:
+  # FIPS 140-2 compliance mode
+  fips_mode: false
+  
+  # PCI DSS compliance settings
+  pci_dss_compliant: false
+  
+  # SOC 2 compliance settings
+  soc2_compliant: true

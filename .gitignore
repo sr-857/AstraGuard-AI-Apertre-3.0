@@ -52,4 +52,11 @@ node_modules/
 #contact feature runtime
 /data/
 /*.log
-*.dbartifacts/
+*.db
+
+# Temporary files and debug outputs
+temp/
+*.log
+*_log.txt
+*_output.txt
+*_result.txt

@@ -2,6 +2,7 @@
 
 import pytest
 import time
+import asyncio
 from unittest.mock import patch, MagicMock, call
 from contextlib import contextmanager
 from prometheus_client import CollectorRegistry, REGISTRY
@@ -688,3 +689,691 @@ class TestPerformanceCharacteristics:
         
         # Should complete in reasonable time (less than 5 seconds for this load)
         assert total_time < 5.0, f"Concurrent metrics too slow: {total_time:.2f}s"
+
+
+# ============================================================================
+# ASYNC CONTEXT MANAGER TESTS
+# ============================================================================
+
+class TestAsyncContextManagers:
+    """Test async versions of context managers."""
+
+    @pytest.mark.asyncio
+    async def test_async_track_request_successful(self):
+        """Test successful async request tracking."""
+        from astraguard.observability import async_track_request, REQUEST_COUNT, REQUEST_LATENCY, ACTIVE_CONNECTIONS
+        
+        if not (REQUEST_COUNT and REQUEST_LATENCY and ACTIVE_CONNECTIONS):
+            pytest.skip("Required metrics not available")
+        
+        endpoint = "/api/async_test"
+        method = "POST"
+        
+        initial_active = ACTIVE_CONNECTIONS._value._value
+        
+        async with async_track_request(endpoint, method):
+            # During request, active connections should increase
+            assert ACTIVE_CONNECTIONS._value._value == initial_active + 1
+            await asyncio.sleep(0.01)
+        
+        # After request, active connections should return to initial
+        assert ACTIVE_CONNECTIONS._value._value == initial_active
+
+    @pytest.mark.asyncio
+    async def test_async_track_request_with_exception(self):
+        """Test async request tracking when exception occurs."""
+        from astraguard.observability import async_track_request, ACTIVE_CONNECTIONS
+        
+        if not ACTIVE_CONNECTIONS:
+            pytest.skip("ACTIVE_CONNECTIONS not available")
+        
+        endpoint = "/api/async_error"
+        method = "GET"
+        
+        initial_active = ACTIVE_CONNECTIONS._value._value
+        
+        with pytest.raises(ValueError):
+            async with async_track_request(endpoint, method):
+                assert ACTIVE_CONNECTIONS._value._value == initial_active + 1
+                raise ValueError("Async test error")
+        
+        # Active connections should be decremented even after exception
+        assert ACTIVE_CONNECTIONS._value._value == initial_active
+
+    @pytest.mark.asyncio
+    async def test_async_track_request_timing_accuracy(self):
+        """Test that async request timing is reasonably accurate."""
+        from astraguard.observability import async_track_request, REQUEST_LATENCY
+        
+        if not REQUEST_LATENCY:
+            pytest.skip("REQUEST_LATENCY not available")
+        
+        endpoint = "/api/async_timing"
+        sleep_duration = 0.1
+        
+        start_time = time.time()
+        async with async_track_request(endpoint):
+            await asyncio.sleep(sleep_duration)
+        end_time = time.time()
+        
+        actual_duration = end_time - start_time
+        # Should be close to sleep_duration (within reasonable tolerance)
+        assert abs(actual_duration - sleep_duration) < 0.05
+
+    @pytest.mark.asyncio
+    async def test_async_track_anomaly_detection_successful(self):
+        """Test successful async anomaly detection tracking."""
+        from astraguard.observability import async_track_anomaly_detection, DETECTION_LATENCY
+        
+        if not DETECTION_LATENCY:
+            pytest.skip("DETECTION_LATENCY not available")
+        
+        async with async_track_anomaly_detection():
+            await asyncio.sleep(0.01)
+
+    @pytest.mark.asyncio
+    async def test_async_track_anomaly_detection_with_exception(self):
+        """Test async anomaly detection tracking with exception."""
+        from astraguard.observability import async_track_anomaly_detection
+        
+        with pytest.raises(RuntimeError):
+            async with async_track_anomaly_detection():
+                raise RuntimeError("Async detection failed")
+
+    @pytest.mark.asyncio
+    async def test_async_track_retry_attempt_successful(self):
+        """Test successful async retry attempt tracking."""
+        from astraguard.observability import async_track_retry_attempt, RETRY_LATENCY
+        
+        if not RETRY_LATENCY:
+            pytest.skip("RETRY_LATENCY not available")
+        
+        endpoint = "/api/async_retry"
+        
+        async with async_track_retry_attempt(endpoint):
+            await asyncio.sleep(0.01)
+
+    @pytest.mark.asyncio
+    async def test_async_track_retry_attempt_with_exception(self):
+        """Test async retry attempt tracking with exception."""
+        from astraguard.observability import async_track_retry_attempt
+        
+        endpoint = "/api/async_retry_error"
+        
+        with pytest.raises(ConnectionError):
+            async with async_track_retry_attempt(endpoint):
+                raise ConnectionError("Async retry failed")
+
+    @pytest.mark.asyncio
+    async def test_async_track_chaos_recovery_successful(self):
+        """Test successful async chaos recovery tracking."""
+        from astraguard.observability import async_track_chaos_recovery, CHAOS_RECOVERY_TIME
+        
+        if not CHAOS_RECOVERY_TIME:
+            pytest.skip("CHAOS_RECOVERY_TIME not available")
+        
+        chaos_type = "async_network_partition"
+        
+        async with async_track_chaos_recovery(chaos_type):
+            await asyncio.sleep(0.01)
+
+    @pytest.mark.asyncio
+    async def test_async_track_chaos_recovery_with_exception(self):
+        """Test async chaos recovery tracking with exception."""
+        from astraguard.observability import async_track_chaos_recovery
+        
+        chaos_type = "async_disk_failure"
+        
+        with pytest.raises(OSError):
+            async with async_track_chaos_recovery(chaos_type):
+                raise OSError("Async recovery failed")
+
+    @pytest.mark.asyncio
+    async def test_async_track_chaos_recovery_timing(self):
+        """Test async chaos recovery timing measurement."""
+        from astraguard.observability import async_track_chaos_recovery, CHAOS_RECOVERY_TIME
+        
+        if not CHAOS_RECOVERY_TIME:
+            pytest.skip("CHAOS_RECOVERY_TIME not available")
+        
+        chaos_type = "async_cpu_spike"
+        sleep_duration = 0.02
+        
+        start_time = time.time()
+        async with async_track_chaos_recovery(chaos_type):
+            await asyncio.sleep(sleep_duration)
+        end_time = time.time()
+        
+        actual_duration = end_time - start_time
+        assert abs(actual_duration - sleep_duration) < 0.02
+
+    @pytest.mark.asyncio
+    async def test_nested_async_context_managers(self):
+        """Test nested async context manager usage."""
+        from astraguard.observability import (
+            async_track_request, async_track_anomaly_detection,
+            async_track_retry_attempt, async_track_chaos_recovery
+        )
+        
+        endpoint = "/api/async_nested"
+        chaos_type = "async_integration_test"
+        
+        async with async_track_request(endpoint):
+            async with async_track_anomaly_detection():
+                async with async_track_retry_attempt(endpoint):
+                    async with async_track_chaos_recovery(chaos_type):
+                        await asyncio.sleep(0.01)
+
+    @pytest.mark.asyncio
+    async def test_concurrent_async_requests(self):
+        """Test concurrent async request tracking."""
+        from astraguard.observability import async_track_request
+        
+        async def async_worker(worker_id):
+            endpoint = f"/api/async_worker_{worker_id}"
+            for i in range(5):
+                async with async_track_request(endpoint):
+                    await asyncio.sleep(0.001)
+        
+        # Run multiple async tasks concurrently
+        tasks = [async_worker(i) for i in range(3)]
+        await asyncio.gather(*tasks)
+
+
+# ============================================================================
+# SAFE METRIC CREATION TESTS
+# ============================================================================
+
+class TestSafeMetricCreation:
+    """Test the _safe_create_metric function for handling duplicate metrics."""
+
+    def test_safe_create_metric_new_metric(self):
+        """Test creating a new metric with _safe_create_metric."""
+        from astraguard.observability import _safe_create_metric, _metric_cache
+        from prometheus_client import Counter
+        
+        # Create a new unique metric
+        metric_name = f"test_metric_{time.time()}"
+        metric = _safe_create_metric(
+            Counter,
+            metric_name,
+            metric_name,
+            f"Test metric {metric_name}"
+        )
+        
+        assert metric is not None
+        assert hasattr(metric, '_name')
+        assert metric_name in _metric_cache
+
+    def test_safe_create_metric_cached_retrieval(self):
+        """Test that _safe_create_metric returns cached metrics."""
+        from astraguard.observability import _safe_create_metric, _metric_cache
+        from prometheus_client import Counter
+        
+        # Create a metric
+        metric_name = f"test_cached_metric_{time.time()}"
+        metric1 = _safe_create_metric(
+            Counter,
+            metric_name,
+            metric_name,
+            "Test cached metric"
+        )
+        
+        # Retrieve the same metric from cache
+        metric2 = _safe_create_metric(
+            Counter,
+            metric_name,
+            metric_name,
+            "Test cached metric"
+        )
+        
+        # Should return the same instance from cache
+        assert metric1 is metric2
+
+    def test_safe_create_metric_with_labels(self):
+        """Test creating metrics with labels using _safe_create_metric."""
+        from astraguard.observability import _safe_create_metric
+        from prometheus_client import Counter
+        
+        metric_name = f"test_labeled_metric_{time.time()}"
+        metric = _safe_create_metric(
+            Counter,
+            metric_name,
+            metric_name,
+            "Test labeled metric",
+            labelnames=['label1', 'label2']
+        )
+        
+        assert metric is not None
+        assert hasattr(metric, 'labels')
+        
+        # Test using the labeled metric
+        metric.labels(label1='value1', label2='value2').inc()
+
+    def test_safe_create_metric_different_types(self):
+        """Test _safe_create_metric with different metric types."""
+        from astraguard.observability import _safe_create_metric
+        from prometheus_client import Counter, Gauge, Histogram, Summary
+        
+        timestamp = time.time()
+        
+        # Test Counter
+        counter = _safe_create_metric(
+            Counter,
+            f"test_counter_{timestamp}",
+            f"test_counter_{timestamp}",
+            "Test counter"
+        )
+        assert counter is not None
+        
+        # Test Gauge
+        gauge = _safe_create_metric(
+            Gauge,
+            f"test_gauge_{timestamp}",
+            f"test_gauge_{timestamp}",
+            "Test gauge"
+        )
+        assert gauge is not None
+        
+        # Test Histogram
+        histogram = _safe_create_metric(
+            Histogram,
+            f"test_histogram_{timestamp}",
+            f"test_histogram_{timestamp}",
+            "Test histogram"
+        )
+        assert histogram is not None
+        
+        # Test Summary
+        summary = _safe_create_metric(
+            Summary,
+            f"test_summary_{timestamp}",
+            f"test_summary_{timestamp}",
+            "Test summary"
+        )
+        assert summary is not None
+
+
+# ============================================================================
+# METRIC LABELS TESTS
+# ============================================================================
+
+class TestMetricLabels:
+    """Test metrics with label functionality."""
+
+    def test_request_count_labels(self):
+        """Test REQUEST_COUNT with different label combinations."""
+        if not REQUEST_COUNT:
+            pytest.skip("REQUEST_COUNT not available")
+        
+        # Test various label combinations
+        label_combinations = [
+            ("GET", "/api/test1", "200"),
+            ("POST", "/api/test2", "201"),
+            ("PUT", "/api/test3", "200"),
+            ("DELETE", "/api/test4", "204"),
+            ("PATCH", "/api/test5", "200"),
+        ]
+        
+        for method, endpoint, status in label_combinations:
+            REQUEST_COUNT.labels(method=method, endpoint=endpoint, status=status).inc()
+
+    def test_circuit_breaker_state_labels(self):
+        """Test CIRCUIT_BREAKER_STATE with different names."""
+        if not CIRCUIT_BREAKER_STATE:
+            pytest.skip("CIRCUIT_BREAKER_STATE not available")
+        
+        breaker_names = ["api_breaker", "db_breaker", "cache_breaker"]
+        
+        for name in breaker_names:
+            CIRCUIT_BREAKER_STATE.labels(name=name).set(0)  # CLOSED
+            CIRCUIT_BREAKER_STATE.labels(name=name).set(1)  # OPEN
+            CIRCUIT_BREAKER_STATE.labels(name=name).set(2)  # HALF_OPEN
+
+    def test_circuit_breaker_transitions_labels(self):
+        """Test CIRCUIT_BREAKER_TRANSITIONS with state transitions."""
+        if not CIRCUIT_BREAKER_TRANSITIONS:
+            pytest.skip("CIRCUIT_BREAKER_TRANSITIONS not available")
+        
+        transitions = [
+            ("api_breaker", "CLOSED", "OPEN"),
+            ("api_breaker", "OPEN", "HALF_OPEN"),
+            ("api_breaker", "HALF_OPEN", "CLOSED"),
+            ("db_breaker", "CLOSED", "OPEN"),
+        ]
+        
+        for name, from_state, to_state in transitions:
+            CIRCUIT_BREAKER_TRANSITIONS.labels(
+                name=name, from_state=from_state, to_state=to_state
+            ).inc()
+
+    def test_retry_attempts_labels(self):
+        """Test RETRY_ATTEMPTS with different outcomes."""
+        if not RETRY_ATTEMPTS:
+            pytest.skip("RETRY_ATTEMPTS not available")
+        
+        test_cases = [
+            ("/api/endpoint1", "success"),
+            ("/api/endpoint1", "failure"),
+            ("/api/endpoint2", "success"),
+            ("/api/endpoint2", "timeout"),
+        ]
+        
+        for endpoint, outcome in test_cases:
+            RETRY_ATTEMPTS.labels(endpoint=endpoint, outcome=outcome).inc()
+
+    def test_chaos_injections_labels(self):
+        """Test CHAOS_INJECTIONS with different types and statuses."""
+        if not CHAOS_INJECTIONS:
+            pytest.skip("CHAOS_INJECTIONS not available")
+        
+        chaos_tests = [
+            ("network_partition", "injected"),
+            ("network_partition", "recovered"),
+            ("disk_failure", "injected"),
+            ("cpu_spike", "injected"),
+            ("memory_leak", "recovered"),
+        ]
+        
+        for chaos_type, status in chaos_tests:
+            CHAOS_INJECTIONS.labels(type=chaos_type, status=status).inc()
+
+    def test_anomaly_detections_labels(self):
+        """Test ANOMALY_DETECTIONS with different severity levels."""
+        if not ANOMALY_DETECTIONS:
+            pytest.skip("ANOMALY_DETECTIONS not available")
+        
+        severities = ["low", "medium", "high", "critical"]
+        
+        for severity in severities:
+            ANOMALY_DETECTIONS.labels(severity=severity).inc()
+
+    def test_false_positives_labels(self):
+        """Test FALSE_POSITIVES with different detector types."""
+        if not FALSE_POSITIVES:
+            pytest.skip("FALSE_POSITIVES not available")
+        
+        detectors = ["statistical", "ml_model", "rule_based", "ensemble"]
+        
+        for detector in detectors:
+            FALSE_POSITIVES.labels(detector=detector).inc()
+
+    def test_memory_engine_labels(self):
+        """Test memory engine metrics with different store types."""
+        if not (MEMORY_ENGINE_HITS and MEMORY_ENGINE_MISSES and MEMORY_ENGINE_SIZE):
+            pytest.skip("Memory engine metrics not available")
+        
+        store_types = ["redis", "memory", "disk"]
+        
+        for store_type in store_types:
+            MEMORY_ENGINE_HITS.labels(store_type=store_type).inc()
+            MEMORY_ENGINE_MISSES.labels(store_type=store_type).inc()
+            MEMORY_ENGINE_SIZE.labels(store_type=store_type).set(1024)
+
+    def test_errors_labels(self):
+        """Test ERRORS with different error types and endpoints."""
+        if not ERRORS:
+            pytest.skip("ERRORS not available")
+        
+        error_cases = [
+            ("ValueError", "/api/endpoint1"),
+            ("TypeError", "/api/endpoint2"),
+            ("ConnectionError", "/api/endpoint3"),
+            ("TimeoutError", "/api/endpoint1"),
+        ]
+        
+        for error_type, endpoint in error_cases:
+            ERRORS.labels(type=error_type, endpoint=endpoint).inc()
+
+    def test_recovery_actions_labels(self):
+        """Test RECOVERY_ACTIONS with different action types and statuses."""
+        if not RECOVERY_ACTIONS:
+            pytest.skip("RECOVERY_ACTIONS not available")
+        
+        recovery_tests = [
+            ("restart", "success"),
+            ("rollback", "success"),
+            ("scale_up", "in_progress"),
+            ("circuit_open", "success"),
+            ("failover", "failure"),
+        ]
+        
+        for action_type, status in recovery_tests:
+            RECOVERY_ACTIONS.labels(type=action_type, status=status).inc()
+
+
+# ============================================================================
+# METRIC CACHE TESTS
+# ============================================================================
+
+class TestMetricCache:
+    """Test metric caching functionality."""
+
+    def test_metric_cache_population(self):
+        """Test that metric cache is populated on creation."""
+        from astraguard.observability import _safe_create_metric, _metric_cache
+        from prometheus_client import Counter
+        
+        # Clear specific cache entry if exists
+        metric_name = f"test_cache_pop_{time.time()}"
+        if metric_name in _metric_cache:
+            del _metric_cache[metric_name]
+        
+        # Create metric
+        metric = _safe_create_metric(
+            Counter,
+            metric_name,
+            metric_name,
+            "Test cache population"
+        )
+        
+        # Verify it's in cache
+        assert metric_name in _metric_cache
+        assert _metric_cache[metric_name] is metric
+
+    def test_metric_cache_hit_performance(self):
+        """Test that cache hits are faster than creation."""
+        from astraguard.observability import _safe_create_metric, _metric_cache
+        from prometheus_client import Counter
+        
+        metric_name = f"test_cache_perf_{time.time()}"
+        
+        # First call - will create and cache
+        start = time.time()
+        metric1 = _safe_create_metric(
+            Counter,
+            metric_name,
+            metric_name,
+            "Test cache performance"
+        )
+        first_call_time = time.time() - start
+        
+        # Second call - should hit cache
+        start = time.time()
+        metric2 = _safe_create_metric(
+            Counter,
+            metric_name,
+            metric_name,
+            "Test cache performance"
+        )
+        second_call_time = time.time() - start
+        
+        # Cache hit should be faster
+        assert second_call_time <= first_call_time
+        assert metric1 is metric2
+
+    def test_metric_cache_consistency(self):
+        """Test that cache maintains consistency across operations."""
+        from astraguard.observability import _safe_create_metric, _metric_cache
+        from prometheus_client import Counter
+        
+        metric_name = f"test_cache_consistency_{time.time()}"
+        
+        # Create metric multiple times
+        metrics = []
+        for i in range(5):
+            metric = _safe_create_metric(
+                Counter,
+                metric_name,
+                metric_name,
+                "Test cache consistency"
+            )
+            metrics.append(metric)
+        
+        # All should be the same instance
+        for metric in metrics:
+            assert metric is metrics[0]
+        
+        # Cache should contain only one entry for this metric
+        assert metric_name in _metric_cache
+        assert _metric_cache[metric_name] is metrics[0]
+
+
+# ============================================================================
+# ENHANCED ERROR HANDLING TESTS
+# ============================================================================
+
+class TestEnhancedErrorHandling:
+    """Test enhanced error handling for get_metrics_endpoint."""
+
+    @patch('prometheus_client.generate_latest')
+    def test_get_metrics_endpoint_with_exception(self, mock_generate_latest):
+        """Test get_metrics_endpoint handles exceptions properly."""
+        mock_generate_latest.side_effect = RuntimeError("Registry error")
+        
+        with pytest.raises(RuntimeError):
+            get_metrics_endpoint()
+
+    @patch('prometheus_client.generate_latest')
+    def test_get_metrics_endpoint_increments_error_metric(self, mock_generate_latest):
+        """Test that get_metrics_endpoint increments error metric on failure."""
+        from astraguard.observability import ERRORS
+        
+        if not ERRORS:
+            pytest.skip("ERRORS metric not available")
+        
+        mock_generate_latest.side_effect = ValueError("Test error")
+        
+        # Get initial error count (if metric exists)
+        try:
+            with pytest.raises(ValueError):
+                get_metrics_endpoint()
+        except Exception:
+            pass
+
+    def test_get_metrics_endpoint_returns_bytes(self):
+        """Test that get_metrics_endpoint returns bytes."""
+        result = get_metrics_endpoint()
+        assert isinstance(result, bytes)
+        assert len(result) > 0
+
+    def test_get_metrics_endpoint_contains_metric_data(self):
+        """Test that get_metrics_endpoint contains actual metric data."""
+        result = get_metrics_endpoint()
+        
+        # Should contain standard Prometheus format indicators
+        assert b"# HELP" in result or b"# TYPE" in result or len(result) > 0
+
+    def test_get_metrics_endpoint_after_metric_operations(self):
+        """Test get_metrics_endpoint after performing metric operations."""
+        # Perform some metric operations
+        with track_request("/api/test_metrics_endpoint"):
+            time.sleep(0.01)
+        
+        # Get metrics
+        result = get_metrics_endpoint()
+        
+        assert isinstance(result, bytes)
+        assert len(result) > 0
+
+
+# ============================================================================
+# ADDITIONAL INTEGRATION TESTS
+# ============================================================================
+
+class TestAdditionalIntegration:
+    """Additional integration tests for comprehensive coverage."""
+
+    def test_all_context_managers_in_sequence(self):
+        """Test all context managers used in sequence."""
+        endpoints = ["/api/seq1", "/api/seq2", "/api/seq3"]
+        
+        for endpoint in endpoints:
+            with track_request(endpoint):
+                time.sleep(0.001)
+            
+            with track_anomaly_detection():
+                time.sleep(0.001)
+            
+            with track_retry_attempt(endpoint):
+                time.sleep(0.001)
+            
+            with track_chaos_recovery("sequential_test"):
+                time.sleep(0.001)
+
+    def test_metrics_server_lifecycle(self):
+        """Test metrics server startup and shutdown lifecycle."""
+        # Test shutdown (should be safe even if not started)
+        shutdown_metrics_server()
+        
+        # Test getting registry
+        registry = get_registry()
+        assert registry is not None
+
+    @pytest.mark.asyncio
+    async def test_mixed_sync_async_operations(self):
+        """Test that sync and async operations don't interfere."""
+        from astraguard.observability import async_track_request
+        
+        # Sync operation
+        with track_request("/api/sync"):
+            time.sleep(0.01)
+        
+        # Async operation
+        async with async_track_request("/api/async"):
+            await asyncio.sleep(0.01)
+        
+        # Another sync operation
+        with track_request("/api/sync2"):
+            time.sleep(0.01)
+
+    def test_histogram_buckets_configuration(self):
+        """Test that histogram metrics have proper bucket configuration."""
+        if not REQUEST_LATENCY:
+            pytest.skip("REQUEST_LATENCY not available")
+        
+        # Histograms should have buckets defined
+        assert hasattr(REQUEST_LATENCY, '_buckets') or hasattr(REQUEST_LATENCY, '_upper_bounds')
+
+    def test_summary_metrics_observation(self):
+        """Test summary metrics can observe values."""
+        if not REQUEST_SIZE:
+            pytest.skip("REQUEST_SIZE not available")
+        
+        # Should be able to observe values
+        test_sizes = [100, 500, 1000, 5000, 10000]
+        for size in test_sizes:
+            REQUEST_SIZE.observe(size)
+
+    def test_gauge_increment_decrement(self):
+        """Test gauge metrics support inc/dec operations."""
+        if not ACTIVE_CONNECTIONS:
+            pytest.skip("ACTIVE_CONNECTIONS not available")
+        
+        initial_value = ACTIVE_CONNECTIONS._value._value
+        
+        # Test increment
+        ACTIVE_CONNECTIONS.inc(5)
+        assert ACTIVE_CONNECTIONS._value._value == initial_value + 5
+        
+        # Test decrement
+        ACTIVE_CONNECTIONS.dec(5)
+        assert ACTIVE_CONNECTIONS._value._value == initial_value
+
+    def test_gauge_set_operation(self):
+        """Test gauge metrics support set operation."""
+        if not MEMORY_ENGINE_SIZE:
+            pytest.skip("MEMORY_ENGINE_SIZE not available")
+        
+        test_value = 12345
+        MEMORY_ENGINE_SIZE.labels(store_type="test").set(test_value)

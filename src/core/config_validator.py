@@ -124,9 +124,9 @@ class ConfigValidator:
             ValidationRule(
                 name="API_HOST",
                 required=False,
-                default="0.0.0.0",
+                default="0.0.0.0",  # nosec B104
                 description="API server bind address",
-                example="0.0.0.0"
+                example="0.0.0.0"  # nosec B104
             ),
             ValidationRule(
                 name="API_PORT",
