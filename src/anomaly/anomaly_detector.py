@@ -40,6 +40,18 @@ METADATA_PATH: str = os.path.join(os.path.dirname(__file__), "metadata.json")
 _MODEL: Optional[Any] = None
 _MODEL_LOADED: bool = False
 _USING_HEURISTIC_MODE: bool = False
+_model_lock: asyncio.Lock = asyncio.Lock()
+
+
+def is_model_loaded() -> bool:
+    """Check if the model is currently loaded."""
+    return _MODEL_LOADED
+
+
+def is_heuristic_active() -> bool:
+    """Check if heuristic mode is active."""
+    return _USING_HEURISTIC_MODE
+
 
 # Initialize circuit breaker for model loading
 _model_loader_cb: CircuitBreaker = register_circuit_breaker(
@@ -290,68 +302,75 @@ async def load_model() -> bool:
     """
     global _MODEL, _MODEL_LOADED, _USING_HEURISTIC_MODE
 
-    try:
-        # Call through retry (handles transient) then circuit breaker (handles cascading)
-        result = await _model_loader_cb.call(
-            _load_model_with_retry,  # Retry wrapper
-            fallback=_load_model_fallback,
-        )
-        # Cast needed because circuit breaker call() returns Any
-        return cast(bool, result)
+    if _MODEL_LOADED:
+        return True
 
-    except CircuitOpenError as e:
-        logger.error(
-            f"Circuit breaker open: {e}",
-            extra={
-                "component": "anomaly_detector",
-                "error_type": "CircuitOpenError",
-                "circuit_state": str(e.state)
-            }
-        )
-        _USING_HEURISTIC_MODE = True
-        ANOMALY_MODEL_FALLBACK_ACTIVATIONS.inc()
-        return False
-    
-    except CustomTimeoutError as e:
-        logger.error(
-            f"Model loading timeout: {e}",
-            extra={
-                "component": "anomaly_detector",
-                "error_type": "TimeoutError",
-                "operation": "load_model"
-            }
-        )
-        ANOMALY_MODEL_LOAD_ERRORS_TOTAL.inc()
-        _USING_HEURISTIC_MODE = True
-        return False
-    
-    except ModelLoadError as e:
-        logger.error(
-            f"Model load error: {e.message}",
-            extra={
-                "component": "anomaly_detector",
-                "error_type": "ModelLoadError",
-                "context": e.context
-            }
-        )
-        ANOMALY_MODEL_LOAD_ERRORS_TOTAL.inc()
-        _USING_HEURISTIC_MODE = True
-        return False
-    
-    except Exception as e:
-        logger.error(
-            f"Unexpected error during model load: {e}",
-            extra={
-                "error_type": type(e).__name__,
-                "model_path": MODEL_PATH,
-                "operation": "model_load",
-                "fallback_active": True
-            },
-            exc_info=True
-        )
-        ANOMALY_MODEL_LOAD_ERRORS_TOTAL.inc()
-        _USING_HEURISTIC_MODE = True
-        return False
+    async with _model_lock:
+        if _MODEL_LOADED:
+            return True
+
+        try:
+            # Call through retry (handles transient) then circuit breaker (handles cascading)
+            result = await _model_loader_cb.call(
+                _load_model_with_retry,  # Retry wrapper
+                fallback=_load_model_fallback,
+            )
+            # Cast needed because circuit breaker call() returns Any
+            return cast(bool, result)
+
+        except CircuitOpenError as e:
+            logger.error(
+                f"Circuit breaker open: {e}",
+                extra={
+                    "component": "anomaly_detector",
+                    "error_type": "CircuitOpenError",
+                    "circuit_state": str(e.state)
+                }
+            )
+            _USING_HEURISTIC_MODE = True
+            ANOMALY_MODEL_FALLBACK_ACTIVATIONS.inc()
+            return False
+
+        except CustomTimeoutError as e:
+            logger.error(
+                f"Model loading timeout: {e}",
+                extra={
+                    "component": "anomaly_detector",
+                    "error_type": "TimeoutError",
+                    "operation": "load_model"
+                }
+            )
+            ANOMALY_MODEL_LOAD_ERRORS_TOTAL.inc()
+            _USING_HEURISTIC_MODE = True
+            return False
+
+        except ModelLoadError as e:
+            logger.error(
+                f"Model load error: {e.message}",
+                extra={
+                    "component": "anomaly_detector",
+                    "error_type": "ModelLoadError",
+                    "context": e.context
+                }
+            )
+            ANOMALY_MODEL_LOAD_ERRORS_TOTAL.inc()
+            _USING_HEURISTIC_MODE = True
+            return False
+
+        except Exception as e:
+            logger.error(
+                f"Unexpected error during model load: {e}",
+                extra={
+                    "error_type": type(e).__name__,
+                    "model_path": MODEL_PATH,
+                    "operation": "model_load",
+                    "fallback_active": True
+                },
+                exc_info=True
+            )
+            ANOMALY_MODEL_LOAD_ERRORS_TOTAL.inc()
+            _USING_HEURISTIC_MODE = True
+            return False
 
 
 def _detect_anomaly_heuristic(data: Dict[str, Any]) -> Tuple[bool, float]:
@@ -469,10 +488,10 @@ async def detect_anomaly(data: Dict[str, Any]) -> Tuple[bool, float]:
         resource_status: Dict[str, Any] = resource_monitor.check_resource_health()
         if resource_status['overall'] == 'critical':
             logger.warning(
-                f"Resource check failed: {e}. Proceeding with detection.",
+                f"Resource check failed (critical). Status: {resource_status}. Proceeding with detection.",
                 extra={
                     "component": "anomaly_detector",
-                    "error_type": type(e).__name__
+                    "error_type": "ResourceCritical"
                 }
             )
 

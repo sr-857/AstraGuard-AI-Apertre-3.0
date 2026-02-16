@@ -6,8 +6,7 @@ and trigger preventive recovery actions before issues escalate.
 """
 
 import numpy as np
-import pandas as pd
-from typing import Dict, List, Tuple, Optional, Any
+from typing import Dict, List, Tuple, Optional, Any, TYPE_CHECKING
 from datetime import datetime, timedelta
 import logging
 from dataclasses import dataclass
@@ -17,15 +16,16 @@ from concurrent.futures import ThreadPoolExecutor
 import pickle
 import os
 
-# ML imports
-from sklearn.ensemble import RandomForestRegressor, IsolationForest
-from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error, r2_score
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader
+if TYPE_CHECKING:
+    import pandas as pd
+    from sklearn.ensemble import RandomForestRegressor, IsolationForest
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.model_selection import train_test_split
+    from sklearn.metrics import mean_squared_error, r2_score
+    import torch
+    import torch.nn as nn
+    import torch.optim as optim
+    from torch.utils.data import Dataset, DataLoader
 
 # Project imports
 from memory_engine.memory_store import AdaptiveMemoryStore
@@ -81,42 +81,43 @@ class TimeSeriesData:
     active_connections: int
     failure_occurred: bool = False
 
-class LSTMPredictor(nn.Module):
-    """LSTM model for time-series prediction."""
+if TYPE_CHECKING:
+    class LSTMPredictor(nn.Module):
+        """LSTM model for time-series prediction."""
 
-    def __init__(self, input_size: int, hidden_size: int = 64, num_layers: int = 2):
-        super(LSTMPredictor, self).__init__()
-        self.hidden_size = hidden_size
-        self.num_layers = num_layers
+        def __init__(self, input_size: int, hidden_size: int = 64, num_layers: int = 2):
+            super(LSTMPredictor, self).__init__()
+            self.hidden_size = hidden_size
+            self.num_layers = num_layers
 
-        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
-        self.fc = nn.Linear(hidden_size, 1)
-        self.dropout = nn.Dropout(0.2)
+            self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
+            self.fc = nn.Linear(hidden_size, 1)
+            self.dropout = nn.Dropout(0.2)
 
-    def forward(self, x):
-        h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
-        c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
+        def forward(self, x):
+            h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
+            c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
 
-        out, _ = self.lstm(x, (h0, c0))
-        out = self.dropout(out[:, -1, :])
-        out = self.fc(out)
-        return out
+            out, _ = self.lstm(x, (h0, c0))
+            out = self.dropout(out[:, -1, :])
+            out = self.fc(out)
+            return out
 
-class TimeSeriesDataset(Dataset):
-    """Dataset for time-series data."""
+    class TimeSeriesDataset(Dataset):
+        """Dataset for time-series data."""
 
-    def __init__(self, data: np.ndarray, targets: np.ndarray, sequence_length: int = 24):
-        self.data = data
-        self.targets = targets
-        self.sequence_length = sequence_length
+        def __init__(self, data: np.ndarray, targets: np.ndarray, sequence_length: int = 24):
+            self.data = data
+            self.targets = targets
+            self.sequence_length = sequence_length
 
-    def __len__(self):
-        return len(self.data) - self.sequence_length
+        def __len__(self):
+            return len(self.data) - self.sequence_length
 
-    def __getitem__(self, idx):
-        x = self.data[idx:idx + self.sequence_length]
-        y = self.targets[idx + self.sequence_length]
-        return torch.FloatTensor(x), torch.FloatTensor([y])
+        def __getitem__(self, idx):
+            x = self.data[idx:idx + self.sequence_length]
+            y = self.targets[idx + self.sequence_length]
+            return torch.FloatTensor(x), torch.FloatTensor([y])
 
 class PredictiveMaintenanceEngine:
     """
@@ -133,7 +134,7 @@ class PredictiveMaintenanceEngine:
     def __init__(self, memory_store: AdaptiveMemoryStore):
         self.memory_store = memory_store
         self.models: Dict[FailureType, Dict[PredictionModel, Any]] = {}
-        self.scalers: Dict[FailureType, StandardScaler] = {}
+        self.scalers: Dict[FailureType, "StandardScaler"] = {}
         self.model_dir = "security_engine/models"
         self.training_data: List[TimeSeriesData] = []
         self.prediction_history: List[PredictionResult] = []
@@ -162,6 +163,7 @@ class PredictiveMaintenanceEngine:
             await self._load_models()
 
             # Initialize models for each failure type
+            from sklearn.preprocessing import StandardScaler
             for failure_type in FailureType:
                 self.models[failure_type] = {}
                 self.scalers[failure_type] = StandardScaler()
@@ -368,6 +370,10 @@ class PredictiveMaintenanceEngine:
 
     async def _train_models_for_failure_type(self, failure_type: FailureType, features: np.ndarray, targets: np.ndarray) -> Dict[str, float]:
         """Train multiple models for a specific failure type."""
+        from sklearn.ensemble import RandomForestRegressor, IsolationForest
+        from sklearn.model_selection import train_test_split
+        from sklearn.metrics import mean_squared_error, r2_score
+
         metrics = {}
 
         # Split data
@@ -398,8 +404,9 @@ class PredictiveMaintenanceEngine:
         logger.info(f"Trained models for {failure_type.value}: RF R² = {rf_r2:.3f}")
         return metrics
 
-    def _prepare_training_dataframe(self) -> pd.DataFrame:
+    def _prepare_training_dataframe(self) -> "pd.DataFrame":
         """Convert training data to pandas DataFrame."""
+        import pandas as pd
         data = []
         for item in self.training_data:
             data.append({
@@ -419,7 +426,7 @@ class PredictiveMaintenanceEngine:
         df = df.sort_values('timestamp')
         return df
 
-    def _prepare_features_and_targets(self, df: pd.DataFrame, failure_type: FailureType) -> Tuple[np.ndarray, np.ndarray]:
+    def _prepare_features_and_targets(self, df: "pd.DataFrame", failure_type: FailureType) -> Tuple[np.ndarray, np.ndarray]:
         """Prepare features and targets for a specific failure type."""
         # Create target based on failure type
         if failure_type == FailureType.CPU_SPIKE:
@@ -469,6 +476,7 @@ class PredictiveMaintenanceEngine:
             return features
         
         # Create DataFrame from recent data + current data
+        import pandas as pd
         recent_with_current = self.recent_data + [data]
         df_recent = pd.DataFrame([{
             'cpu_usage': d.cpu_usage,
@@ -589,17 +597,25 @@ class PredictiveMaintenanceEngine:
     async def _load_models(self) -> None:
         """Load trained models from disk."""
         try:
-            for failure_type in FailureType:
-                model_path = os.path.join(self.model_dir, f"{failure_type.value}_models.pkl")
-                scaler_path = os.path.join(self.model_dir, f"{failure_type.value}_scaler.pkl")
+            def _load_impl() -> Tuple[Dict[FailureType, Dict[PredictionModel, Any]], Dict[FailureType, Any]]:
+                models = {}
+                scalers = {}
+                for failure_type in FailureType:
+                    model_path = os.path.join(self.model_dir, f"{failure_type.value}_models.pkl")
+                    scaler_path = os.path.join(self.model_dir, f"{failure_type.value}_scaler.pkl")
 
-                if os.path.exists(model_path):
-                    with open(model_path, 'rb') as f:
-                        self.models[failure_type] = pickle.load(f)
+                    if os.path.exists(model_path):
+                        with open(model_path, 'rb') as f:
+                            models[failure_type] = pickle.load(f)
 
-                if os.path.exists(scaler_path):
-                    with open(scaler_path, 'rb') as f:
-                        self.scalers[failure_type] = pickle.load(f)
+                    if os.path.exists(scaler_path):
+                        with open(scaler_path, 'rb') as f:
+                            scalers[failure_type] = pickle.load(f)
+                return models, scalers
+
+            loaded_models, loaded_scalers = await asyncio.to_thread(_load_impl)
+            self.models.update(loaded_models)
+            self.scalers.update(loaded_scalers)
 
             logger.info("Models loaded successfully")
 
@@ -649,12 +665,18 @@ class PredictiveMaintenanceEngine:
 # Global instance
 _predictive_engine: Optional[PredictiveMaintenanceEngine] = None
 
-async def get_predictive_maintenance_engine(memory_store: AdaptiveMemoryStore) -> PredictiveMaintenanceEngine:
+async def get_predictive_maintenance_engine(
+    memory_store: AdaptiveMemoryStore,
+    background_init: bool = False
+) -> PredictiveMaintenanceEngine:
     """Get or create the global predictive maintenance engine instance."""
     global _predictive_engine
 
     if _predictive_engine is None:
         _predictive_engine = PredictiveMaintenanceEngine(memory_store)
-        await _predictive_engine.initialize()
+        if background_init:
+            asyncio.create_task(_predictive_engine.initialize())
+        else:
+            await _predictive_engine.initialize()
 
     return _predictive_engine

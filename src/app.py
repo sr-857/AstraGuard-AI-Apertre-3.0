@@ -10,9 +10,11 @@ import sys
 import os
 import signal
 import logging
+import time
 from typing import Any, NoReturn, Optional
 from types import FrameType
 
+start_time = time.perf_counter()
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -70,9 +72,12 @@ if __name__ == "__main__":
             )
             log_level = "info"
         
-        logger.info(f"Starting AstraGuard AI server on {host}:{port}")
-        logger.info(f"Log level: {log_level}")
+        print(f"Starting AstraGuard AI server on {host}:{port}")
+        print(f"Log level: {log_level}")
         
+        end_time = time.perf_counter()
+        print(f"Startup Time: {end_time - start_time:.2f} seconds")
+
         uvicorn.run(
             app,
             host=host,

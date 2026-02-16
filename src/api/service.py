@@ -5,6 +5,7 @@ FastAPI-based REST API for telemetry ingestion and anomaly detection.
 """
 
 import os
+import json
 import time
 import asyncio
 from typing import List, Optional, Any, Union
@@ -59,7 +60,7 @@ from api.logging_middleware import RequestLoggingMiddleware, get_correlation_id
 from state_machine.state_engine import StateMachine, MissionPhase
 from config.mission_phase_policy_loader import MissionPhasePolicyLoader
 from anomaly_agent.phase_aware_handler import PhaseAwareAnomalyHandler
-from anomaly.anomaly_detector import detect_anomaly, load_model
+from anomaly.anomaly_detector import detect_anomaly, load_model, is_model_loaded, is_heuristic_active
 from classifier.fault_classifier import classify
 from core.component_health import get_health_monitor
 from memory_engine.memory_store import AdaptiveMemoryStore
@@ -69,7 +70,7 @@ from security_engine.predictive_maintenance import (
     PredictionResult
 )
 from fastapi.responses import Response
-from core.metrics import get_metrics_text, get_metrics_content_type
+from core.metrics import get_metrics_text, get_metrics_content_type, STARTUP_DURATION_SECONDS
 from core.rate_limiter import RateLimiter, RateLimitMiddleware, get_rate_limit_config
 from backend.redis_client import RedisClient
 import numpy as np
@@ -126,6 +127,14 @@ async def initialize_components() -> None:
     """Initialize application components (called on startup or in tests)."""
     global state_machine, policy_loader, phase_aware_handler, memory_store, predictive_engine
 
+    # Pre-import sklearn to avoid circular import issues in concurrent background tasks
+    try:
+        import sklearn.base
+        import sklearn.ensemble
+        import sklearn.preprocessing
+    except ImportError:
+        pass
+
     if state_machine is None:
         state_machine = StateMachine()
     if policy_loader is None:
@@ -135,7 +144,7 @@ async def initialize_components() -> None:
     if memory_store is None:
         memory_store = AdaptiveMemoryStore()
     if predictive_engine is None:
-        predictive_engine = await get_predictive_maintenance_engine(memory_store)
+        predictive_engine = await get_predictive_maintenance_engine(memory_store, background_init=True)
 
 
 def _check_credential_security() -> None:
@@ -223,47 +232,47 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Security: Check credentials at startup
     _check_credential_security()
 
-    # Initialize components
-    await initialize_components()
-    
-    # Pre-load anomaly detection model async
-    await load_model()
+    # Helper for Redis init
+    async def init_redis_and_rate_limit():
+        global redis_client, telemetry_limiter, api_limiter
+        try:
+            redis_url: Optional[str] = get_secret("redis_url")
+            redis_client = RedisClient(redis_url=redis_url)
+            await redis_client.connect()
 
-    # Initialize rate limiting
-    try:
-        redis_url: Optional[str] = get_secret("redis_url")
-        redis_client = RedisClient(redis_url=redis_url)
-        await redis_client.connect()
+            # Get rate limit configurations
+            rate_configs: Dict[str, Tuple[int, int]] = get_rate_limit_config()
 
-        # Get rate limit configurations
-        rate_configs: Dict[str, Tuple[int, int]] = get_rate_limit_config()
+            # Create rate limiters
+            telemetry_limiter = RateLimiter(
+                redis_client.redis,
+                "telemetry",
+                rate_configs["telemetry"][0],  # rate_per_second
+                rate_configs["telemetry"][1]   # burst_capacity
+            )
+            api_limiter = RateLimiter(
+                redis_client.redis,
+                "api",
+                rate_configs["api"][0],  # rate_per_second
+                rate_configs["api"][1]   # burst_capacity
+            )
+            print("[OK] Rate limiting initialized successfully")
+        except Exception as e:
+            print(f"[WARNING] Rate limiting initialization failed: {e}")
+            print("Rate limiting will be disabled")
 
-        # Create rate limiters
-        telemetry_limiter = RateLimiter(
-            redis_client.redis,
-            "telemetry",
-            rate_configs["telemetry"][0],  # rate_per_second
-            rate_configs["telemetry"][1]   # burst_capacity
-        )
-        api_limiter = RateLimiter(
-            redis_client.redis,
-            "api",
-            rate_configs["api"][0],  # rate_per_second
-            rate_configs["api"][1]   # burst_capacity
-        )
+    # Initialize components and Redis in parallel
+    await asyncio.gather(
+        initialize_components(),
+        init_redis_and_rate_limit()
+    )
 
-        # Note: RateLimitMiddleware can only be added during app setup, not in lifespan
-        # This is a limitation of Starlette/FastAPI - middleware stack is locked after startup
-
-        print("[OK] Rate limiting initialized successfully")
-    except Exception as e:
-        print(f"[WARNING] Rate limiting initialization failed: {e}")
-        print("Rate limiting will be disabled")
+    # Pre-load anomaly detection model async in background
+    asyncio.create_task(load_model())
 
     # Initialize observability (if available)
     if OBSERVABILITY_ENABLED:
         try:
-            logger = get_logger(__name__)
             setup_json_logging(log_level=get_secret("log_level", "INFO"))
             initialize_tracing()
             setup_auto_instrumentation()
@@ -272,6 +281,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             logger.info("event", "observability_initialized", service="astra-guard", version="1.0.0")
         except Exception as e:
             print(f"Warning: Observability initialization failed: {e}")
+
+    # Record startup duration
+    startup_duration = time.time() - start_time
+    STARTUP_DURATION_SECONDS.set(startup_duration)
+    logger.info(f"Startup completed in {startup_duration:.2f}s")
 
     yield
 
@@ -503,6 +517,28 @@ async def health_live() -> Dict[str, Any]:
         "timestamp": datetime.now().isoformat(),
         "version": "1.0.0"
     }
+
+
+@app.get("/ready")
+async def ready() -> Response:
+    """
+    Readiness probe endpoint for Kubernetes.
+    Returns 503 until models are loaded or heuristic mode is active.
+    """
+    model_ready = is_model_loaded() or is_heuristic_active()
+
+    if not model_ready:
+        return Response(
+            content=json.dumps({"status": "loading"}),
+            media_type="application/json",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE
+        )
+
+    return Response(
+        content=json.dumps({"status": "ready"}),
+        media_type="application/json",
+        status_code=status.HTTP_200_OK
+    )
 
 
 @app.get("/health/ready")

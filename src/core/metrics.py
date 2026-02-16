@@ -182,6 +182,12 @@ COMPONENT_WARNING_COUNT = Counter(
 # System Metrics
 # ============================================================================
 
+STARTUP_DURATION_SECONDS = Gauge(
+    'astraguard_startup_duration_seconds',
+    'Time taken for application startup in seconds',
+    registry=REGISTRY
+)
+
 MEMORY_STORE_SIZE_BYTES = Gauge(
     'astraguard_memory_store_size_bytes',
     'Memory store size in bytes',

@@ -8,10 +8,8 @@ from anomaly.anomaly_detector import (
     detect_anomaly,
     _detect_anomaly_heuristic,
     load_model,
-    _MODEL,
-    _MODEL_LOADED,
-    _USING_HEURISTIC_MODE,
 )
+import anomaly.anomaly_detector as ad_module
 
 
 
@@ -26,15 +24,14 @@ class TestAnomalyDetector:
     @pytest.fixture(autouse=True)
     def reset_globals(self):
         """Reset global state before each test."""
-        global _MODEL, _MODEL_LOADED, _USING_HEURISTIC_MODE
-        _MODEL = None
-        _MODEL_LOADED = False
-        _USING_HEURISTIC_MODE = False
+        ad_module._MODEL = None
+        ad_module._MODEL_LOADED = False
+        ad_module._USING_HEURISTIC_MODE = False
         yield
         # Cleanup after test
-        _MODEL = None
-        _MODEL_LOADED = False
-        _USING_HEURISTIC_MODE = False
+        ad_module._MODEL = None
+        ad_module._MODEL_LOADED = False
+        ad_module._USING_HEURISTIC_MODE = False
 
     def test_detect_anomaly_heuristic_normal_data(self):
         """Test heuristic detection with normal telemetry data."""
