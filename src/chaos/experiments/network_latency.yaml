@@ -1,0 +1,111 @@
+title: Network Latency Injection Test
+description: |
+  Validates system behavior under network degradation.
+  Tests that:
+  1. Retry logic activates during high latency
+  2. System remains responsive (does not timeout)
+  3. Fallback mode activates if latency exceeds thresholds
+  4. Service recovers when latency normalizes
+
+steady-state-hypothesis:
+  title: Network is responsive before chaos
+  probes:
+    - type: probe
+      name: latency-check-before
+      tolerance:
+        type: range
+        range: [0, 0.1]
+        target: latency
+      provider:
+        type: http
+        url: http://localhost:8000/health/state
+      timeout: 5
+
+method:
+  - type: action
+    name: inject-network-latency
+    provider:
+      type: python
+      module: chaos.actions.network_chaos
+      func: inject_latency
+      arguments:
+        duration_seconds: 45
+        latency_ms: 500
+        jitter_ms: 100
+    pauses:
+      after: 5
+
+  - type: probe
+    name: verify-retry-activation
+    tolerance:
+      type: jsonpath
+      path: $.retry.state
+      expect:
+        - ELEVATED
+        - CRITICAL
+    provider:
+      type: http
+      url: http://localhost:8000/health/state
+    timeout: 10
+
+  - type: probe
+    name: verify-fallback-heuristic
+    tolerance:
+      type: jsonpath
+      path: $.fallback.mode
+      expect: HEURISTIC
+    provider:
+      type: http
+      url: http://localhost:8000/health/state
+    timeout: 10
+
+  - type: action
+    name: remove-latency
+    provider:
+      type: python
+      module: chaos.actions.network_chaos
+      func: remove_latency
+    pauses:
+      after: 15
+
+  - type: probe
+    name: verify-retry-stabilization
+    tolerance:
+      type: jsonpath
+      path: $.retry.state
+      expect: STABLE
+    provider:
+      type: http
+      url: http://localhost:8000/health/state
+    timeout: 30
+
+  - type: probe
+    name: verify-fallback-primary
+    tolerance:
+      type: jsonpath
+      path: $.fallback.mode
+      expect: PRIMARY
+    provider:
+      type: http
+      url: http://localhost:8000/health/state
+    timeout: 30
+
+rollbacks:
+  - type: action
+    name: ensure-latency-removed
+    provider:
+      type: python
+      module: chaos.actions.network_chaos
+      func: remove_latency
+
+tags:
+  - resilience
+  - network
+  - retry
+  - latency
+
+configuration:
+  slo:
+    max_latency_p99: 1.0
+    max_retry_failures: 50
+    max_fallback_duration: 60

@@ -19,6 +19,9 @@ import json
 from pathlib import Path
 from typing import Dict, Any
 
+# Mark E2E tests as slow due to full stack operations
+pytestmark = [pytest.mark.slow, pytest.mark.timeout(90)]
+
 from fastapi.testclient import TestClient
 
 
