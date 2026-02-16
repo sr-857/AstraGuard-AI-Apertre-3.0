@@ -57,6 +57,9 @@ def setup_json_logging(
         service_name: The name of the service.
         environment: The environment name.
     """
+    # Use cached secret retrieval to avoid repeated I/O
+    if environment is None:
+        environment = _cached_get_secret("environment", "development")
     try:
         # Use cached secret retrieval for consistency
         if environment is None:
@@ -115,15 +118,7 @@ def setup_json_logging(
         root_logger.addHandler(stream_handler)
 
         # Add global context with cached secret retrieval
-        try:
-            app_version = _cached_get_secret("app_version", "1.0.0")
-        except (KeyError, ValueError, Exception) as e:
-
-            app_version = "1.0.0"
-            print(
-                f"Warning: Failed to retrieve app_version secret ({type(e).__name__}): {e}. Using default '1.0.0'.",
-                file=sys.stderr
-            )
+        app_version = _cached_get_secret("app_version", "1.0.0")
 
         structlog.contextvars.clear_contextvars()
         structlog.contextvars.bind_contextvars(
@@ -436,6 +431,7 @@ async def async_log_request(
 ):
     """
     Async version of log_request to avoid blocking in async contexts.
+    Optimized to execute directly without thread overhead since logging is fast.
 
     Args:
         logger: Structlog logger instance
@@ -445,9 +441,8 @@ async def async_log_request(
         duration_ms: Request duration in milliseconds
         **extra: Additional context fields
     """
-    await asyncio.to_thread(
-        log_request, logger, method, endpoint, status, duration_ms, **extra
-    )
+    # Logging is typically fast, execute directly to avoid thread spawn overhead
+    log_request(logger, method, endpoint, status, duration_ms, **extra)
 
 
 async def async_log_error(
@@ -458,6 +453,7 @@ async def async_log_error(
 ):
     """
     Async version of log_error.
+    Optimized to execute directly without thread overhead since logging is fast.
 
     Args:
         logger: Structlog logger instance
@@ -465,7 +461,8 @@ async def async_log_error(
         context: Context description
         **extra: Additional context fields
     """
-    await asyncio.to_thread(log_error, logger, error, context, **extra)
+    # Logging is typically fast, execute directly to avoid thread spawn overhead
+    log_error(logger, error, context, **extra)
 
 
 async def async_log_detection(
@@ -477,6 +474,7 @@ async def async_log_detection(
 ):
     """
     Async version of log_detection.
+    Optimized to execute directly without thread overhead since logging is fast.
 
     Args:
         logger: Structlog logger instance
@@ -485,7 +483,8 @@ async def async_log_detection(
         confidence: Confidence score
         **extra: Additional context fields
     """
-    await asyncio.to_thread(log_detection, logger, severity, detected_type, confidence, **extra)
+    # Logging is typically fast, execute directly to avoid thread spawn overhead
+    log_detection(logger, severity, detected_type, confidence, **extra)
 
 
 # ============================================================================

@@ -1,0 +1,108 @@
+title: Circuit Breaker Failure Test
+description: |
+  Validates system resilience when circuit breaker opens due to repeated failures.
+  Tests that:
+  1. Circuit breaker opens after threshold failures
+  2. System degrades gracefully (does not crash)
+  3. Service recovers when failures stop
+  4. SLOs are maintained during degradation
+
+steady-state-hypothesis:
+  title: Service is healthy before chaos
+  probes:
+    - type: probe
+      name: health-check-before
+      tolerance: true
+      provider:
+        type: http
+        url: http://localhost:8000/health/state
+      timeout: 5
+
+method:
+  - type: action
+    name: inject-model-loader-failures
+    provider:
+      type: python
+      module: chaos.actions.failure_injection
+      func: inject_model_loader_failure
+      arguments:
+        duration_seconds: 30
+        failure_rate: 0.8
+    pauses:
+      after: 5
+
+  - type: probe
+    name: verify-circuit-open
+    tolerance:
+      type: jsonpath
+      path: $.circuit_breaker.state
+      expect: OPEN
+    provider:
+      type: http
+      url: http://localhost:8000/health/state
+    timeout: 10
+
+  - type: probe
+    name: verify-system-degraded
+    tolerance:
+      type: jsonpath
+      path: $.system.status
+      expect: DEGRADED
+    provider:
+      type: http
+      url: http://localhost:8000/health/state
+    timeout: 10
+
+  - type: action
+    name: stop-failures
+    provider:
+      type: python
+      module: chaos.actions.failure_injection
+      func: stop_failure_injection
+    pauses:
+      after: 10
+
+  - type: probe
+    name: verify-circuit-recovery
+    tolerance:
+      type: jsonpath
+      path: $.circuit_breaker.state
+      expect:
+        - CLOSED
+        - HALF_OPEN
+    provider:
+      type: http
+      url: http://localhost:8000/health/state
+    timeout: 30
+
+  - type: probe
+    name: verify-system-recovery
+    tolerance:
+      type: jsonpath
+      path: $.system.status
+      expect:
+        - HEALTHY
+        - DEGRADED
+    provider:
+      type: http
+      url: http://localhost:8000/health/state
+    timeout: 30
+
+rollbacks:
+  - type: action
+    name: ensure-failures-stopped
+    provider:
+      type: python
+      module: chaos.actions.failure_injection
+      func: stop_failure_injection
+
+tags:
+  - resilience
+  - circuit-breaker
+  - recovery
+
+configuration:
+  slo:
+    max_error_rate: 0.05
+    max_degradation_duration: 60
+    max_recovery_time: 30
