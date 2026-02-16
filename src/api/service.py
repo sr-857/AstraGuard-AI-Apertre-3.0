@@ -149,10 +149,8 @@ def _check_credential_security() -> None:
     """
     global _USING_DEFAULT_CREDENTIALS
 
-    metrics_user: Optional[str] = get_secret("METRICS_USER")
-    metrics_password: Optional[str] = get_secret("METRICS_PASSWORD")
-    metrics_user = get_secret("metrics_user")
-    metrics_password = get_secret("metrics_password")
+    metrics_user: Optional[str] = get_secret("METRICS_USER") or get_secret("metrics_user")
+    metrics_password: Optional[str] = get_secret("METRICS_PASSWORD") or get_secret("metrics_password")
 
     # Check if credentials are set
     if not metrics_user or not metrics_password:
@@ -345,10 +343,8 @@ def get_current_username(credentials: HTTPBasicCredentials = Depends(security)) 
         HTTPException 401: Invalid credentials
         HTTPException 500: Credentials not configured
     """
-    correct_username = get_secret("METRICS_USER")
-    correct_password = get_secret("METRICS_PASSWORD")
-    correct_username = get_secret("metrics_user")
-    correct_password = get_secret("metrics_password")
+    correct_username = get_secret("METRICS_USER") or get_secret("metrics_user")
+    correct_password = get_secret("METRICS_PASSWORD") or get_secret("metrics_password")
 
     # Security: Require credentials to be explicitly set
     if not correct_username or not correct_password:
@@ -428,31 +424,6 @@ def create_response(status: str, data: Optional[Dict[str, Any]] = None, **kwargs
     return response
 
 
-async def process_telemetry_batch(telemetry_list: List[Dict[str, Any]]) -> Dict[str, int]:
-    """Process a batch of telemetry data and return aggregated results."""
-    processed_count: int = 0
-    anomalies_detected: int = 0
-
-    for telemetry in telemetry_list:
-        try:
-            # Process individual telemetry (extracted from submit_telemetry logic)
-            processed_count += 1
-            
-            # Collect detected anomalies
-            if result.get('anomaly_detected'):
-                anomalies_detected += 1
-                detected_anomalies.append(result['anomaly'])
-    
-    # Store all anomalies at once with lock (more efficient than multiple appends)
-    if detected_anomalies:
-        async with anomaly_lock:
-            anomaly_history.extend(detected_anomalies)
-    
-    return {
-        "processed": processed_count,
-        "anomalies_detected": anomalies_detected
-    }
-
 # ============================================================================
 # API Endpoints
 # ============================================================================
@@ -464,27 +435,6 @@ async def root() -> HealthCheckResponse:
         version="1.0.0",
         timestamp=datetime.now()
     )
-
-
-@app.get("/metrics", tags=["monitoring"])
-async def get_metrics() -> Response:
-    """
-    Prometheus metrics endpoint.
-    
-    Returns Prometheus-formatted metrics including:
-    - HTTP request count and latency
-    - Anomaly detection metrics
-    - Circuit breaker state
-    - Retry attempts
-    - Recovery actions
-    """
-    if not OBSERVABILITY_ENABLED:
-        return Response(content="Observability not enabled", media_type="text/plain", status_code=503)
-    
-    from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
-    from starlette.responses import Response
-    
-    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.get("/health", response_model=HealthCheckResponse)
@@ -650,9 +600,9 @@ async def health_ready() -> Response:
     )
 
 
-@app.get("/metrics")
+@app.get("/metrics", tags=["monitoring"])
 async def metrics(username: str = Depends(get_current_username)) -> Response:
-    """Prometheus metrics endpoint."""
+    """Prometheus metrics endpoint (Authenticated)."""
     return Response(
         content=get_metrics_text(), 
         media_type=get_metrics_content_type()

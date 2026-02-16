@@ -5,6 +5,7 @@ import os
 import shutil
 import datetime
 import json
+import hashlib
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import IsolationForest
@@ -29,6 +30,10 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+def calculate_hash(df):
+    """Calculate SHA256 hash of the dataframe."""
+    return hashlib.sha256(pd.util.hash_pandas_object(df, index=True).values).hexdigest()
 
 def evaluate_model(model, X_processed, contamination_target=0.1):
     """
@@ -208,15 +213,26 @@ def main():
     model_filename = f"model_{timestamp}.pkl"
     pipeline_filename = f"pipeline_{timestamp}.pkl"
     metrics_filename = f"metrics_{timestamp}.json"
+    metadata_filename = f"metadata_{timestamp}.json"
 
     model_path = os.path.join(dirs["models"], model_filename)
     pipeline_path = os.path.join(dirs["pipelines"], pipeline_filename)
     metrics_path = os.path.join(dirs["metrics"], metrics_filename)
+    metadata_path = os.path.join(dirs["models"], metadata_filename)
+
+    # Create Metadata
+    metadata = {
+        "version": timestamp,
+        "dataset_hash": calculate_hash(df),
+        "training_samples": len(df),
+        "metrics": metrics
+    }
 
     logger.info(f"Saving artifacts to {args.output_dir}...")
     save_model(model, model_path)
     save_pipeline(pipeline, pipeline_path)
     save_metrics(metrics, metrics_path)
+    save_metrics(metadata, metadata_path) # save_metrics handles dict -> json
 
     # ---------------------------------------------------------
     # Model Promotion (Phase 4)
@@ -230,6 +246,7 @@ def main():
         logger.info("Promoting model to production...")
         prod_model_path = config["paths"]["model_output"]
         prod_pipeline_path = config["paths"]["pipeline_output"]
+        prod_metadata_path = config["paths"].get("metadata_output", "src/anomaly/metadata.json")
 
         # Ensure directory exists
         os.makedirs(os.path.dirname(prod_model_path), exist_ok=True)
@@ -237,7 +254,9 @@ def main():
         try:
             shutil.copy(model_path, prod_model_path)
             shutil.copy(pipeline_path, prod_pipeline_path)
+            shutil.copy(metadata_path, prod_metadata_path)
             logger.info(f"Model promoted to {prod_model_path}")
+            logger.info(f"Metadata promoted to {prod_metadata_path}")
         except Exception as e:
             logger.error(f"Failed to promote model: {e}")
 

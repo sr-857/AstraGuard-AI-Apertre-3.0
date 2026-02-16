@@ -19,8 +19,8 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, asdict
 
-from src.core.error_handling import ReportGenerationError
-from src.core.input_validation import ValidationError
+from core.error_handling import ReportGenerationError
+from core.input_validation import ValidationError
 
 logger: logging.Logger = logging.getLogger(__name__)
 
