@@ -11,6 +11,7 @@ from datetime import datetime
 import logging
 
 from prometheus_client import Counter, Histogram, Gauge
+from astraguard.observability import _safe_create_metric
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -19,28 +20,33 @@ logger = logging.getLogger(__name__)
 # PROMETHEUS METRICS
 # ============================================================================
 
-RETRY_ATTEMPTS_TOTAL = Counter(
+RETRY_ATTEMPTS_TOTAL = _safe_create_metric(
+    Counter,
     'astra_retry_attempts_total',
-    'Total retry attempts',
-    ['outcome']  # success, failed
+    documentation='Total retry attempts',
+    labelnames=['outcome']  # success, failed
 )
 
-RETRY_DELAYS_SECONDS = Histogram(
+RETRY_DELAYS_SECONDS = _safe_create_metric(
+    Histogram,
     'astra_retry_delays_seconds',
     'Retry delay durations in seconds',
+    labelnames=['function'],
     buckets=(0.1, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0)
 )
 
-RETRY_EXHAUSTIONS_TOTAL = Counter(
+RETRY_EXHAUSTIONS_TOTAL = _safe_create_metric(
+    Counter,
     'astra_retry_exhaustions_total',
     'Number of times retry limit exhausted',
-    ['function']
+    labelnames=['function']
 )
 
-RETRY_BACKOFF_LEVEL = Gauge(
+RETRY_BACKOFF_LEVEL = _safe_create_metric(
+    Gauge,
     'astra_retry_backoff_level',
     'Current backoff level (attempt number)',
-    ['function']
+    labelnames=['function']
 )
 
 

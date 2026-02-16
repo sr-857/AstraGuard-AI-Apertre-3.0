@@ -164,7 +164,6 @@ async def get_api_key(
             }
         )
 
-    try:
         # Check rate limit
         key_manager.check_rate_limit(api_key)
 

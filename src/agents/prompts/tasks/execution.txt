@@ -1,0 +1,19 @@
+TASK: EXECUTION DIRECTIVE
+
+Execute the following directive:
+{directive}
+
+Given Context:
+- Current Tools: {tool_names}
+- Memory Context: {memory_context}
+
+Validate feasibility before execution.
+Ensure command arguments are safe and type-checked.
+If multiple steps are needed, plan the sequence.
+
+Required Output:
+- Validation of command safety (observation).
+- Step-by-step execution logic (reasoning).
+- Expected outcome and risks (key_factors).
+- Tool execution request (action & tool_calls).
+- Confidence in successful execution (confidence).

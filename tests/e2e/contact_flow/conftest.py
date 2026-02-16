@@ -140,7 +140,10 @@ def e2e_test_app(temp_database: Path, tmp_path: Path) -> FastAPI:
     app.include_router(contact_router)
     
     # Override admin dependency to bypass auth and simulating a logged-in admin
-    app.dependency_overrides[get_admin_user] = lambda: MagicMock(username="admin", role="admin")
+    mock_admin = MagicMock()
+    mock_admin.username = "admin"
+    mock_admin.role = "admin"
+    app.dependency_overrides[get_admin_user] = lambda: mock_admin
     
     return app
 

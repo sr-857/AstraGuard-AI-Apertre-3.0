@@ -82,7 +82,7 @@ services:
     ports:
       - "9090:9090"
     volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
     networks:
       - astra-network
@@ -109,8 +109,8 @@ services:
       GF_INSTALL_PLUGINS: 'redis-datasource'
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
-      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+      - ../grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ../grafana/datasources:/etc/grafana/provisioning/datasources:ro
     networks:
       - astra-network
     depends_on:

@@ -24,6 +24,18 @@ spec:
         app.kubernetes.io/instance: {{ .Release.Name }}
         app.kubernetes.io/component: api
     spec:
+      initContainers:
+      - name: wait-for-redis
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - |
+          echo "Waiting for Redis..."
+          until nc -z {{ include "astraguard.fullname" . }}-redis {{ .Values.redis.service.port }}; do
+            sleep 2
+          done
+          echo "Redis ready!"
       containers:
       - name: astra-guard
         image: {{ include "astraguard.image" . }}
