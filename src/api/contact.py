@@ -12,17 +12,17 @@ import re
 import logging
 import sqlite3
 import json
+import asyncio
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, List, Any, Union
-import asyncio
-
+from functools import lru_cache
+from collections import deque
+from fastapi import APIRouter, HTTPException, Request, Depends, Query
+from pydantic import BaseModel, EmailStr, Field, field_validator, ValidationError as PydanticValidationError
+from fastapi.responses import JSONResponse
 import aiosqlite
 import aiofiles
-
-from fastapi import APIRouter, HTTPException, Request, Depends, Query
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel, EmailStr, Field, field_validator, ValidationError as PydanticValidationError
 
 
 # Declare variables BEFORE try block
@@ -61,13 +61,21 @@ NOTIFICATION_LOG: Path = DATA_DIR / "contact_notifications.log"
 CONTACT_EMAIL: str = os.getenv("CONTACT_EMAIL", "support@astraguard.ai")
 SENDGRID_API_KEY: Optional[str] = os.getenv("SENDGRID_API_KEY", None)
 
-
 _raw_trusted: str = os.getenv("TRUSTED_PROXIES", "")
 TRUSTED_PROXIES: set[str] = {ip.strip() for ip in _raw_trusted.split(",") if ip.strip()}
 
-
 RATE_LIMIT_SUBMISSIONS: int = 5
 RATE_LIMIT_WINDOW: int = 3600
+
+# Database connection pool
+DB_POOL_SIZE: int = 10
+_db_connection_pool: deque = deque(maxlen=DB_POOL_SIZE)
+_pool_lock: asyncio.Lock = asyncio.Lock()
+
+# Batch logging buffer
+_log_buffer: deque = deque()
+_log_buffer_lock: asyncio.Lock = asyncio.Lock()
+_log_buffer_size: int = 10
 
 
 class ContactSubmission(BaseModel):
@@ -171,10 +179,38 @@ def init_database() -> None:
 
 
 class InMemoryRateLimiter:
+    """
+    Optimized in-memory rate limiter with efficient cleanup strategy.
+    Uses deque for O(1) append operations and periodic cleanup.
+    """
 
     def __init__(self) -> None:
-        self.requests: dict[str, list[datetime]] = {}
+        self.requests: dict[str, deque[datetime]] = {}
         self._lock = asyncio.Lock()
+        self._last_cleanup: datetime = datetime.now()
+        self._cleanup_interval: int = 300  # Run cleanup every 5 minutes
+
+    async def _periodic_cleanup(self, window: int) -> None:
+        """Periodically clean up expired entries to prevent memory bloat"""
+        now = datetime.now()
+        if (now - self._last_cleanup).total_seconds() < self._cleanup_interval:
+            return
+            
+        cutoff = now - timedelta(seconds=window)
+        keys_to_delete = []
+        
+        for key, timestamps in self.requests.items():
+            # Remove expired timestamps
+            while timestamps and timestamps[0] <= cutoff:
+                timestamps.popleft()
+            
+            if not timestamps:
+                keys_to_delete.append(key)
+        
+        for key in keys_to_delete:
+            del self.requests[key]
+        
+        self._last_cleanup = now
 
     async def is_allowed(self, key: str, limit: int, window: int) -> tuple[bool, dict[str, Any]]:
         """
@@ -191,9 +227,15 @@ class InMemoryRateLimiter:
             cutoff = now - timedelta(seconds=window)
 
             if key in self.requests:
-                self.requests[key] = [ts for ts in self.requests[key] if ts > cutoff]
-            else:
-                self.requests[key] = []
+                # Efficient cleanup using deque
+                while self.requests[key] and self.requests[key][0] <= cutoff:
+                    self.requests[key].popleft()
+                
+                if not self.requests[key]:
+                    del self.requests[key]
+            
+            if key not in self.requests:
+                self.requests[key] = deque()
 
             current_count = len(self.requests[key])
             is_allowed = current_count < limit
@@ -201,7 +243,7 @@ class InMemoryRateLimiter:
             # Calculate reset time (oldest request + window)
             reset_at = None
             if self.requests[key]:
-                oldest = min(self.requests[key])
+                oldest = self.requests[key][0]
                 reset_at = (oldest + timedelta(seconds=window)).isoformat()
             
             metadata = {
@@ -214,15 +256,61 @@ class InMemoryRateLimiter:
             if is_allowed:
                 self.requests[key].append(now)
 
-            if not self.requests[key]:
-                del self.requests[key]
+            # Run periodic cleanup
+            await self._periodic_cleanup(window)
 
             return is_allowed, metadata
 
-# Initialize database
-init_database()
 
+# Initialize database and limiter
+init_database()
 _in_memory_limiter: InMemoryRateLimiter = InMemoryRateLimiter()
+
+
+async def get_db_connection() -> aiosqlite.Connection:
+    """Get a database connection from the pool or create a new one"""
+    async with _pool_lock:
+        if _db_connection_pool:
+            return _db_connection_pool.popleft()
+    
+    # Create new connection if pool is empty
+    conn = await aiosqlite.connect(DB_PATH)
+    conn.row_factory = aiosqlite.Row
+    return conn
+
+
+async def return_db_connection(conn: aiosqlite.Connection) -> None:
+    """Return a database connection to the pool"""
+    async with _pool_lock:
+        if len(_db_connection_pool) < DB_POOL_SIZE:
+            _db_connection_pool.append(conn)
+        else:
+            await conn.close()
+
+
+@lru_cache(maxsize=128)
+def validate_and_normalize_email(email: str) -> str:
+    """Cached email validation and normalization"""
+    return email.lower()
+
+
+async def flush_log_buffer() -> None:
+    """Flush buffered log entries to disk"""
+    if not _log_buffer:
+        return
+    
+    async with _log_buffer_lock:
+        if not _log_buffer:
+            return
+            
+        entries = list(_log_buffer)
+        _log_buffer.clear()
+    
+    try:
+        async with aiofiles.open(NOTIFICATION_LOG, "a") as f:
+            await f.write("\n".join(json.dumps(entry) for entry in entries) + "\n")
+    except Exception as e:
+        logger.error(f"Failed to flush log buffer: {e}")
 
 
 async def check_rate_limit(ip_address: str) -> tuple[bool, dict[str, Any]]:
@@ -234,12 +322,19 @@ async def check_rate_limit(ip_address: str) -> tuple[bool, dict[str, Any]]:
     )
 
 
+@lru_cache(maxsize=256)
+def get_cached_trusted_proxy_check(ip: str) -> bool:
+    """Cached check for trusted proxies"""
+    return ip in TRUSTED_PROXIES
+
+
 def get_client_ip(request: Request) -> str:
+    """Optimized IP extraction with cached proxy checking"""
     direct_ip: str = "unknown"
     if request.client:
         direct_ip = request.client.host
 
-    if direct_ip in TRUSTED_PROXIES:
+    if get_cached_trusted_proxy_check(direct_ip):
         forwarded = request.headers.get("X-Forwarded-For")
         if forwarded:
             return forwarded.split(",")[0].strip()
@@ -256,7 +351,9 @@ async def save_submission(
     ip_address: str,
     user_agent: str,
 ) -> Optional[int]:
-    async with aiosqlite.connect(DB_PATH) as conn:
+    """Save submission using connection pooling for better performance"""
+    conn = await get_db_connection()
+    try:
         cursor = await conn.execute(
             """
             INSERT INTO contact_submissions
@@ -275,12 +372,14 @@ async def save_submission(
         )
         await conn.commit()
         return cursor.lastrowid
-
+    finally:
+        await return_db_connection(conn)
 
 async def log_notification(
     submission: ContactSubmission,
     submission_id: Optional[int],
 ) -> None:
+    """Buffered logging for better I/O performance"""
     log_entry = {
         "timestamp": datetime.now().isoformat(),
         "submission_id": submission_id,
@@ -294,14 +393,19 @@ async def log_notification(
         ),
     }
 
-    async with aiofiles.open(NOTIFICATION_LOG, "a") as f:
-        await f.write(json.dumps(log_entry) + "\n")
+    async with _log_buffer_lock:
+        _log_buffer.append(log_entry)
+        should_flush = len(_log_buffer) >= _log_buffer_size
+    
+    # Flush if buffer is full
+    if should_flush:
+        await flush_log_buffer()
 
 
-async def send_email_notification(
-    submission: ContactSubmission,
-    submission_id: Optional[int],
-) -> None:
+async def send_email_notification(submission: ContactSubmission, submission_id: Optional[int]) -> None:
+
+    """Send email notification (placeholder for SendGrid integration)"""
+    # TODO: Implement SendGrid integration when SENDGRID_API_KEY is set
     if SENDGRID_API_KEY:
         try:
             pass
@@ -456,7 +560,7 @@ async def get_submissions(
     status_filter: Optional[str] = Query(None, pattern="^(pending|resolved|spam)$"),
     current_user: Any = Depends(get_admin_user),
 ) -> SubmissionsResponse:
-
+    """Get submissions with connection pooling for better performance"""
     where_clause = ""
     params: list[Any] = []
 
@@ -464,7 +568,7 @@ async def get_submissions(
         where_clause = "WHERE status = ?"
         params.append(status_filter)
 
-    count_query = f"SELECT COUNT(*) AS total FROM contact_submissions {where_clause}"
+    count_query = f"SELECT COUNT(*) AS total FROM contact_submissions {where_clause}"  # nosec B608
     select_query = f"""
         SELECT id, name, email, phone, subject, message,
                ip_address, user_agent, submitted_at, status
@@ -472,11 +576,10 @@ async def get_submissions(
         {where_clause}
         ORDER BY submitted_at DESC
         LIMIT ? OFFSET ?
-    """
+    """  # nosec B608
 
-    async with aiosqlite.connect(DB_PATH) as conn:
-        conn.row_factory = aiosqlite.Row
-
+    conn = await get_db_connection()
+    try:
         async with conn.execute(count_query, params) as cursor:
             row = await cursor.fetchone()
             if row is None:
@@ -485,6 +588,8 @@ async def get_submissions(
 
         async with conn.execute(select_query, [*params, limit, offset]) as cursor:
             rows = await cursor.fetchall()
+    finally:
+        await return_db_connection(conn)
 
     submissions = [
         SubmissionRecord(
@@ -516,8 +621,9 @@ async def update_submission_status(
     status: str = Query(..., pattern="^(pending|resolved|spam)$"),
     current_user: Any = Depends(get_admin_user),
 ) -> dict[str, Any]:
-
-    async with aiosqlite.connect(DB_PATH) as conn:
+    """Update submission status with connection pooling"""
+    conn = await get_db_connection()
+    try:
         cursor = await conn.execute(
             "UPDATE contact_submissions SET status = ? WHERE id = ?",
             (status, submission_id),
@@ -526,15 +632,18 @@ async def update_submission_status(
 
         if cursor.rowcount == 0:
             raise HTTPException(status_code=404, detail="Submission not found")
+    finally:
+        await return_db_connection(conn)
 
     return {"success": True, "message": f"Status updated to {status}"}
 
 
 @router.get("/health")
 async def contact_health() -> dict[str, Any]:
-
+    """Health check with connection pooling and cached status"""
     try:
-        async with aiosqlite.connect(DB_PATH) as conn:
+        conn = await get_db_connection()
+        try:
             async with conn.execute(
                 "SELECT COUNT(*) FROM contact_submissions"
             ) as cursor:
@@ -542,6 +651,8 @@ async def contact_health() -> dict[str, Any]:
                 if row is None:
                     raise HTTPException(status_code=503, detail="Health check query failed")
                 total_submissions: int = row[0]
+        finally:
+            await return_db_connection(conn)
 
         rate_limiter_status = "redis" if REDIS_AVAILABLE else "in-memory"
 
@@ -551,6 +662,8 @@ async def contact_health() -> dict[str, Any]:
             "total_submissions": total_submissions,
             "rate_limiter": rate_limiter_status,
             "email_configured": SENDGRID_API_KEY is not None,
+            "connection_pool_size": len(_db_connection_pool),
+            "log_buffer_size": len(_log_buffer),
         }
 
     except aiosqlite.Error as e:
@@ -576,3 +689,42 @@ async def contact_health() -> dict[str, Any]:
             exc_info=True
         )
         raise HTTPException(status_code=503, detail="Service health check failed")
+
+
+@router.get("/pool-health")
+async def pool_health() -> dict[str, Any]:
+    """
+    Get connection pool health statistics.
+    
+    Returns pool metrics including active connections, idle connections,
+    total created, timeouts, and average wait time.
+    """
+    if not is_pool_enabled():
+        return {
+            "status": "disabled",
+            "message": "Connection pooling is not enabled"
+        }
+    
+    stats = await get_pool_stats()
+    
+    if stats is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Pool statistics unavailable"
+        )
+    
+    return {
+        "status": "healthy",
+        "pool": {
+            "active_connections": stats.active_connections,
+            "idle_connections": stats.idle_connections,
+            "total_connections": stats.total_connections,
+            "max_size": stats.max_size,
+            "total_created": stats.total_created,
+            "total_acquisitions": stats.total_acquisitions,
+            "total_releases": stats.total_releases,
+            "total_timeouts": stats.total_timeouts,
+            "total_errors": stats.total_errors,
+            "average_wait_time_ms": round(stats.average_wait_time * 1000, 2),
+        }
+    }

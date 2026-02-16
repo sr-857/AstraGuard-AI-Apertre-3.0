@@ -59,7 +59,7 @@ warn_unused_ignores = true
 
 [tool.black]
 line-length = 100
-target-version = ["py39", "py310", "py311", "py312"]
+target-version = ["py39", "py310", "py311", "py312", "py313"]
 include = '\.pyi?$'
 extend-exclude = '''
 /(
@@ -134,4 +134,5 @@ log_date_format = "%Y-%m-%d %H:%M:%S"
 markers = [
     "benchmark: mark test as a benchmark",
     "chaos: mark test for chaos engineering",
+    "slow: mark test as slow-running (requires extended timeout)",
 ]

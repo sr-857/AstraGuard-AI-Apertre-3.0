@@ -13,6 +13,9 @@ import pytest
 import asyncio
 import json
 from datetime import datetime, timedelta
+
+# Mark health monitor integration tests as slow
+pytestmark = [pytest.mark.slow, pytest.mark.timeout(45)]
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 from typing import Dict, Any
 

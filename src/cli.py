@@ -471,6 +471,66 @@ def run_report(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def run_diagnostics(args: argparse.Namespace) -> None:
+    """
+    Run system diagnostics and print report.
+    """
+    try:
+        from core.diagnostics import SystemDiagnostics
+        import json
+        
+        diag = SystemDiagnostics()
+        print("🔍 Running System Diagnostics...")
+        
+        report = diag.run_full_diagnostics()
+        
+        if args.format == "json":
+            print(json.dumps(report, indent=2, default=str))
+        else:
+            # Text format
+            print("\n" + "=" * 60)
+            print(f"SYSTEM DIAGNOSTICS REPORT - {report['timestamp']}")
+            print("=" * 60)
+            
+            sys_info = report['system_info']
+            print(f"\n💻 SYSTEM: {sys_info['hostname']} ({sys_info['os']})")
+            print(f"   Python: {sys_info['python_version']}")
+            print(f"   CPUs:   {sys_info['cpu_count']}")
+            print(f"   Booted: {sys_info['boot_time']}")
+            
+            res = report['resources']
+            print(f"\n🧠 MEMORY: {res['memory']['percent']}% used")
+            print(f"   Used: {res['memory']['used'] / (1024**3):.2f} GB / {res['memory']['total'] / (1024**3):.2f} GB")
+            print(f"   Swap: {res['swap']['percent']}%")
+            
+            print(f"\n⚙️  CPU LOADING: {res['cpu']['total_percent']}%")
+            print(f"   Per Core: {res['cpu']['per_core']}")
+            if res['cpu']['load_avg']:
+                print(f"   Load Avg: {res['cpu']['load_avg']}")
+                
+            disk = res['disk_root']
+            print(f"\n💾 DISK (/): {disk['percent']}% used")
+            print(f"   Free: {disk['free'] / (1024**3):.2f} GB")
+            
+            net = report['network']
+            print(f"\n🌐 NETWORK Traffic")
+            print(f"   Sent: {net['bytes_sent'] / (1024**2):.2f} MB ({net['packets_sent']} pkts)")
+            print(f"   Recv: {net['bytes_recv'] / (1024**2):.2f} MB ({net['packets_recv']} pkts)")
+            if net['errin'] > 0 or net['errout'] > 0:
+                print(f"   Errors: In={net['errin']}, Out={net['errout']}")
+                
+            app = report['application_health']
+            print(f"\n🏥 APPLICATION HEALTH: {app['overall_status']}")
+            print("-" * 60)
+            
+    except ImportError as e:
+        print(f"❌ Missing dependencies (psutil?): {e}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"❌ Diagnostics failed: {e}")
+        sys.exit(1)
+
+
 def run_secrets_command(args: argparse.Namespace) -> None:
     """Handle secrets management commands."""
     try:
@@ -560,6 +620,10 @@ def main() -> None:
     rp.add_argument("--output", "-o", help="Output file path")
     rp.add_argument("--hours", type=int, default=24, help="Hours of history to include (default: 24)")
 
+    # Diagnostics command
+    dp = sub.add_parser("diagnose", help="Run system diagnostics")
+    dp.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
     fp = sub.add_parser("feedback", help="Operator feedback review interface")
     fp.add_argument("action", choices=["review"])
 
@@ -605,6 +669,8 @@ def main() -> None:
         run_classifier()
     elif args.command == "report":
         run_report(args)
+    elif args.command == "diagnose":
+        run_diagnostics(args)
     elif args.command == "feedback" and args.action == "review":
         FeedbackCLI.review_interactive()
     elif args.command == "secrets":

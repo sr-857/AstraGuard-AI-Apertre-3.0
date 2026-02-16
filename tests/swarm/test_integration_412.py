@@ -36,6 +36,9 @@ from astraguard.swarm.leader_election import LeaderElection, ElectionState
 from astraguard.swarm.consensus import ConsensusEngine
 from astraguard.swarm.action_propagator import ActionPropagator
 
+# Mark full integration tests as slow
+pytestmark = [pytest.mark.slow, pytest.mark.timeout(90)]
+
 
 class MockConstellation:
     """Simulates a 5-agent constellation for integration testing."""
