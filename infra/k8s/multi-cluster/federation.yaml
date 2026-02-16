@@ -1,0 +1,16 @@
+apiVersion: types.kubefed.io/v1beta1
+kind: FederatedDeployment
+metadata:
+  name: astraguard-api
+  namespace: astraguard
+spec:
+  template:
+    metadata:
+      labels:
+        app: astraguard-api
+    spec:
+      replicas: 3
+  placement:
+    clusters:
+    - name: cluster-us-east
+    - name: cluster-eu-west
