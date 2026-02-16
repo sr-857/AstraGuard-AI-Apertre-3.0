@@ -1,0 +1,23 @@
+name: Blue-Green Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to deploy'
+        required: true
+
+jobs:
+  blue-green:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Deploy Green Environment
+        run: echo "Deploying version ${{ github.event.inputs.version }} to Green environment..."
+      
+      - name: Run Smoke Tests
+        run: echo "Running smoke tests on Green..."
+      
+      - name: Switch Traffic
+        run: echo "Switching traffic from Blue to Green..."
