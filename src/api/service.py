@@ -91,6 +91,10 @@ import numpy as np
 from numpy.typing import NDArray
 from astraguard.logging_config import get_logger
 
+# DDoS Protection imports
+from security.ddos_protection import DDoSProtection, DDoSProtectionMiddleware
+from security.ddos_config_loader import load_ddos_config, is_ddos_protection_enabled
+
 logger = get_logger(__name__)
 
 # Observability imports
@@ -135,6 +139,9 @@ start_time: float = time.time()
 redis_client: Optional[RedisClient] = None
 telemetry_limiter: Optional[RateLimiter] = None
 api_limiter: Optional[RateLimiter] = None
+
+# DDoS Protection
+ddos_protection: Optional[DDoSProtection] = None
 
 
 async def initialize_components() -> None:
@@ -235,7 +242,7 @@ def _check_credential_security() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan manager."""
-    global redis_client, telemetry_limiter, api_limiter
+    global redis_client, telemetry_limiter, api_limiter, ddos_protection
     
     # Initialize database connection pool
     try:
@@ -286,6 +293,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as e:
         logger.error(f"Unexpected error initializing rate limiting: {e}", exc_info=True)
         print("Rate limiting will be disabled")
+
+    # Initialize DDoS protection
+    try:
+        if is_ddos_protection_enabled():
+            ddos_config = load_ddos_config()
+            ddos_protection = DDoSProtection(
+                redis_client=redis_client.redis if redis_client else None,
+                config=ddos_config
+            )
+            print("[OK] DDoS protection initialized successfully")
+            logger.info("DDoS protection initialized", extra={"config": "loaded"})
+        else:
+            print("[INFO] DDoS protection is disabled")
+    except Exception as e:
+        logger.error(f"Unexpected error initializing DDoS protection: {e}", exc_info=True)
+        print(f"[WARNING] DDoS protection initialization failed: {e}")
+        print("DDoS protection will be disabled")
 
     # Initialize observability (if available)
     if OBSERVABILITY_ENABLED:
@@ -346,6 +370,13 @@ if tls_config.enabled:
     )
     logger.info(f"TLS middleware enabled (enforce={tls_config.enforce_tls})")
 
+# Add DDoS protection middleware (early in the stack, after TLS)
+if ddos_protection is not None:
+    app.add_middleware(
+        DDoSProtectionMiddleware,
+        ddos_protection=ddos_protection
+    )
+    logger.info("DDoS Protection middleware enabled")
 
 # Include routers
 from api.contact import router as contact_router
@@ -807,6 +838,84 @@ async def metrics(username: str = Depends(get_current_username)) -> Response:
         content=get_metrics_text(), 
         media_type=get_metrics_content_type()
     )
+
+
+@app.get("/api/v1/security/ddos/stats", status_code=status.HTTP_200_OK)
+async def get_ddos_stats(
+    current_user: User = Depends(require_admin)
+) -> Dict[str, Any]:
+    """
+    Get DDoS protection statistics.
+    
+    Requires ADMIN privileges.
+    
+    Returns:
+        Dictionary containing DDoS protection statistics including:
+        - Total requests checked
+        - Total blocked requests
+        - Active threats
+        - Blocked IPs
+        - Top threat IPs
+        - Active connections
+    """
+    if ddos_protection is None:
+        return {
+            "enabled": False,
+            "message": "DDoS protection is not enabled"
+        }
+    
+    try:
+        stats = await ddos_protection.get_stats()
+        return {
+            "enabled": True,
+            "timestamp": datetime.utcnow().isoformat(),
+            "statistics": stats,
+            "protection_status": "active"
+        }
+    except Exception as e:
+        logger.error(f"Failed to retrieve DDoS stats: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve DDoS statistics: {str(e)}"
+        )
+
+
+@app.post("/api/v1/security/ddos/unblock/{ip}", status_code=status.HTTP_200_OK)
+async def unblock_ip(
+    ip: str,
+    current_user: User = Depends(require_admin)
+) -> Dict[str, Any]:
+    """
+    Manually unblock an IP address.
+    
+    Requires ADMIN privileges.
+    
+    Args:
+        ip: IP address to unblock
+        
+    Returns:
+        Dictionary with unblock operation result
+    """
+    if ddos_protection is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="DDoS protection is not enabled"
+        )
+    
+    try:
+        unblocked = await ddos_protection.unblock_ip(ip)
+        return {
+            "success": unblocked,
+            "ip": ip,
+            "message": f"IP {ip} has been unblocked" if unblocked else f"IP {ip} was not blocked",
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Failed to unblock IP {ip}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to unblock IP: {str(e)}"
+        )
 
 
 @app.get("/api/v1/system/diagnostics", status_code=status.HTTP_200_OK)
