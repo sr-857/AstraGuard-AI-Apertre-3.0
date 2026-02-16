@@ -21,7 +21,7 @@ try:
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     FASTAPI_AVAILABLE = True
-except ImportError:
+except (ImportError, TypeError):
     FASTAPI_AVAILABLE = False
     FastAPI = MagicMock
     TestClient = MagicMock
@@ -54,7 +54,11 @@ class TestAppCreation:
         """Test that app is a FastAPI instance."""
         mock_router = MagicMock()
         
-        with patch.dict(sys.modules, {'api.contact': MagicMock(router=mock_router)}):
+        # Patch both api.contact and src.api.contact to ensure correct mocking
+        with patch.dict(sys.modules, {
+            'api.contact': MagicMock(router=mock_router),
+            'src.api.contact': MagicMock(router=mock_router)
+        }):
             from api import contact_app
             
             assert isinstance(contact_app.app, FastAPI)
@@ -63,7 +67,10 @@ class TestAppCreation:
         """Test that app has the expected title."""
         mock_router = MagicMock()
         
-        with patch.dict(sys.modules, {'api.contact': MagicMock(router=mock_router)}):
+        with patch.dict(sys.modules, {
+            'api.contact': MagicMock(router=mock_router),
+            'src.api.contact': MagicMock(router=mock_router)
+        }):
             from api import contact_app
             
             assert contact_app.app.title == "AstraGuard Contact API (dev)"
@@ -72,7 +79,10 @@ class TestAppCreation:
         """Test that module exposes a logger."""
         mock_router = MagicMock()
         
-        with patch.dict(sys.modules, {'api.contact': MagicMock(router=mock_router)}):
+        with patch.dict(sys.modules, {
+            'api.contact': MagicMock(router=mock_router),
+            'src.api.contact': MagicMock(router=mock_router)
+        }):
             from api import contact_app
             
             assert hasattr(contact_app, 'logger')
@@ -86,7 +96,10 @@ class TestCORSConfiguration:
         """Test that localhost:8080 is in allowed origins."""
         mock_router = MagicMock()
         
-        with patch.dict(sys.modules, {'api.contact': MagicMock(router=mock_router)}):
+        with patch.dict(sys.modules, {
+            'api.contact': MagicMock(router=mock_router),
+            'src.api.contact': MagicMock(router=mock_router)
+        }):
             from api import contact_app
             
             assert "http://localhost:8080" in contact_app.ALLOWED_ORIGINS
@@ -95,7 +108,10 @@ class TestCORSConfiguration:
         """Test that 127.0.0.1:8080 is in allowed origins."""
         mock_router = MagicMock()
         
-        with patch.dict(sys.modules, {'api.contact': MagicMock(router=mock_router)}):
+        with patch.dict(sys.modules, {
+            'api.contact': MagicMock(router=mock_router),
+            'src.api.contact': MagicMock(router=mock_router)
+        }):
             from api import contact_app
             
             assert "http://127.0.0.1:8080" in contact_app.ALLOWED_ORIGINS
@@ -104,7 +120,10 @@ class TestCORSConfiguration:
         """Test that localhost:8000 is in allowed origins."""
         mock_router = MagicMock()
         
-        with patch.dict(sys.modules, {'api.contact': MagicMock(router=mock_router)}):
+        with patch.dict(sys.modules, {
+            'api.contact': MagicMock(router=mock_router),
+            'src.api.contact': MagicMock(router=mock_router)
+        }):
             from api import contact_app
             
             assert "http://localhost:8000" in contact_app.ALLOWED_ORIGINS
@@ -113,7 +132,10 @@ class TestCORSConfiguration:
         """Test that 127.0.0.1:8000 is in allowed origins."""
         mock_router = MagicMock()
         
-        with patch.dict(sys.modules, {'api.contact': MagicMock(router=mock_router)}):
+        with patch.dict(sys.modules, {
+            'api.contact': MagicMock(router=mock_router),
+            'src.api.contact': MagicMock(router=mock_router)
+        }):
             from api import contact_app
             
             assert "http://127.0.0.1:8000" in contact_app.ALLOWED_ORIGINS
@@ -122,7 +144,10 @@ class TestCORSConfiguration:
         """Test that exactly 4 origins are allowed."""
         mock_router = MagicMock()
         
-        with patch.dict(sys.modules, {'api.contact': MagicMock(router=mock_router)}):
+        with patch.dict(sys.modules, {
+            'api.contact': MagicMock(router=mock_router),
+            'src.api.contact': MagicMock(router=mock_router)
+        }):
             from api import contact_app
             
             assert len(contact_app.ALLOWED_ORIGINS) == 4
@@ -131,7 +156,10 @@ class TestCORSConfiguration:
         """Test that CORS middleware is added to the app."""
         mock_router = MagicMock()
         
-        with patch.dict(sys.modules, {'api.contact': MagicMock(router=mock_router)}):
+        with patch.dict(sys.modules, {
+            'api.contact': MagicMock(router=mock_router),
+            'src.api.contact': MagicMock(router=mock_router)
+        }):
             from api import contact_app
             
             # Check middleware stack contains CORSMiddleware
@@ -147,7 +175,10 @@ class TestRouterInclusion:
         mock_router = MagicMock()
         mock_contact = MagicMock(router=mock_router)
         
-        with patch.dict(sys.modules, {'api.contact': mock_contact}):
+        with patch.dict(sys.modules, {
+            'api.contact': mock_contact,
+            'src.api.contact': mock_contact
+        }):
             from api import contact_app
             
             # App should have routes from the router
@@ -177,9 +208,17 @@ class TestRouterInclusion:
                 
             def include_router(self, router):
                 raise RuntimeError("Router registration failed")
+
+            def exception_handler(self, exc_class_or_status_code):
+                def decorator(func):
+                    return func
+                return decorator
         
         # Patch at the fastapi module level before running the module
-        with patch.dict(sys.modules, {'api.contact': mock_contact}):
+        with patch.dict(sys.modules, {
+            'api.contact': mock_contact,
+            'src.api.contact': mock_contact
+        }):
             with patch('fastapi.FastAPI', FailingFastAPI):
                 with patch('logging.getLogger') as mock_get_logger:
                     mock_get_logger.return_value = mock_logger
@@ -204,7 +243,10 @@ class TestCORSBehavior:
         mock_router = MagicMock()
         mock_router.routes = []
         
-        with patch.dict(sys.modules, {'api.contact': MagicMock(router=mock_router)}):
+        with patch.dict(sys.modules, {
+            'api.contact': MagicMock(router=mock_router),
+            'src.api.contact': MagicMock(router=mock_router)
+        }):
             from api import contact_app
             
             client = TestClient(contact_app.app)
@@ -221,7 +263,10 @@ class TestCORSBehavior:
         mock_router = MagicMock()
         mock_router.routes = []
         
-        with patch.dict(sys.modules, {'api.contact': MagicMock(router=mock_router)}):
+        with patch.dict(sys.modules, {
+            'api.contact': MagicMock(router=mock_router),
+            'src.api.contact': MagicMock(router=mock_router)
+        }):
             from api import contact_app
             
             client = TestClient(contact_app.app)
@@ -237,7 +282,10 @@ class TestCORSBehavior:
         mock_router = MagicMock()
         mock_router.routes = []
         
-        with patch.dict(sys.modules, {'api.contact': MagicMock(router=mock_router)}):
+        with patch.dict(sys.modules, {
+            'api.contact': MagicMock(router=mock_router),
+            'src.api.contact': MagicMock(router=mock_router)
+        }):
             from api import contact_app
             
             client = TestClient(contact_app.app)
@@ -262,7 +310,10 @@ class TestAllowedMethods:
         mock_router = MagicMock()
         mock_router.routes = []
         
-        with patch.dict(sys.modules, {'api.contact': MagicMock(router=mock_router)}):
+        with patch.dict(sys.modules, {
+            'api.contact': MagicMock(router=mock_router),
+            'src.api.contact': MagicMock(router=mock_router)
+        }):
             from api import contact_app
             
             client = TestClient(contact_app.app)
@@ -282,7 +333,10 @@ class TestAllowedMethods:
         mock_router = MagicMock()
         mock_router.routes = []
         
-        with patch.dict(sys.modules, {'api.contact': MagicMock(router=mock_router)}):
+        with patch.dict(sys.modules, {
+            'api.contact': MagicMock(router=mock_router),
+            'src.api.contact': MagicMock(router=mock_router)
+        }):
             from api import contact_app
             
             client = TestClient(contact_app.app)
@@ -302,7 +356,10 @@ class TestAllowedMethods:
         mock_router = MagicMock()
         mock_router.routes = []
         
-        with patch.dict(sys.modules, {'api.contact': MagicMock(router=mock_router)}):
+        with patch.dict(sys.modules, {
+            'api.contact': MagicMock(router=mock_router),
+            'src.api.contact': MagicMock(router=mock_router)
+        }):
             from api import contact_app
             
             client = TestClient(contact_app.app)
@@ -322,7 +379,10 @@ class TestAllowedMethods:
         mock_router = MagicMock()
         mock_router.routes = []
         
-        with patch.dict(sys.modules, {'api.contact': MagicMock(router=mock_router)}):
+        with patch.dict(sys.modules, {
+            'api.contact': MagicMock(router=mock_router),
+            'src.api.contact': MagicMock(router=mock_router)
+        }):
             from api import contact_app
             
             client = TestClient(contact_app.app)
@@ -342,7 +402,10 @@ class TestAllowedMethods:
         mock_router = MagicMock()
         mock_router.routes = []
         
-        with patch.dict(sys.modules, {'api.contact': MagicMock(router=mock_router)}):
+        with patch.dict(sys.modules, {
+            'api.contact': MagicMock(router=mock_router),
+            'src.api.contact': MagicMock(router=mock_router)
+        }):
             from api import contact_app
             
             client = TestClient(contact_app.app)
@@ -362,7 +425,10 @@ class TestAllowedMethods:
         mock_router = MagicMock()
         mock_router.routes = []
         
-        with patch.dict(sys.modules, {'api.contact': MagicMock(router=mock_router)}):
+        with patch.dict(sys.modules, {
+            'api.contact': MagicMock(router=mock_router),
+            'src.api.contact': MagicMock(router=mock_router)
+        }):
             from api import contact_app
             
             client = TestClient(contact_app.app)
@@ -385,7 +451,10 @@ class TestImportErrorHandling:
         """Test that module loads successfully when dependencies are mocked."""
         mock_router = MagicMock()
         
-        with patch.dict(sys.modules, {'api.contact': MagicMock(router=mock_router)}):
+        with patch.dict(sys.modules, {
+            'api.contact': MagicMock(router=mock_router),
+            'src.api.contact': MagicMock(router=mock_router)
+        }):
             from api import contact_app
             # If we get here, the import succeeded
             assert contact_app.app is not None
@@ -399,7 +468,10 @@ class TestImportErrorHandling:
         if 'api.contact_app' in sys.modules:
             del sys.modules['api.contact_app']
         
-        with patch.dict(sys.modules, {'api.contact': mock_contact}):
+        with patch.dict(sys.modules, {
+            'api.contact': mock_contact,
+            'src.api.contact': mock_contact
+        }):
             # This should raise ImportError since router doesn't exist on mock
             with pytest.raises((AttributeError, ImportError)):
                 import importlib
@@ -413,7 +485,10 @@ class TestModuleLevel:
         """Test that module has a docstring."""
         mock_router = MagicMock()
         
-        with patch.dict(sys.modules, {'api.contact': MagicMock(router=mock_router)}):
+        with patch.dict(sys.modules, {
+            'api.contact': MagicMock(router=mock_router),
+            'src.api.contact': MagicMock(router=mock_router)
+        }):
             from api import contact_app
             
             assert contact_app.__doc__ is not None
@@ -423,7 +498,10 @@ class TestModuleLevel:
         """Test that ALLOWED_ORIGINS is a list of strings."""
         mock_router = MagicMock()
         
-        with patch.dict(sys.modules, {'api.contact': MagicMock(router=mock_router)}):
+        with patch.dict(sys.modules, {
+            'api.contact': MagicMock(router=mock_router),
+            'src.api.contact': MagicMock(router=mock_router)
+        }):
             from api import contact_app
             
             assert isinstance(contact_app.ALLOWED_ORIGINS, list)
@@ -434,7 +512,10 @@ class TestModuleLevel:
         """Test that all allowed origins start with http://."""
         mock_router = MagicMock()
         
-        with patch.dict(sys.modules, {'api.contact': MagicMock(router=mock_router)}):
+        with patch.dict(sys.modules, {
+            'api.contact': MagicMock(router=mock_router),
+            'src.api.contact': MagicMock(router=mock_router)
+        }):
             from api import contact_app
             
             for origin in contact_app.ALLOWED_ORIGINS:
@@ -449,7 +530,10 @@ class TestAppConfiguration:
         mock_router = MagicMock()
         mock_router.routes = []
         
-        with patch.dict(sys.modules, {'api.contact': MagicMock(router=mock_router)}):
+        with patch.dict(sys.modules, {
+            'api.contact': MagicMock(router=mock_router),
+            'src.api.contact': MagicMock(router=mock_router)
+        }):
             from api import contact_app
             
             # Check that middleware was configured with allow_headers=["*"]
