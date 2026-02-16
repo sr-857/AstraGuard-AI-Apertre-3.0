@@ -1,0 +1,22 @@
+name: Canary Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to deploy'
+        required: true
+      traffic_percentage:
+        description: 'Traffic percentage (0-100)'
+        required: true
+        default: '10'
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy Canary
+        run: |
+          echo "Deploying version ${{ github.event.inputs.version }} with ${{ github.event.inputs.traffic_percentage }}% traffic..."
+          # Placeholder for canary deployment logic (e.g., Argo Rollouts or Flagger)
