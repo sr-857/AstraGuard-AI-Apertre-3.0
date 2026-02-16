@@ -92,6 +92,9 @@ import numpy as np
 from numpy.typing import NDArray
 from core.restart import get_restart_manager
 from astraguard.logging_config import get_logger
+import msgpack
+from fastapi import Request
+from api.middleware.network_optimization import ZstdMiddleware
 
 logger = get_logger(__name__)
 
@@ -317,6 +320,9 @@ app = FastAPI(
     redoc_url="/redoc",
     lifespan=lifespan
 )
+
+# Add network optimization middleware (compression)
+app.add_middleware(ZstdMiddleware)
 
 # Add TLS enforcement middleware (early in the stack)
 # This ensures all internal service communication uses TLS
@@ -831,18 +837,51 @@ async def submit_telemetry(telemetry: TelemetryInput, current_user: User = Depen
     return diagnostics.run_full_diagnostics()
 
 
-@app.post("/api/v1/telemetry", response_model=AnomalyResponse, status_code=status.HTTP_200_OK)
-async def submit_telemetry(telemetry: TelemetryInput, current_user: User = Depends(require_operator)) -> AnomalyResponse:
-    """
-    Internal function to process a single telemetry point without endpoint overhead.
-    Used by both single telemetry endpoint and batch processing.
-    """
-    # CHAOS INJECTION HOOK
-    # 1. Network Latency Injection (fixed: use async sleep)
-    if await check_chaos_injection("network_latency"):
-        await asyncio.sleep(2.0)  # Simulate 2s latency (non-blocking)
+async def parse_telemetry(request: Request) -> TelemetryInput:
+    """Dependency to parse telemetry from JSON or MsgPack."""
+    content_type = request.headers.get("content-type", "")
+    try:
+        if "application/msgpack" in content_type:
+            body = await request.body()
+            data = msgpack.unpackb(body, raw=False)
+            return TelemetryInput(**data)
+        return TelemetryInput(**await request.json())
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid payload: {str(e)}"
+        )
 
-    # 2. Model Loader Failure Injection (fixed: await async function)
+async def parse_telemetry_batch(request: Request) -> TelemetryBatch:
+    """Dependency to parse telemetry batch from JSON or MsgPack."""
+    content_type = request.headers.get("content-type", "")
+    try:
+        if "application/msgpack" in content_type:
+            body = await request.body()
+            data = msgpack.unpackb(body, raw=False)
+            return TelemetryBatch(**data)
+        return TelemetryBatch(**await request.json())
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid payload: {str(e)}"
+        )
+
+@app.post("/api/v1/telemetry", response_model=AnomalyResponse, status_code=status.HTTP_200_OK)
+async def submit_telemetry(
+    telemetry: TelemetryInput = Depends(parse_telemetry),
+    current_user: User = Depends(require_operator)
+) -> AnomalyResponse:
+    """
+    Submit single telemetry point for anomaly detection.
+    Supports JSON and MsgPack.
+    """
+    request_start = time.time()
+
+    # CHAOS INJECTION HOOK
+    if await check_chaos_injection("network_latency"):
+        await asyncio.sleep(2.0)
+
     if await check_chaos_injection("model_loader"):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -850,25 +889,8 @@ async def submit_telemetry(telemetry: TelemetryInput, current_user: User = Depen
         )
     
     try:
-        if OBSERVABILITY_ENABLED:
-            with track_request("anomaly_detection"):
-                with span_anomaly_detection(data_size=1, model_name="detector_v1"):
-                    response = await _process_telemetry(telemetry, request_start)
-        else:
-            response = await _process_telemetry(telemetry, request_start)
-
-        if OBSERVABILITY_ENABLED and response.is_anomaly:
-            logger = get_logger(__name__)
-            ANOMALY_DETECTIONS.labels(severity=response.severity_level.lower()).inc()
-            log_detection(
-                logger,
-                severity=response.severity_level,
-                detected_type=response.anomaly_type,
-                confidence=response.confidence,
-                instance_id="telemetry"
-            )
-
-        return response
+        # Use _process_single_telemetry (which is defined below)
+        return await _process_single_telemetry(telemetry, request_start)
 
     except ValueError as e:
         logger.warning(f"Invalid telemetry data: {e}")
@@ -876,17 +898,7 @@ async def submit_telemetry(telemetry: TelemetryInput, current_user: User = Depen
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid telemetry format: {str(e)}"
         )
-    except RuntimeError as e:
-        logger.error(f"Telemetry system error: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="System temporarily unavailable"
-        )
     except Exception as e:
-        if OBSERVABILITY_ENABLED:
-            logger = get_logger(__name__)
-            log_error(logger, e, {"endpoint": "/api/v1/telemetry"})
-        
         logger.error(f"Unexpected error in submit_telemetry: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -894,22 +906,7 @@ async def submit_telemetry(telemetry: TelemetryInput, current_user: User = Depen
         ) from e
 
 
-@app.post("/api/v1/telemetry", response_model=AnomalyResponse, status_code=status.HTTP_200_OK)
-async def submit_telemetry(telemetry: TelemetryInput, current_user: User = Depends(require_operator)):
-    """
-    Submit single telemetry point for anomaly detection.
-
-    Requires API key authentication with 'write' permission.
-
-    Returns:
-        AnomalyResponse with detection results and recommended actions
-    """
-    request_start = time.time()
-    return await _process_single_telemetry(telemetry, request_start)
-
-
-
-async def _process_telemetry(telemetry: TelemetryInput, request_start: float) -> AnomalyResponse:
+async def _process_single_telemetry(telemetry: TelemetryInput, request_start: float) -> AnomalyResponse:
     """Internal telemetry processing logic."""
     try:
         # Type assertions for initialized globals
@@ -1076,9 +1073,13 @@ async def get_latest_telemetry(api_key: APIKey = Depends(get_api_key)) -> Dict[s
 
 
 @app.post("/api/v1/telemetry/batch", response_model=BatchAnomalyResponse)
-async def submit_telemetry_batch(batch: TelemetryBatch, current_user: User = Depends(require_operator)) -> BatchAnomalyResponse:
+async def submit_telemetry_batch(
+    batch: TelemetryBatch = Depends(parse_telemetry_batch),
+    current_user: User = Depends(require_operator)
+) -> BatchAnomalyResponse:
     """
     Submit batch of telemetry points for anomaly detection.
+    Supports JSON and MsgPack.
 
     Requires API key authentication with 'write' permission.
 
