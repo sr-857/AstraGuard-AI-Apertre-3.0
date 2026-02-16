@@ -12,6 +12,7 @@ import re
 import logging
 import sqlite3
 import json
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, List, Any, Union
@@ -135,9 +136,31 @@ class SubmissionsResponse(BaseModel):
     submissions: List[SubmissionRecord]
 
 
-def init_database() -> None:
-    DATA_DIR.mkdir(exist_ok=True)
+# Global persistent connection
+_db_connection: Optional[aiosqlite.Connection] = None
 
+async def connect_db() -> None:
+    """Initialize persistent database connection"""
+    global _db_connection
+    if _db_connection is None:
+        DATA_DIR.mkdir(exist_ok=True)
+        # Ensure schema exists using synchronous connection for safety at startup
+        init_schema()
+
+        _db_connection = await aiosqlite.connect(DB_PATH)
+        _db_connection.row_factory = aiosqlite.Row
+        logger.info(f"Connected to database at {DB_PATH}")
+
+async def close_db() -> None:
+    """Close persistent database connection"""
+    global _db_connection
+    if _db_connection:
+        await _db_connection.close()
+        _db_connection = None
+        logger.info("Database connection closed")
+
+def init_schema() -> None:
+    """Initialize database schema synchronously"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
@@ -166,8 +189,22 @@ def init_database() -> None:
         ON contact_submissions(status)
     """)
 
+    # Composite index for filtered and sorted queries
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_status_submitted_at
+        ON contact_submissions(status, submitted_at DESC)
+    """)
+
     conn.commit()
     conn.close()
+
+async def get_db() -> aiosqlite.Connection:
+    """Get persistent database connection"""
+    if _db_connection is None:
+        await connect_db()
+    if _db_connection is None:
+        raise RuntimeError("Database connection not initialized")
+    return _db_connection
 
 
 class InMemoryRateLimiter:
@@ -219,8 +256,7 @@ class InMemoryRateLimiter:
 
             return is_allowed, metadata
 
-# Initialize database
-init_database()
+# Database initialization is now handled via connect_db() called by app startup
 
 _in_memory_limiter: InMemoryRateLimiter = InMemoryRateLimiter()
 
@@ -256,25 +292,28 @@ async def save_submission(
     ip_address: str,
     user_agent: str,
 ) -> Optional[int]:
-    async with aiosqlite.connect(DB_PATH) as conn:
-        cursor = await conn.execute(
-            """
-            INSERT INTO contact_submissions
-                (name, email, phone, subject, message, ip_address, user_agent)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                submission.name,
-                submission.email,
-                submission.phone,
-                submission.subject,
-                submission.message,
-                ip_address,
-                user_agent,
-            ),
-        )
-        await conn.commit()
-        return cursor.lastrowid
+    start_time = time.perf_counter()
+    db = await get_db()
+    cursor = await db.execute(
+        """
+        INSERT INTO contact_submissions
+            (name, email, phone, subject, message, ip_address, user_agent)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            submission.name,
+            submission.email,
+            submission.phone,
+            submission.subject,
+            submission.message,
+            ip_address,
+            user_agent,
+        ),
+    )
+    await db.commit()
+    duration = (time.perf_counter() - start_time) * 1000
+    logger.info(f"SQL INSERT took {duration:.2f}ms")
+    return cursor.lastrowid
 
 
 async def log_notification(
@@ -474,17 +513,20 @@ async def get_submissions(
         LIMIT ? OFFSET ?
     """
 
-    async with aiosqlite.connect(DB_PATH) as conn:
-        conn.row_factory = aiosqlite.Row
+    db = await get_db()
 
-        async with conn.execute(count_query, params) as cursor:
-            row = await cursor.fetchone()
-            if row is None:
-                raise HTTPException(status_code=500, detail="Failed to count submissions")
-            total: int = row["total"]
+    start_time = time.perf_counter()
+    async with db.execute(count_query, params) as cursor:
+        row = await cursor.fetchone()
+        if row is None:
+            raise HTTPException(status_code=500, detail="Failed to count submissions")
+        total: int = row["total"]
 
-        async with conn.execute(select_query, [*params, limit, offset]) as cursor:
-            rows = await cursor.fetchall()
+    async with db.execute(select_query, [*params, limit, offset]) as cursor:
+        rows = await cursor.fetchall()
+
+    duration = (time.perf_counter() - start_time) * 1000
+    logger.info(f"SQL SELECT (get_submissions) took {duration:.2f}ms | Rows: {len(rows)}")
 
     submissions = [
         SubmissionRecord(
@@ -517,15 +559,15 @@ async def update_submission_status(
     current_user: Any = Depends(get_admin_user),
 ) -> dict[str, Any]:
 
-    async with aiosqlite.connect(DB_PATH) as conn:
-        cursor = await conn.execute(
-            "UPDATE contact_submissions SET status = ? WHERE id = ?",
-            (status, submission_id),
-        )
-        await conn.commit()
+    db = await get_db()
+    cursor = await db.execute(
+        "UPDATE contact_submissions SET status = ? WHERE id = ?",
+        (status, submission_id),
+    )
+    await db.commit()
 
-        if cursor.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Submission not found")
+    if cursor.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Submission not found")
 
     return {"success": True, "message": f"Status updated to {status}"}
 
@@ -534,14 +576,14 @@ async def update_submission_status(
 async def contact_health() -> dict[str, Any]:
 
     try:
-        async with aiosqlite.connect(DB_PATH) as conn:
-            async with conn.execute(
-                "SELECT COUNT(*) FROM contact_submissions"
-            ) as cursor:
-                row = await cursor.fetchone()
-                if row is None:
-                    raise HTTPException(status_code=503, detail="Health check query failed")
-                total_submissions: int = row[0]
+        db = await get_db()
+        async with db.execute(
+            "SELECT COUNT(*) FROM contact_submissions"
+        ) as cursor:
+            row = await cursor.fetchone()
+            if row is None:
+                raise HTTPException(status_code=503, detail="Health check query failed")
+            total_submissions: int = row[0]
 
         rate_limiter_status = "redis" if REDIS_AVAILABLE else "in-memory"
 

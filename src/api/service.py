@@ -279,10 +279,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             print(f"[WARNING] Rate limiting initialization failed: {e}")
             print("Rate limiting will be disabled")
 
-    # Initialize components and Redis in parallel
+    # Initialize components, Redis, and Contact DB in parallel
+    from api.contact import connect_db, close_db
+
     await asyncio.gather(
         initialize_components(),
-        init_redis_and_rate_limit()
+        init_redis_and_rate_limit(),
+        connect_db()
     )
 
     # Pre-load anomaly detection model async in background
@@ -315,6 +318,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     if redis_client:
         await redis_client.close()
 
+    await close_db()
+
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -329,6 +334,10 @@ app = FastAPI(
 # Include routers
 from api.contact import router as contact_router
 app.include_router(contact_router)
+
+# Exception handlers
+from api.error_handlers import add_exception_handlers
+add_exception_handlers(app)
 
 # CORS configuration from environment variables
 # Security: Never use allow_origins=["*"] with allow_credentials=True in production
@@ -699,36 +708,25 @@ async def submit_telemetry(telemetry: TelemetryInput, current_user: User = Depen
             detail="Chaos Injection: Model Loader Failed"
         )
     
-    try:
-        if OBSERVABILITY_ENABLED:
-            with track_request("anomaly_detection"):
-                with span_anomaly_detection(data_size=1, model_name="detector_v1"):
-                    response = await _process_telemetry(telemetry, request_start)
-        else:
-            response = await _process_telemetry(telemetry, request_start)
+    if OBSERVABILITY_ENABLED:
+        with track_request("anomaly_detection"):
+            with span_anomaly_detection(data_size=1, model_name="detector_v1"):
+                response = await _process_telemetry(telemetry, request_start)
+    else:
+        response = await _process_telemetry(telemetry, request_start)
 
-        if OBSERVABILITY_ENABLED and response.is_anomaly:
-            logger = get_logger(__name__)
-            ANOMALY_DETECTIONS.labels(severity=response.severity_level.lower()).inc()
-            log_detection(
-                logger,
-                severity=response.severity_level,
-                detected_type=response.anomaly_type,
-                confidence=response.confidence,
-                instance_id="telemetry"
-            )
+    if OBSERVABILITY_ENABLED and response.is_anomaly:
+        logger = get_logger(__name__)
+        ANOMALY_DETECTIONS.labels(severity=response.severity_level.lower()).inc()
+        log_detection(
+            logger,
+            severity=response.severity_level,
+            detected_type=response.anomaly_type,
+            confidence=response.confidence,
+            instance_id="telemetry"
+        )
 
-        return response
-
-    except Exception as e:
-        if OBSERVABILITY_ENABLED:
-            logger = get_logger(__name__)
-            log_error(logger, e, {"endpoint": "/api/v1/telemetry"})
-        
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Anomaly detection failed: {str(e)}"
-        ) from e
+    return response
 
 
 async def _process_telemetry(telemetry: TelemetryInput, request_start: float) -> AnomalyResponse:
@@ -1170,32 +1168,25 @@ async def update_phase(request: PhaseUpdateRequest, current_user: User = Depends
     """Update mission phase."""
     assert state_machine is not None
     
-    try:
-        target_phase = MissionPhase(request.phase.value)
+    target_phase = MissionPhase(request.phase.value)
 
-        if request.force:
-            # Force transition (e.g., emergency SAFE_MODE)
-            if target_phase == MissionPhase.SAFE_MODE:
-                result = state_machine.force_safe_mode()
-            else:
-                result = state_machine.set_phase(target_phase)
+    if request.force:
+        # Force transition (e.g., emergency SAFE_MODE)
+        if target_phase == MissionPhase.SAFE_MODE:
+            result = state_machine.force_safe_mode()
         else:
-            # Normal transition with validation
             result = state_machine.set_phase(target_phase)
+    else:
+        # Normal transition with validation
+        result = state_machine.set_phase(target_phase)
 
-        return PhaseUpdateResponse(
-            success=result['success'],
-            previous_phase=result['previous_phase'],
-            new_phase=result['new_phase'],
-            message=result['message'],
-            timestamp=datetime.now()
-        )
-
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Phase transition failed: {str(e)}"
-        ) from e
+    return PhaseUpdateResponse(
+        success=result['success'],
+        previous_phase=result['previous_phase'],
+        new_phase=result['new_phase'],
+        message=result['message'],
+        timestamp=datetime.now()
+    )
 
 
 @app.get("/api/v1/memory/stats", response_model=MemoryStats)
