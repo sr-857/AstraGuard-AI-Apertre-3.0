@@ -198,7 +198,9 @@ class LatencyCollector:
                     "mean_ms": sum(latencies) / count,
                     "p50_ms": sorted_latencies[count // 2],
                     "p95_ms": sorted_latencies[int(count * 0.95)],
+                    "p99_ms": sorted_latencies[int(count * 0.99)],
                     "max_ms": max(latencies),
+                    "min_ms": min(latencies),
                 }
 
         logger.debug(f"Calculated statistics for {len(stats)} satellites")
@@ -242,7 +244,7 @@ class LatencyCollector:
 
     def get_summary(self) -> Dict[str, Any]:
         """
-        Get human-readable summary with optimized single-pass computation.
+        Get human-readable summary by reusing get_stats() and get_stats_by_satellite().
 
         Returns:
             Dict with high-level metrics summary
@@ -250,47 +252,9 @@ class LatencyCollector:
         if not self.measurements:
             return {"total_measurements": 0, "metrics": {}}
 
-        # Single-pass computation for both stats and stats_by_satellite
-        by_type = defaultdict(list)
-        by_satellite = defaultdict(lambda: defaultdict(list))
-
-        for m in self.measurements:
-            by_type[m.metric_type].append(m.duration_ms)
-            by_satellite[m.satellite_id][m.metric_type].append(m.duration_ms)
-
-        # Calculate stats by type
-        stats = {}
-        for metric_type, latencies in by_type.items():
-            if not latencies:
-                continue
-            sorted_latencies = sorted(latencies)
-            count = len(sorted_latencies)
-            stats[metric_type] = {
-                "count": count,
-                "mean_ms": sum(latencies) / count,
-                "p50_ms": sorted_latencies[count // 2],
-                "p95_ms": sorted_latencies[int(count * 0.95)],
-                "p99_ms": sorted_latencies[int(count * 0.99)],
-                "max_ms": max(latencies),
-                "min_ms": min(latencies),
-            }
-
-        # Calculate stats by satellite
-        stats_by_satellite = {}
-        for sat_id, metrics in by_satellite.items():
-            stats_by_satellite[sat_id] = {}
-            for metric_type, latencies in metrics.items():
-                if not latencies:
-                    continue
-                sorted_latencies = sorted(latencies)
-                count = len(sorted_latencies)
-                stats_by_satellite[sat_id][metric_type] = {
-                    "count": count,
-                    "mean_ms": sum(latencies) / count,
-                    "p50_ms": sorted_latencies[count // 2],
-                    "p95_ms": sorted_latencies[int(count * 0.95)],
-                    "max_ms": max(latencies),
-                }
+        # Reuse existing methods to avoid code duplication
+        stats = self.get_stats()
+        stats_by_satellite = self.get_stats_by_satellite()
 
         return {
             "total_measurements": len(self.measurements),
@@ -304,34 +268,7 @@ class LatencyCollector:
         self.measurements.clear()
         self._measurement_log.clear()
 
-    def _calculate_percentiles(self, latencies: List[float]) -> Dict[str, float]:
-        """
-        Calculate percentiles using single sort for better performance.
-
-        Args:
-            latencies: List of latency values
-
-        Returns:
-            Dict with p50_ms, p95_ms, p99_ms
-        """
-        if not latencies:
-            return {"p50_ms": 0.0, "p95_ms": 0.0, "p99_ms": 0.0}
-
-        count = len(latencies)
-        
-        # Single sort is more efficient than multiple heapq.nsmallest calls
-        sorted_latencies = sorted(latencies)
-        
-        p50_index = min(count // 2, count - 1)
-        p95_index = min(int(count * 0.95), count - 1)
-        p99_index = min(int(count * 0.99), count - 1)
-
-        return {
-            "p50_ms": sorted_latencies[p50_index],
-            "p95_ms": sorted_latencies[p95_index],
-            "p99_ms": sorted_latencies[p99_index],
-        }
-
     def __len__(self) -> int:
+
         """Return number of measurements."""
         return len(self.measurements)
