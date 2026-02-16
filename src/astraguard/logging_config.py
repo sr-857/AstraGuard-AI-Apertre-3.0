@@ -38,6 +38,20 @@ def _cached_get_secret(key: str, default=None):
         return default
 
 # ============================================================================
+# REDACTION PROCESSOR
+# ============================================================================
+class RedactingProcessor:
+    """Structlog processor to redact sensitive keys."""
+    def __init__(self, keys_to_redact: set[str]):
+        self.keys_to_redact = keys_to_redact
+
+    def __call__(self, logger, name, event_dict):
+        for key in list(event_dict.keys()):
+            if any(sensitive in key.lower() for sensitive in self.keys_to_redact):
+                event_dict[key] = "[REDACTED]"
+        return event_dict
+
+# ============================================================================
 # STRUCTURED LOGGING CONFIGURATION
 # ============================================================================
 
@@ -77,7 +91,9 @@ def setup_json_logging(
             structlog.processors.add_log_level,
             structlog.processors.TimeStamper(fmt="iso"),
             structlog.processors.StackInfoRenderer(),
+            structlog.processors.StackInfoRenderer(),
             structlog.processors.ExceptionRenderer(),
+            RedactingProcessor(keys_to_redact={"password", "token", "key", "secret", "authorization", "cookie"}),
         ]
         
         # Renderer selection
