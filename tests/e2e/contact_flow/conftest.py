@@ -146,7 +146,7 @@ def e2e_test_app(temp_database: Path, tmp_path: Path) -> FastAPI:
 
 
 @pytest.fixture
-def e2e_client(e2e_test_app: FastAPI, tmp_path: Path, monkeypatch) -> Generator[TestClient, None, None]:
+def e2e_client(e2e_test_app, tmp_path: Path, monkeypatch) -> Generator[TestClient, None, None]:
     """Create test client with isolated database and reset rate limiter."""
     # Create isolated data directory
     data_dir = tmp_path / "data"
