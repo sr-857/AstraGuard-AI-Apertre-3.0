@@ -17,71 +17,11 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================================
-# API Error Taxonomy (New)
+# Custom Exception Hierarchy
 # ============================================================================
 
-class ApiError(Exception):
-    """Base class for all API errors."""
-
-    def __init__(self, code: str, message: str, status_code: int = 500, details: Optional[Dict[str, Any]] = None):
-        self.code = code
-        self.message = message
-        self.status_code = status_code
-        self.details = details or {}
-        super().__init__(self.message)
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary format for JSON response."""
-        return {
-            "code": self.code,
-            "message": self.message,
-            "details": self.details,
-            "timestamp": datetime.utcnow().isoformat() + "Z"
-        }
-
-
-class ValidationError(ApiError):
-    """Input validation error (400)."""
-    def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
-        super().__init__(code="VAL_001", message=message, status_code=400, details=details)
-
-
-class AuthError(ApiError):
-    """Authentication or Authorization error (401/403)."""
-    def __init__(self, message: str, code: str = "AUTH_001", status_code: int = 401, details: Optional[Dict[str, Any]] = None):
-        super().__init__(code=code, message=message, status_code=status_code, details=details)
-
-
-class RateLimitError(ApiError):
-    """Rate limit exceeded (429)."""
-    def __init__(self, message: str = "Too many requests", details: Optional[Dict[str, Any]] = None):
-        super().__init__(code="RATE_001", message=message, status_code=429, details=details)
-
-
-class NotFoundError(ApiError):
-    """Resource not found (404)."""
-    def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
-        super().__init__(code="RES_001", message=message, status_code=404, details=details)
-
-
-class ServerError(ApiError):
-    """Internal server error (500)."""
-    def __init__(self, message: str = "Internal server error", code: str = "SRV_001", details: Optional[Dict[str, Any]] = None):
-        super().__init__(code=code, message=message, status_code=500, details=details)
-
-
-class DependencyError(ApiError):
-    """External dependency failure (502/503)."""
-    def __init__(self, message: str, code: str = "DEP_001", status_code: int = 503, details: Optional[Dict[str, Any]] = None):
-        super().__init__(code=code, message=message, status_code=status_code, details=details)
-
-
-# ============================================================================
-# Legacy Custom Exception Hierarchy (Backward Compatibility)
-# ============================================================================
-
-class AstraGuardException(ApiError):
-    """Base exception for all AstraGuard-specific errors (Legacy Wrapper)."""
+class AstraGuardException(Exception):
+    """Base exception for all AstraGuard-specific errors."""
     
     def __init__(self, message: str, component: str = "unknown", 
                  context: Optional[Dict[str, Any]] = None):
@@ -92,14 +32,14 @@ class AstraGuardException(ApiError):
             component: Component where error occurred
             context: Additional context data
         """
+        self.message = message
         self.component = component
         self.context = context or {}
-        # Default to ServerError code
-        super().__init__(code="SRV_000", message=message, status_code=500, details=self.context)
         self.timestamp = datetime.now()
+        super().__init__(self.message)
     
-    def to_dict_legacy(self) -> Dict[str, Any]:
-        """Convert exception to structured log format (Legacy)."""
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert exception to structured log format."""
         return {
             "error_type": self.__class__.__name__,
             "message": self.message,
@@ -111,52 +51,37 @@ class AstraGuardException(ApiError):
 
 class ModelLoadError(AstraGuardException):
     """Raised when model initialization/loading fails."""
-    def __init__(self, message: str, component: str = "unknown", context: Optional[Dict[str, Any]] = None):
-        super().__init__(message, component, context)
-        self.code = "DEP_002"
-        self.status_code = 503
+    pass
 
 
 class AnomalyEngineError(AstraGuardException):
     """Raised when anomaly detection computation fails."""
-    def __init__(self, message: str, component: str = "unknown", context: Optional[Dict[str, Any]] = None):
-        super().__init__(message, component, context)
-        self.code = "SRV_002"
+    pass
 
 
 class PolicyEvaluationError(AstraGuardException):
     """Raised when policy engine evaluation fails."""
-    def __init__(self, message: str, component: str = "unknown", context: Optional[Dict[str, Any]] = None):
-        super().__init__(message, component, context)
-        self.code = "SRV_003"
+    pass
 
 
 class StateTransitionError(AstraGuardException):
     """Raised when state machine transition fails."""
-    def __init__(self, message: str, component: str = "unknown", context: Optional[Dict[str, Any]] = None):
-        super().__init__(message, component, context)
-        self.code = "SRV_004"
+    pass
 
 
 class MemoryEngineError(AstraGuardException):
     """Raised when memory store operations fail."""
-    def __init__(self, message: str, component: str = "unknown", context: Optional[Dict[str, Any]] = None):
-        super().__init__(message, component, context)
-        self.code = "SRV_005"
+    pass
 
 
 class PredictiveMaintenanceError(AstraGuardException):
     """Raised when predictive maintenance operations fail."""
-    def __init__(self, message: str, component: str = "unknown", context: Optional[Dict[str, Any]] = None):
-        super().__init__(message, component, context)
-        self.code = "SRV_006"
+    pass
 
 
 class ReportGenerationError(AstraGuardException):
     """Raised when report generation or export operations fail."""
-    def __init__(self, message: str, component: str = "unknown", context: Optional[Dict[str, Any]] = None):
-        super().__init__(message, component, context)
-        self.code = "SRV_007"
+    pass
 
 
 # ============================================================================
@@ -239,12 +164,6 @@ def classify_error(exc: Exception, component: str,
         ValueError: ErrorSeverity.MEDIUM,
         KeyError: ErrorSeverity.MEDIUM,
         Exception: ErrorSeverity.HIGH,
-        DependencyError: ErrorSeverity.HIGH,
-        ServerError: ErrorSeverity.HIGH,
-        ValidationError: ErrorSeverity.LOW,
-        AuthError: ErrorSeverity.LOW,
-        RateLimitError: ErrorSeverity.LOW,
-        NotFoundError: ErrorSeverity.LOW,
     }
     
     # Find matching severity

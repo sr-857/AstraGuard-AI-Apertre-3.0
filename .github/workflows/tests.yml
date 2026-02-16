@@ -143,16 +143,37 @@ jobs:
       run: echo "REDIS_URL=$REDIS_URL"
     
     - name: Wait for Redis
+      shell: python
       run: |
-        for i in {1..60}; do
-          redis-cli -h localhost -p 6379 ping && break
-          echo "Waiting for Redis..."
-          sleep 1
-        done
+        import time
+        import redis
+        import sys
+
+        print("Waiting for Redis...")
+        r = redis.Redis(host='localhost', port=6379)
+        for i in range(60):
+            try:
+                if r.ping():
+                    print(f"Redis is ready after {i} seconds")
+                    sys.exit(0)
+            except Exception:
+                time.sleep(1)
+        print("Redis failed to start")
+        sys.exit(1)
 
     - name: Verify Redis Connectivity
+      shell: python
       run: |
-        redis-cli -h localhost -p 6379 ping
+        import redis
+        import sys
+        try:
+            r = redis.Redis(host='localhost', port=6379)
+            if r.ping():
+                print("Redis connectivity verified")
+                sys.exit(0)
+        except Exception as e:
+            print(f"Redis connectivity failed: {e}")
+            sys.exit(1)
     
     - name: Run pytest with coverage
       run: |
@@ -287,16 +308,37 @@ jobs:
       run: echo "REDIS_URL=$REDIS_URL"
     
     - name: Wait for Redis
+      shell: python
       run: |
-        for i in {1..60}; do
-          redis-cli -h localhost -p 6379 ping && break
-          echo "Waiting for Redis..."
-          sleep 1
-        done
+        import time
+        import redis
+        import sys
+
+        print("Waiting for Redis...")
+        r = redis.Redis(host='localhost', port=6379)
+        for i in range(60):
+            try:
+                if r.ping():
+                    print(f"Redis is ready after {i} seconds")
+                    sys.exit(0)
+            except Exception:
+                time.sleep(1)
+        print("Redis failed to start")
+        sys.exit(1)
 
     - name: Verify Redis Connectivity
+      shell: python
       run: |
-        redis-cli -h localhost -p 6379 ping
+        import redis
+        import sys
+        try:
+            r = redis.Redis(host='localhost', port=6379)
+            if r.ping():
+                print("Redis connectivity verified")
+                sys.exit(0)
+        except Exception as e:
+            print(f"Redis connectivity failed: {e}")
+            sys.exit(1)
     
     - name: Run pytest
       run: |

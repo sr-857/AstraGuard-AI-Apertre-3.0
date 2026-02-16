@@ -4,7 +4,7 @@ API Request/Response Logging Middleware
 Provides comprehensive logging for all API requests and responses with:
 - Request method, path, and headers (excluding sensitive data)
 - Response status code and duration
-- Trace ID for request tracing (standardized)
+- Correlation ID for request tracing
 - Configurable log sampling for high-traffic endpoints
 """
 
@@ -43,7 +43,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
     Middleware for logging API requests and responses.
     
     Features:
-    - Adds trace ID to each request
+    - Adds correlation ID to each request
     - Logs request method, path, and non-sensitive headers
     - Logs response status and duration
     - Supports log sampling for high-traffic endpoints
@@ -102,12 +102,12 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             if key.lower() not in SENSITIVE_HEADERS
         }
     
-    def _generate_trace_id(self) -> str:
+    def _generate_correlation_id(self) -> str:
         """
-        Generate a unique trace ID for request tracing.
+        Generate a unique correlation ID for request tracing.
         
         Returns:
-            UUID-based trace ID
+            UUID-based correlation ID
         """
         return str(uuid.uuid4())
     
@@ -122,9 +122,9 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         Returns:
             Response from the application
         """
-        # Generate trace ID (check header first for propagation)
-        trace_id = request.headers.get("X-Trace-ID") or self._generate_trace_id()
-        request.state.trace_id = trace_id
+        # Generate correlation ID
+        correlation_id = self._generate_correlation_id()
+        request.state.correlation_id = correlation_id
         
         # Record start time
         start_time = time.time()
@@ -138,7 +138,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             
             logger.info(
                 "api_request",
-                trace_id=trace_id,
+                correlation_id=correlation_id,
                 method=request.method,
                 path=request.url.path,
                 query_params=str(request.query_params) if request.query_params else None,
@@ -153,14 +153,14 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             # Calculate duration
             duration_ms = (time.time() - start_time) * 1000
             
-            # Add trace ID to response headers
-            response.headers["X-Trace-ID"] = trace_id
+            # Add correlation ID to response headers
+            response.headers["X-Correlation-ID"] = correlation_id
             
             # Log response details
             if should_log:
                 logger.info(
                     "api_response",
-                    trace_id=trace_id,
+                    correlation_id=correlation_id,
                     method=request.method,
                     path=request.url.path,
                     status_code=response.status_code,
@@ -176,7 +176,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             # Log error
             logger.error(
                 "api_error",
-                trace_id=trace_id,
+                correlation_id=correlation_id,
                 method=request.method,
                 path=request.url.path,
                 error=str(e),
@@ -188,17 +188,14 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             raise
 
 
-def get_trace_id(request: Request) -> Optional[str]:
+def get_correlation_id(request: Request) -> Optional[str]:
     """
-    Extract trace ID from request state.
+    Extract correlation ID from request state.
     
     Args:
         request: FastAPI request object
         
     Returns:
-        Trace ID if available, None otherwise
+        Correlation ID if available, None otherwise
     """
-    return getattr(request.state, "trace_id", None)
-
-# Alias for backward compatibility if needed, though refactoring is preferred
-get_correlation_id = get_trace_id
+    return getattr(request.state, "correlation_id", None)

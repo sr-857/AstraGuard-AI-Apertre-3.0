@@ -25,15 +25,10 @@ import json
 import logging
 from typing import Optional, Dict, Any
 from datetime import datetime
-import asyncio
 
 # Import timeout handling
 from core.timeout_handler import get_timeout_config
-
-# Import resilience components
-from core.circuit_breaker import CircuitBreaker, CircuitOpenError, register_circuit_breaker
-from core.retry import Retry
-from redis.exceptions import RedisError, ConnectionError, TimeoutError as RedisTimeoutError
+import asyncio
 
 # Re-export storage components for compatibility
 from backend.storage import Storage, RedisAdapter, MemoryStorage
@@ -59,32 +54,19 @@ class RedisClient:
         self.connected = False
         self.timeout = timeout or get_timeout_config().redis_timeout
 
-        # Initialize Circuit Breaker
-        self.circuit_breaker = CircuitBreaker(
-            name="redis_client",
-            failure_threshold=5,
-            recovery_timeout=30,
-            expected_exceptions=(RedisError, ConnectionError, RedisTimeoutError, OSError)
-        )
-        register_circuit_breaker(self.circuit_breaker)
-
-    @Retry(max_attempts=3, base_delay=1.0)
     async def connect(self) -> bool:
         """Establish connection to Redis.
 
         Returns:
             True if successful, False otherwise
         """
-        async def _connect():
+        try:
             self.redis = await aioredis.from_url(self.redis_url)
             # Test connection
             await self.redis.ping()
             self.connected = True
             logger.info(f"Connected to Redis: {self.redis_url}")
             return True
-
-        try:
-            return await self.circuit_breaker.call(_connect)
         except Exception as e:
             logger.error(f"Failed to connect to Redis: {e}")
             self.connected = False
@@ -99,22 +81,6 @@ class RedisClient:
                 logger.info("Redis connection closed")
             except Exception as e:
                 logger.error(f"Error closing Redis connection: {e}")
-
-    async def _execute_safe(self, func, *args, **kwargs):
-        """Execute function with circuit breaker protection."""
-        if not self.connected and func.__name__ != '_connect':
-             # Try auto-reconnect if not connected? Or just fail fast.
-             # Circuit breaker handles open state, but we need basic connection check.
-             pass
-
-        try:
-            return await self.circuit_breaker.call(func, *args, **kwargs)
-        except CircuitOpenError:
-            logger.warning(f"Circuit open for Redis operation: {func.__name__}")
-            raise # Let caller handle or bubble up
-        except Exception as e:
-            # Circuit breaker records failure internally if it's an expected exception
-            raise e
 
     async def leader_election(self, instance_id: str, ttl: int = 30) -> bool:
         """Attempt leader election with TTL-based expiry and timeout protection.
@@ -133,7 +99,7 @@ class RedisClient:
             logger.warning("Redis not connected, cannot perform leader election")
             return False
 
-        async def _election():
+        try:
             # Wrap Redis operation with timeout
             result = await asyncio.wait_for(
                 self.redis.set(
@@ -148,13 +114,10 @@ class RedisClient:
                 logger.info(f"Instance {instance_id} elected as leader (TTL: {ttl}s)")
             else:
                 logger.debug(f"Instance {instance_id} did not win leader election")
-            return bool(result)
-
-        try:
-            return await self._execute_safe(_election)
-        except (asyncio.TimeoutError, CircuitOpenError):
-            logger.error(f"Leader election timeout or circuit open")
-            raise  # Propagate for API handling (503)
+            return result
+        except asyncio.TimeoutError:
+            logger.error(f"Leader election timeout ({self.timeout}s exceeded)")
+            return False
         except Exception as e:
             logger.error(f"Leader election failed: {e}")
             return False
@@ -175,8 +138,10 @@ class RedisClient:
         if not self.connected:
             return False
 
-        async def _renew():
+        try:
             # Lua script for atomic check-and-expire operation
+            # Returns 1 (true) if value matches and TTL was set
+            # Returns 0 (false) if value doesn't match
             lua_script = """
             if redis.call("GET", KEYS[1]) == ARGV[1] then
                 redis.call("EXPIRE", KEYS[1], ARGV[2])
@@ -202,12 +167,8 @@ class RedisClient:
                 logger.debug(
                     f"Leadership renewal failed for {instance_id} (not current leader)"
                 )
-            return renewed
 
-        try:
-            return await self._execute_safe(_renew)
-        except CircuitOpenError:
-            raise
+            return renewed
         except Exception as e:
             logger.error(f"Failed to renew leadership: {e}")
             return False
@@ -221,14 +182,9 @@ class RedisClient:
         if not self.connected:
             return None
 
-        async def _get():
+        try:
             leader = await self.redis.get("astra:resilience:leader")
             return leader.decode() if leader else None
-
-        try:
-            return await self._execute_safe(_get)
-        except CircuitOpenError:
-            raise
         except Exception as e:
             logger.error(f"Failed to get leader: {e}")
             return None
@@ -247,15 +203,10 @@ class RedisClient:
             logger.warning("Redis not connected, cannot publish state")
             return 0
 
-        async def _publish():
+        try:
             subscribers = await self.redis.publish(channel, json.dumps(state))
             logger.debug(f"Published state to {subscribers} subscribers on {channel}")
             return subscribers
-
-        try:
-            return await self._execute_safe(_publish)
-        except CircuitOpenError:
-            raise
         except Exception as e:
             logger.error(f"Failed to publish state: {e}")
             return 0
@@ -276,7 +227,7 @@ class RedisClient:
         if not self.connected:
             return False
 
-        async def _register():
+        try:
             key = f"astra:resilience:vote:{instance_id}"
             # Create shallow copy to avoid mutating caller's dict
             vote_copy = dict(vote)
@@ -284,11 +235,6 @@ class RedisClient:
             await self.redis.set(key, json.dumps(vote_copy), ex=ttl)
             logger.debug(f"Registered vote from {instance_id}")
             return True
-
-        try:
-            return await self._execute_safe(_register)
-        except CircuitOpenError:
-            raise
         except Exception as e:
             logger.error(f"Failed to register vote: {e}")
             return False
@@ -307,7 +253,7 @@ class RedisClient:
         if not self.connected:
             return {}
 
-        async def _get_votes():
+        try:
             # Use SCAN to non-blocking retrieve keys (avoids O(N) blocking)
             pattern = f"{prefix}:*"
             cursor = 0
@@ -346,12 +292,9 @@ class RedisClient:
 
             logger.debug(f"Retrieved {len(votes)} votes from cluster")
             return votes
-
-        try:
-            return await self._execute_safe(_get_votes)
-        except (asyncio.TimeoutError, CircuitOpenError):
-            logger.error(f"Get cluster votes timeout or circuit open")
-            raise
+        except asyncio.TimeoutError:
+            logger.error(f"Get cluster votes timeout ({self.timeout}s exceeded)")
+            return {}
         except Exception as e:
             logger.error(f"Failed to get cluster votes: {e}")
             return {}
@@ -368,17 +311,12 @@ class RedisClient:
         if not self.connected:
             return None
 
-        async def _get_health():
+        try:
             key = f"astra:health:{instance_id}"
             health = await self.redis.get(key)
             if health:
                 return json.loads(health)
             return None
-
-        try:
-            return await self._execute_safe(_get_health)
-        except CircuitOpenError:
-            raise
         except Exception as e:
             logger.error(f"Failed to get health for {instance_id}: {e}")
             return None
@@ -399,7 +337,7 @@ class RedisClient:
         if not self.connected:
             return False
 
-        async def _publish_health():
+        try:
             key = f"astra:health:{instance_id}"
             # Create shallow copy to avoid mutating caller's dict
             health_copy = dict(health)
@@ -407,11 +345,6 @@ class RedisClient:
             await self.redis.set(key, json.dumps(health_copy), ex=ttl)
             logger.debug(f"Published health for {instance_id}")
             return True
-
-        try:
-            return await self._execute_safe(_publish_health)
-        except CircuitOpenError:
-            raise
         except Exception as e:
             logger.error(f"Failed to publish health: {e}")
             return False
@@ -425,7 +358,7 @@ class RedisClient:
         if not self.connected:
             return {}
 
-        async def _get_all_health():
+        try:
             # Use SCAN to non-blocking retrieve keys (avoids O(N) blocking)
             pattern = "astra:health:*"
             cursor = 0
@@ -461,11 +394,6 @@ class RedisClient:
 
             logger.debug(f"Retrieved health for {len(health_states)} instances")
             return health_states
-
-        try:
-            return await self._execute_safe(_get_all_health)
-        except CircuitOpenError:
-            raise
         except Exception as e:
             logger.error(f"Failed to get all instance health: {e}")
             return {}
@@ -482,7 +410,7 @@ class RedisClient:
         if not self.connected:
             return 0
 
-        async def _clear():
+        try:
             # Use SCAN to non-blocking retrieve keys (avoids O(N) blocking)
             pattern = f"{prefix}:*"
             cursor = 0
@@ -511,11 +439,6 @@ class RedisClient:
             if cleared > 0:
                 logger.debug(f"Cleared {cleared} stale votes")
             return cleared
-
-        try:
-            return await self._execute_safe(_clear)
-        except CircuitOpenError:
-            raise
         except Exception as e:
             logger.error(f"Failed to clear stale votes: {e}")
             return 0
@@ -532,16 +455,11 @@ class RedisClient:
         if not self.connected:
             return None
 
-        async def _subscribe():
+        try:
             pubsub = self.redis.pubsub()
             await pubsub.subscribe(channel)
             logger.info(f"Subscribed to channel: {channel}")
             return pubsub
-
-        try:
-            return await self._execute_safe(_subscribe)
-        except CircuitOpenError:
-            raise
         except Exception as e:
             logger.error(f"Failed to subscribe to {channel}: {e}")
             return None
@@ -555,14 +473,9 @@ class RedisClient:
         if not self.connected:
             return False
 
-        async def _health():
+        try:
             await self.redis.ping()
             return True
-
-        try:
-            return await self._execute_safe(_health)
-        except CircuitOpenError:
-            raise
         except Exception as e:
             logger.error(f"Redis health check failed: {e}")
             self.connected = False

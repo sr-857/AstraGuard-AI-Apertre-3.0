@@ -1,2 +1,0 @@
-Method,Name,Error,Occurrences
-POST,/api/contact,HTTPError('429 Client Error: Too Many Requests for url: /api/contact'),27
