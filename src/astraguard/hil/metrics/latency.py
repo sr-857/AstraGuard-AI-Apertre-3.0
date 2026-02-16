@@ -2,10 +2,10 @@
 
 import time
 import csv
-import heapq
 import logging
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, asdict
+
 from datetime import datetime
 from collections import defaultdict
 from pathlib import Path
@@ -32,6 +32,9 @@ class LatencyCollector:
         self.measurements: List[LatencyMeasurement] = []
         self._start_time = time.time()
         self._measurement_log: Dict[str, int] = defaultdict(int)
+        self._cached_stats: Optional[Dict[str, Any]] = None
+        self._cache_valid = False
+
 
     def record_fault_detection(
         self, sat_id: str, scenario_time_s: float, detection_delay_ms: float
@@ -133,6 +136,34 @@ class LatencyCollector:
         self._measurement_log["recovery_action"] += 1
         logger.debug(f"Recorded recovery action latency: {sat_id}, {action_time_ms}ms")
 
+    def _compute_stats(self, latencies: List[float]) -> Dict[str, float]:
+        """
+        Compute statistics for a list of latencies in a single pass.
+        
+        Args:
+            latencies: List of latency values in milliseconds
+            
+        Returns:
+            Dict with count, mean_ms, p50_ms, p95_ms, p99_ms, max_ms, min_ms
+        """
+        if not latencies:
+            return {}
+        
+        count = len(latencies)
+        sorted_latencies = sorted(latencies)
+        
+        total = sum(latencies)
+        
+        return {
+            "count": count,
+            "mean_ms": total / count,
+            "p50_ms": sorted_latencies[count // 2],
+            "p95_ms": sorted_latencies[int(count * 0.95)] if count > 1 else sorted_latencies[0],
+            "p99_ms": sorted_latencies[int(count * 0.99)] if count > 1 else sorted_latencies[0],
+            "max_ms": sorted_latencies[-1],
+            "min_ms": sorted_latencies[0],
+        }
+
     def get_stats(self) -> Dict[str, Any]:
         """
         Calculate aggregate latency statistics.
@@ -143,30 +174,19 @@ class LatencyCollector:
         if not self.measurements:
             return {}
 
-        by_type = defaultdict(list)
+        # Single-pass: group by type and collect latencies
+        by_type: Dict[str, List[float]] = defaultdict(list)
         for m in self.measurements:
             by_type[m.metric_type].append(m.duration_ms)
 
+        # Compute stats for each type
         stats = {}
         for metric_type, latencies in by_type.items():
-            if not latencies:
-                continue
-                
-            sorted_latencies = sorted(latencies)
-            count = len(sorted_latencies)
-
-            stats[metric_type] = {
-                "count": count,
-                "mean_ms": sum(latencies) / count,
-                "p50_ms": sorted_latencies[count // 2],
-                "p95_ms": sorted_latencies[int(count * 0.95)],
-                "p99_ms": sorted_latencies[int(count * 0.99)],
-                "max_ms": max(latencies),
-                "min_ms": min(latencies),
-            }
+            stats[metric_type] = self._compute_stats(latencies)
 
         logger.debug(f"Calculated statistics for {len(stats)} metric types")
         return stats
+
 
     def get_stats_by_satellite(self) -> Dict[str, Dict[str, Any]]:
         """
@@ -178,31 +198,30 @@ class LatencyCollector:
         if not self.measurements:
             return {}
 
-        by_satellite = defaultdict(lambda: defaultdict(list))
+        # Single-pass: group by satellite and type
+        by_satellite: Dict[str, Dict[str, List[float]]] = defaultdict(lambda: defaultdict(list))
 
         for m in self.measurements:
             by_satellite[m.satellite_id][m.metric_type].append(m.duration_ms)
 
+        # Compute stats for each satellite and type
         stats = {}
         for sat_id, metrics in by_satellite.items():
             stats[sat_id] = {}
             for metric_type, latencies in metrics.items():
-                if not latencies:
-                    continue
-                    
-                sorted_latencies = sorted(latencies)
-                count = len(sorted_latencies)
-
+                # Use simplified stats (p50, p95, max) for satellite view
+                computed = self._compute_stats(latencies)
                 stats[sat_id][metric_type] = {
-                    "count": count,
-                    "mean_ms": sum(latencies) / count,
-                    "p50_ms": sorted_latencies[count // 2],
-                    "p95_ms": sorted_latencies[int(count * 0.95)],
-                    "max_ms": max(latencies),
+                    "count": computed["count"],
+                    "mean_ms": computed["mean_ms"],
+                    "p50_ms": computed["p50_ms"],
+                    "p95_ms": computed["p95_ms"],
+                    "max_ms": computed["max_ms"],
                 }
 
         logger.debug(f"Calculated statistics for {len(stats)} satellites")
         return stats
+
 
     def export_csv(self, filename: str) -> None:
         """
@@ -251,45 +270,31 @@ class LatencyCollector:
             return {"total_measurements": 0, "metrics": {}}
 
         # Single-pass computation for both stats and stats_by_satellite
-        by_type = defaultdict(list)
-        by_satellite = defaultdict(lambda: defaultdict(list))
+        by_type: Dict[str, List[float]] = defaultdict(list)
+        by_satellite: Dict[str, Dict[str, List[float]]] = defaultdict(lambda: defaultdict(list))
 
         for m in self.measurements:
             by_type[m.metric_type].append(m.duration_ms)
             by_satellite[m.satellite_id][m.metric_type].append(m.duration_ms)
 
-        # Calculate stats by type
+        # Calculate stats by type using shared computation
         stats = {}
         for metric_type, latencies in by_type.items():
-            if not latencies:
-                continue
-            sorted_latencies = sorted(latencies)
-            count = len(sorted_latencies)
-            stats[metric_type] = {
-                "count": count,
-                "mean_ms": sum(latencies) / count,
-                "p50_ms": sorted_latencies[count // 2],
-                "p95_ms": sorted_latencies[int(count * 0.95)],
-                "p99_ms": sorted_latencies[int(count * 0.99)],
-                "max_ms": max(latencies),
-                "min_ms": min(latencies),
-            }
+            stats[metric_type] = self._compute_stats(latencies)
 
-        # Calculate stats by satellite
+        # Calculate stats by satellite using shared computation
         stats_by_satellite = {}
         for sat_id, metrics in by_satellite.items():
             stats_by_satellite[sat_id] = {}
             for metric_type, latencies in metrics.items():
-                if not latencies:
-                    continue
-                sorted_latencies = sorted(latencies)
-                count = len(sorted_latencies)
+                computed = self._compute_stats(latencies)
+                # Simplified view for satellite stats
                 stats_by_satellite[sat_id][metric_type] = {
-                    "count": count,
-                    "mean_ms": sum(latencies) / count,
-                    "p50_ms": sorted_latencies[count // 2],
-                    "p95_ms": sorted_latencies[int(count * 0.95)],
-                    "max_ms": max(latencies),
+                    "count": computed["count"],
+                    "mean_ms": computed["mean_ms"],
+                    "p50_ms": computed["p50_ms"],
+                    "p95_ms": computed["p95_ms"],
+                    "max_ms": computed["max_ms"],
                 }
 
         return {
@@ -299,38 +304,16 @@ class LatencyCollector:
             "stats_by_satellite": stats_by_satellite,
         }
 
+
     def reset(self) -> None:
         """Clear all measurements."""
         self.measurements.clear()
         self._measurement_log.clear()
+        self._cached_stats = None
+        self._cache_valid = False
 
-    def _calculate_percentiles(self, latencies: List[float]) -> Dict[str, float]:
-        """
-        Calculate percentiles using single sort for better performance.
 
-        Args:
-            latencies: List of latency values
 
-        Returns:
-            Dict with p50_ms, p95_ms, p99_ms
-        """
-        if not latencies:
-            return {"p50_ms": 0.0, "p95_ms": 0.0, "p99_ms": 0.0}
-
-        count = len(latencies)
-        
-        # Single sort is more efficient than multiple heapq.nsmallest calls
-        sorted_latencies = sorted(latencies)
-        
-        p50_index = min(count // 2, count - 1)
-        p95_index = min(int(count * 0.95), count - 1)
-        p99_index = min(int(count * 0.99), count - 1)
-
-        return {
-            "p50_ms": sorted_latencies[p50_index],
-            "p95_ms": sorted_latencies[p95_index],
-            "p99_ms": sorted_latencies[p99_index],
-        }
 
     def __len__(self) -> int:
         """Return number of measurements."""

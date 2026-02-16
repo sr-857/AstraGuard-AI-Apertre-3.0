@@ -95,8 +95,10 @@ except ImportError:
 
 # Configuration
 MAX_ANOMALY_HISTORY_SIZE: int = 10000  # Maximum number of anomalies to keep in memory
+MAX_CONCURRENT_TELEMETRY: int = 10  # Max concurrent telemetry processing to prevent event loop overwhelm
 
 # Global state
+
 state_machine: Optional[StateMachine] = None
 policy_loader: Optional[MissionPhasePolicyLoader] = None
 phase_aware_handler: Optional[PhaseAwareAnomalyHandler] = None
@@ -112,10 +114,14 @@ redis_client: Optional[RedisClient] = None
 telemetry_limiter: Optional[RateLimiter] = None
 api_limiter: Optional[RateLimiter] = None
 
+# Concurrency control for batch processing
+_telemetry_semaphore: Optional[asyncio.Semaphore] = None
+
+
 
 async def initialize_components() -> None:
     """Initialize application components (called on startup or in tests)."""
-    global state_machine, policy_loader, phase_aware_handler, memory_store, predictive_engine
+    global state_machine, policy_loader, phase_aware_handler, memory_store, predictive_engine, _telemetry_semaphore
 
     if state_machine is None:
         state_machine = StateMachine()
@@ -127,6 +133,9 @@ async def initialize_components() -> None:
         memory_store = AdaptiveMemoryStore()
     if predictive_engine is None:
         predictive_engine = await get_predictive_maintenance_engine(memory_store)
+    if _telemetry_semaphore is None:
+        _telemetry_semaphore = asyncio.Semaphore(MAX_CONCURRENT_TELEMETRY)
+
 
 
 def _check_credential_security() -> None:
@@ -499,10 +508,23 @@ async def metrics(username: str = Depends(get_current_username)) -> Response:
     )
 
 
-async def _process_single_telemetry(telemetry: TelemetryInput, request_start: float) -> AnomalyResponse:
+async def _process_telemetry(telemetry: TelemetryInput, request_start: float) -> AnomalyResponse:
     """
-    Internal function to process a single telemetry point without endpoint overhead.
-    Used by both single telemetry endpoint and batch processing.
+    Process a single telemetry point for anomaly detection.
+    
+    This is the core business logic function that handles:
+    - Chaos injection (for testing)
+    - Anomaly detection
+    - Phase-aware decision making
+    - Predictive maintenance
+    - Memory storage
+    
+    Args:
+        telemetry: The telemetry data to process
+        request_start: Timestamp when the request started (for latency tracking)
+        
+    Returns:
+        AnomalyResponse with detection results
     """
     # CHAOS INJECTION HOOK
     # 1. Network Latency Injection
@@ -517,15 +539,151 @@ async def _process_single_telemetry(telemetry: TelemetryInput, request_start: fl
         )
     
     try:
+        # Type assertions for initialized globals
+        assert state_machine is not None
+        assert phase_aware_handler is not None
+        assert memory_store is not None
+        
+        # Convert telemetry to dict
+        data = {
+            "voltage": telemetry.voltage,
+            "temperature": telemetry.temperature,
+            "gyro": telemetry.gyro,
+            "current": telemetry.current or 0.0,
+            "wheel_speed": telemetry.wheel_speed or 0.0,
+        }
+
+        # Update global latest telemetry
+        global latest_telemetry_data
+        latest_telemetry_data = {
+            "data": data,
+            "timestamp": datetime.now()
+        }
+
+        # Track observability if enabled
         if OBSERVABILITY_ENABLED:
             with track_request("anomaly_detection"):
                 with span_anomaly_detection(data_size=1, model_name="detector_v1"):
-                    response = await _process_telemetry(telemetry, request_start)
+                    # Detect anomaly (uses heuristic if model not loaded)
+                    is_anomaly, anomaly_score = await detect_anomaly(data)
         else:
-            response = await _process_telemetry(telemetry, request_start)
+            # Detect anomaly (uses heuristic if model not loaded)
+            is_anomaly, anomaly_score = await detect_anomaly(data)
 
+        # Classify fault type
+        anomaly_type = classify(data)
+
+        # Predictive Maintenance: Add training data and check for predictions in parallel
+        predictive_actions = []
+        if predictive_engine:
+            try:
+                # Create time-series data point
+                ts_data = TimeSeriesData(
+                    timestamp=datetime.now(),
+                    cpu_usage=telemetry.cpu_usage or 0.0,
+                    memory_usage=telemetry.memory_usage or 0.0,
+                    network_latency=telemetry.network_latency or 0.0,
+                    disk_io=telemetry.disk_io or 0.0,
+                    error_rate=telemetry.error_rate or 0.0,
+                    response_time=telemetry.response_time or 0.0,
+                    active_connections=telemetry.active_connections or 0,
+                    failure_occurred=is_anomaly
+                )
+
+                # Parallelize independent operations: add training data and predict failures
+                add_data_task = predictive_engine.add_training_data(ts_data)
+                predict_task = predictive_engine.predict_failures(ts_data)
+                
+                # Execute both operations concurrently
+                _, predictions = await asyncio.gather(add_data_task, predict_task)
+
+                if predictions:
+                    logger.info(f"Predictive maintenance: {len(predictions)} failure predictions made")
+
+                    # Trigger preventive actions (depends on predictions)
+                    actions = await predictive_engine.trigger_preventive_actions(predictions)
+                    predictive_actions = actions
+
+                    # Log predictions for monitoring
+                    for prediction in predictions:
+                        logger.warning(f"PREDICTED FAILURE: {prediction.failure_type.value} "
+                                     f"at {prediction.predicted_time} (prob: {prediction.probability:.2f})")
+
+            except Exception as e:
+                logger.error(f"Predictive maintenance failed: {e}")
+                # Don't fail the request if predictive maintenance fails
+
+
+        # Get phase-aware decision if anomaly detected
+        if is_anomaly:
+            decision = phase_aware_handler.handle_anomaly(
+                anomaly_type=anomaly_type,
+                severity_score=anomaly_score,
+                confidence=0.85,
+                anomaly_metadata={"telemetry": data}
+            )
+
+            response = AnomalyResponse(
+                is_anomaly=True,
+                anomaly_score=anomaly_score,
+                anomaly_type=decision['anomaly_type'],
+                severity_score=decision['severity_score'],
+                severity_level=decision['policy_decision']['severity'],
+                mission_phase=decision['mission_phase'],
+                recommended_action=decision['recommended_action'],
+                escalation_level=decision['policy_decision']['escalation_level'],
+                is_allowed=decision['policy_decision']['is_allowed'],
+                allowed_actions=decision['policy_decision']['allowed_actions'],
+                should_escalate_to_safe_mode=decision['should_escalate_to_safe_mode'],
+                confidence=decision['detection_confidence'],
+                reasoning=decision['reasoning'],
+                recurrence_count=decision['recurrence_info']['count'],
+                timestamp=telemetry.timestamp if telemetry.timestamp else datetime.now()
+            )
+
+            # Store in history
+            anomaly_history.append(response)
+
+            # Store in memory with embedding (simple feature vector)
+            embedding = np.array([
+                telemetry.voltage,
+                telemetry.temperature,
+                abs(telemetry.gyro),
+                telemetry.current or 0.0,
+                telemetry.wheel_speed or 0.0
+            ])
+            await memory_store.write(
+                embedding=embedding,
+                metadata={
+                    "anomaly_type": anomaly_type,
+                    "severity": anomaly_score,
+                    "critical": decision['should_escalate_to_safe_mode']
+                },
+                timestamp=telemetry.timestamp
+            )
+
+        else:
+            # No anomaly
+            response = AnomalyResponse(
+                is_anomaly=False,
+                anomaly_score=anomaly_score,
+                anomaly_type="normal",
+                severity_score=0.0,
+                severity_level="LOW",
+                mission_phase=state_machine.get_current_phase().value,
+                recommended_action="NO_ACTION",
+                escalation_level="NO_ACTION",
+                is_allowed=True,
+                allowed_actions=[],
+                should_escalate_to_safe_mode=False,
+                confidence=0.9,
+                reasoning="All telemetry parameters within normal range",
+                recurrence_count=0,
+                timestamp=telemetry.timestamp if telemetry.timestamp else datetime.now()
+            )
+
+        # Record anomaly detection metrics if enabled
         if OBSERVABILITY_ENABLED and response.is_anomaly:
-            logger = get_logger(__name__)
             ANOMALY_DETECTIONS.labels(severity=response.severity_level.lower()).inc()
             log_detection(
                 logger,
@@ -535,11 +693,18 @@ async def _process_single_telemetry(telemetry: TelemetryInput, request_start: fl
                 instance_id="telemetry"
             )
 
+        # Record latency in observability (if enabled)
+        if OBSERVABILITY_ENABLED:
+            elapsed_ms = (time.time() - request_start) * 1000
+            DETECTION_LATENCY.observe(elapsed_ms / 1000.0)
+
         return response
 
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
     except Exception as e:
         if OBSERVABILITY_ENABLED:
-            logger = get_logger(__name__)
             log_error(logger, e, {"endpoint": "/api/v1/telemetry"})
         
         raise HTTPException(
@@ -559,154 +724,9 @@ async def submit_telemetry(telemetry: TelemetryInput, current_user: User = Depen
         AnomalyResponse with detection results and recommended actions
     """
     request_start = time.time()
-    return await _process_single_telemetry(telemetry, request_start)
+    return await _process_telemetry(telemetry, request_start)
 
 
-
-async def _process_telemetry(telemetry: TelemetryInput, request_start: float) -> AnomalyResponse:
-    """Internal telemetry processing logic."""
-    # Type assertions for initialized globals
-    assert state_machine is not None
-    assert phase_aware_handler is not None
-    assert memory_store is not None
-    
-    # Convert telemetry to dict
-    data = {
-        "voltage": telemetry.voltage,
-        "temperature": telemetry.temperature,
-        "gyro": telemetry.gyro,
-        "current": telemetry.current or 0.0,
-        "wheel_speed": telemetry.wheel_speed or 0.0,
-    }
-
-    # Update global latest telemetry
-    global latest_telemetry_data
-    latest_telemetry_data = {
-        "data": data,
-        "timestamp": datetime.now()
-    }
-
-    # Detect anomaly (uses heuristic if model not loaded)
-    is_anomaly, anomaly_score = await detect_anomaly(data)
-
-    # Classify fault type
-    anomaly_type = classify(data)
-
-    # Predictive Maintenance: Add training data and check for predictions in parallel
-    predictive_actions = []
-    if predictive_engine:
-        try:
-            # Create time-series data point
-            ts_data = TimeSeriesData(
-                timestamp=datetime.now(),
-                cpu_usage=telemetry.cpu_usage or 0.0,
-                memory_usage=telemetry.memory_usage or 0.0,
-                network_latency=telemetry.network_latency or 0.0,
-                disk_io=telemetry.disk_io or 0.0,
-                error_rate=telemetry.error_rate or 0.0,
-                response_time=telemetry.response_time or 0.0,
-                active_connections=telemetry.active_connections or 0,
-                failure_occurred=is_anomaly
-            )
-
-            # Parallelize independent operations: add training data and predict failures
-            add_data_task = predictive_engine.add_training_data(ts_data)
-            predict_task = predictive_engine.predict_failures(ts_data)
-            
-            # Execute both operations concurrently
-            _, predictions = await asyncio.gather(add_data_task, predict_task)
-
-            if predictions:
-                logger.info(f"Predictive maintenance: {len(predictions)} failure predictions made")
-
-                # Trigger preventive actions (depends on predictions)
-                actions = await predictive_engine.trigger_preventive_actions(predictions)
-                predictive_actions = actions
-
-                # Log predictions for monitoring
-                for prediction in predictions:
-                    logger.warning(f"PREDICTED FAILURE: {prediction.failure_type.value} "
-                                 f"at {prediction.predicted_time} (prob: {prediction.probability:.2f})")
-
-        except Exception as e:
-            logger.error(f"Predictive maintenance failed: {e}")
-            # Don't fail the request if predictive maintenance fails
-
-
-    # Get phase-aware decision if anomaly detected
-    if is_anomaly:
-        decision = phase_aware_handler.handle_anomaly(
-            anomaly_type=anomaly_type,
-            severity_score=anomaly_score,
-            confidence=0.85,
-            anomaly_metadata={"telemetry": data}
-        )
-
-        response = AnomalyResponse(
-            is_anomaly=True,
-            anomaly_score=anomaly_score,
-            anomaly_type=decision['anomaly_type'],
-            severity_score=decision['severity_score'],
-            severity_level=decision['policy_decision']['severity'],
-            mission_phase=decision['mission_phase'],
-            recommended_action=decision['recommended_action'],
-            escalation_level=decision['policy_decision']['escalation_level'],
-            is_allowed=decision['policy_decision']['is_allowed'],
-            allowed_actions=decision['policy_decision']['allowed_actions'],
-            should_escalate_to_safe_mode=decision['should_escalate_to_safe_mode'],
-            confidence=decision['detection_confidence'],
-            reasoning=decision['reasoning'],
-            recurrence_count=decision['recurrence_info']['count'],
-            timestamp=telemetry.timestamp if telemetry.timestamp else datetime.now()
-        )
-
-        # Store in history
-        anomaly_history.append(response)
-
-        # Store in memory with embedding (simple feature vector)
-        embedding = np.array([
-            telemetry.voltage,
-            telemetry.temperature,
-            abs(telemetry.gyro),
-            telemetry.current or 0.0,
-            telemetry.wheel_speed or 0.0
-        ])
-        await memory_store.write(
-            embedding=embedding,
-            metadata={
-                "anomaly_type": anomaly_type,
-                "severity": anomaly_score,
-                "critical": decision['should_escalate_to_safe_mode']
-            },
-            timestamp=telemetry.timestamp
-        )
-
-    else:
-        # No anomaly
-        response = AnomalyResponse(
-            is_anomaly=False,
-            anomaly_score=anomaly_score,
-            anomaly_type="normal",
-            severity_score=0.0,
-            severity_level="LOW",
-            mission_phase=state_machine.get_current_phase().value,
-            recommended_action="NO_ACTION",
-            escalation_level="NO_ACTION",
-            is_allowed=True,
-            allowed_actions=[],
-            should_escalate_to_safe_mode=False,
-            confidence=0.9,
-            reasoning="All telemetry parameters within normal range",
-            recurrence_count=0,
-            timestamp=telemetry.timestamp if telemetry.timestamp else datetime.now()
-        )
-
-    # Record latency in observability (if enabled)
-    if OBSERVABILITY_ENABLED:
-        elapsed_ms = (time.time() - request_start) * 1000
-        DETECTION_LATENCY.observe(elapsed_ms / 1000.0)
-
-    return response
 
 
 @app.get("/api/v1/telemetry/latest")
@@ -723,13 +743,27 @@ async def submit_telemetry_batch(batch: TelemetryBatch, current_user: User = Dep
     Submit batch of telemetry points for anomaly detection.
 
     Requires API key authentication with 'write' permission.
+    
+    Uses semaphore-based concurrency control to prevent event loop overwhelm
+    with large batches.
 
     Returns:
         BatchAnomalyResponse with aggregated results
     """
-    # Process telemetry in parallel using internal function to avoid endpoint overhead
     request_start = time.time()
-    tasks = [_process_single_telemetry(telemetry, request_start) for telemetry in batch.telemetry]
+    
+    # Ensure semaphore is initialized
+    global _telemetry_semaphore
+    if _telemetry_semaphore is None:
+        _telemetry_semaphore = asyncio.Semaphore(MAX_CONCURRENT_TELEMETRY)
+    
+    async def _process_with_concurrency(telemetry: TelemetryInput) -> AnomalyResponse:
+        """Process telemetry with concurrency limiting."""
+        async with _telemetry_semaphore:
+            return await _process_telemetry(telemetry, request_start)
+    
+    # Process telemetry with concurrency control
+    tasks = [_process_with_concurrency(telemetry) for telemetry in batch.telemetry]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     # Handle any exceptions that occurred during processing
@@ -769,6 +803,7 @@ async def submit_telemetry_batch(batch: TelemetryBatch, current_user: User = Dep
         anomalies_detected=anomalies_detected,
         results=processed_results
     )
+
 
 
 
