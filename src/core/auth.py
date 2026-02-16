@@ -562,6 +562,42 @@ class APIKeyManager:
         encoded_jwt = jwt.encode(to_encode, self._jwt_secret, algorithm="HS256")
         return encoded_jwt
 
+    def create_refresh_token(self, user_id: str) -> str:
+        """Create a refresh token for extending session life."""
+        expires_delta = timedelta(days=7)
+        expire = datetime.utcnow() + expires_delta
+        to_encode = {
+            "sub": user_id,
+            "type": "refresh",
+            "exp": expire,
+            "iat": datetime.utcnow(),
+            "jti": secrets.token_urlsafe(16)  # Unique identifier for revocation
+        }
+        encoded_jwt = jwt.encode(to_encode, self._jwt_secret, algorithm="HS256")
+        return encoded_jwt
+
+    def rotate_tokens(self, refresh_token: str) -> Tuple[str, str]:
+        """Verify refresh token and issue new access/refresh pair."""
+        try:
+            payload = jwt.decode(refresh_token, self._jwt_secret, algorithms=["HS256"])
+            if payload.get("type") != "refresh":
+                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token type")
+            
+            user_id = payload.get("sub")
+            user = self.get_user(user_id)
+            if not user or not user.is_active:
+                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User inactive")
+            
+            # Additional check: revoked tokens could be checked here against a blacklist (Redis)
+            
+            new_access = self.create_jwt_token(user)
+            new_refresh = self.create_refresh_token(user.id)
+            return new_access, new_refresh
+            
+        except JWTError:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
+
+
     def validate_jwt_token(self, token: str) -> Optional[User]:
         """Validate JWT token and return user."""
         try:
