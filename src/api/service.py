@@ -11,9 +11,10 @@ from typing import List, Optional, Any, Union, Dict, TYPE_CHECKING
 from datetime import datetime, timedelta
 from collections import deque
 from asyncio import Lock
-from fastapi import FastAPI, HTTPException, status, Depends
+from fastapi import FastAPI, HTTPException, status, Depends, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator, Deque, Dict, List, Optional, Tuple, Union
 import secrets
@@ -21,6 +22,11 @@ import asyncio
 from core.secrets import get_secret, mask_secret
 from pydantic import BaseModel
 import json
+
+# Import TLS enforcement modules
+from core.tls_config import get_tls_config, is_tls_required
+from core.tls_enforcement import TLSMiddleware, TLSValidator, TLSEnforcementError
+
 
 
 from api.models import (
@@ -79,10 +85,12 @@ if TYPE_CHECKING:
     from security_engine.predictive_maintenance import PredictiveMaintenanceEngine
 from fastapi.responses import Response
 from core.metrics import get_metrics_text, get_metrics_content_type
+from core.restart import get_restart_manager
 from core.rate_limiter import RateLimiter, RateLimitMiddleware, get_rate_limit_config
 from backend.redis_client import RedisClient
 import numpy as np
 from numpy.typing import NDArray
+from core.restart import get_restart_manager
 from astraguard.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -310,6 +318,20 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Add TLS enforcement middleware (early in the stack)
+# This ensures all internal service communication uses TLS
+tls_config = get_tls_config("api")
+if tls_config.enabled:
+    app.add_middleware(
+        TLSMiddleware,
+        enforce_tls=tls_config.enforce_tls,
+        service_name="api",
+        redirect_to_https=False,  # Reject HTTP rather than redirect for APIs
+        hsts_max_age=31536000,
+    )
+    logger.info(f"TLS middleware enabled (enforce={tls_config.enforce_tls})")
+
+
 # Include routers
 from api.contact import router as contact_router
 app.include_router(contact_router)
@@ -487,6 +509,71 @@ async def root() -> HealthCheckResponse:
         version="1.0.0",
         timestamp=datetime.now()
     )
+
+
+@app.get("/api/v1/tls/status")
+async def get_tls_status(request: Request) -> Dict[str, Any]:
+    """
+    Get TLS/SSL status for internal service communication.
+    
+    Returns:
+        Dictionary with TLS configuration status
+    """
+    tls_config = get_tls_config("api")
+    
+    # Check if request came over HTTPS
+    is_https = request.url.scheme == "https"
+    forwarded_proto = request.headers.get("x-forwarded-proto", "")
+    if forwarded_proto == "https":
+        is_https = True
+    
+    return {
+        "tls_enabled": tls_config.enabled,
+        "tls_enforced": tls_config.enforce_tls,
+        "tls_configured": tls_config.is_configured(),
+        "request_secure": is_https,
+        "min_tls_version": str(tls_config.min_tls_version) if tls_config.enabled else None,
+        "mutual_tls": tls_config.mutual_tls if tls_config.enabled else False,
+        "timestamp": datetime.now().isoformat()
+    }
+
+
+@app.get("/api/v1/tls/validate")
+async def validate_tls_configuration() -> Dict[str, Any]:
+    """
+    Validate TLS configuration for all internal services.
+    
+    Returns:
+        Dictionary with validation results
+    """
+    validator = TLSValidator(service_name="api", strict=True)
+    
+    # Validate Redis URL if configured
+    redis_url = get_secret("redis_url") or "redis://localhost:6379"
+    redis_valid = False
+    redis_error = None
+    try:
+        redis_valid = validator.validate_redis_url(redis_url)
+    except TLSEnforcementError as e:
+        redis_error = str(e)
+    
+    # Get violations
+    violations = validator.get_violations()
+    
+    return {
+        "valid": len(violations) == 0,
+        "redis_url_valid": redis_valid,
+        "redis_url_error": redis_error,
+        "violations": violations,
+        "recommendations": [
+            "Use rediss:// for Redis connections",
+            "Use https:// for HTTP internal communication",
+            "Enable mutual TLS (mTLS) for service-to-service authentication",
+            "Configure TLS 1.2 or higher"
+        ] if violations else [],
+        "timestamp": datetime.now().isoformat()
+    }
+
 
 
 @app.get("/metrics", tags=["monitoring"])
@@ -707,10 +794,32 @@ async def metrics(username: str = Depends(get_current_username)) -> Response:
     )
 
 
-@app.get("/api/v1/system/diagnostics", status_code=status.HTTP_200_OK)
-async def get_system_diagnostics(
+@app.post("/api/v1/system/restart", status_code=status.HTTP_202_ACCEPTED)
+async def restart_system(
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(require_admin)
 ):
+    """
+    Trigger a system restart.
+    
+    Requires ADMIN privileges.
+    Returns 202 Accepted immediately, then performs restart in background.
+    """
+    if OBSERVABILITY_ENABLED:
+        logger.warning(f"System restart initiated by user: {current_user.username}")
+        
+    restart_manager = get_restart_manager()
+    background_tasks.add_task(restart_manager.trigger_restart)
+    
+    return {
+        "status": "restarting",
+        "timestamp": datetime.now(),
+        "message": "System restart initiated"
+    }
+
+
+@app.post("/api/v1/telemetry", response_model=AnomalyResponse, status_code=status.HTTP_200_OK)
+async def submit_telemetry(telemetry: TelemetryInput, current_user: User = Depends(require_operator)) -> AnomalyResponse:
     """
     Get detailed system diagnostics.
     
@@ -725,15 +834,9 @@ async def get_system_diagnostics(
 @app.post("/api/v1/telemetry", response_model=AnomalyResponse, status_code=status.HTTP_200_OK)
 async def submit_telemetry(telemetry: TelemetryInput, current_user: User = Depends(require_operator)) -> AnomalyResponse:
     """
-    Submit single telemetry point for anomaly detection.
-
-    Requires API key authentication with 'write' permission.
-
-    Returns:
-        AnomalyResponse with detection results and recommended actions
+    Internal function to process a single telemetry point without endpoint overhead.
+    Used by both single telemetry endpoint and batch processing.
     """
-    request_start = time.time()
-    
     # CHAOS INJECTION HOOK
     # 1. Network Latency Injection (fixed: use async sleep)
     if await check_chaos_injection("network_latency"):
@@ -789,6 +892,21 @@ async def submit_telemetry(telemetry: TelemetryInput, current_user: User = Depen
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error processing telemetry"
         ) from e
+
+
+@app.post("/api/v1/telemetry", response_model=AnomalyResponse, status_code=status.HTTP_200_OK)
+async def submit_telemetry(telemetry: TelemetryInput, current_user: User = Depends(require_operator)):
+    """
+    Submit single telemetry point for anomaly detection.
+
+    Requires API key authentication with 'write' permission.
+
+    Returns:
+        AnomalyResponse with detection results and recommended actions
+    """
+    request_start = time.time()
+    return await _process_single_telemetry(telemetry, request_start)
+
 
 
 async def _process_telemetry(telemetry: TelemetryInput, request_start: float) -> AnomalyResponse:
@@ -967,8 +1085,9 @@ async def submit_telemetry_batch(batch: TelemetryBatch, current_user: User = Dep
     Returns:
         BatchAnomalyResponse with aggregated results
     """
-    # Process telemetry in parallel using asyncio.gather for better performance
-    tasks = [submit_telemetry(telemetry) for telemetry in batch.telemetry]
+    # Process telemetry in parallel using internal function to avoid endpoint overhead
+    request_start = time.time()
+    tasks = [_process_single_telemetry(telemetry, request_start) for telemetry in batch.telemetry]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     # Handle any exceptions that occurred during processing
@@ -1012,6 +1131,7 @@ async def submit_telemetry_batch(batch: TelemetryBatch, current_user: User = Dep
     )
 
 
+
 @app.get("/api/v1/status", response_model=SystemStatus)
 async def get_status(api_key: APIKey = Depends(get_api_key)) -> SystemStatus:
     """Get system health and status.
@@ -1029,6 +1149,7 @@ async def get_status(api_key: APIKey = Depends(get_api_key)) -> SystemStatus:
         if "memory_store" in components:
             components["memory_store"]["status"] = "DEGRADED"
             components["memory_store"]["details"] = "ConnectionRefusedError: Chaos Injection"
+
 
     return SystemStatus(
         status="healthy" if all(

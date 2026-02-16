@@ -1,0 +1,47 @@
+name: Unit Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - '**.py'
+      - '.github/workflows/unit-tests.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - '**.py'
+      - '.github/workflows/unit-tests.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r src/config/requirements.txt
+          pip install -r src/config/requirements-test.txt
+
+      - name: Run Unit Tests
+        run: |
+          # Running standard tests, excluding integration directories
+          pytest tests/ \
+            -v \
+            --ignore=tests/test_integration \
+            --ignore=tests/swarm/integration \
+            --cov=src \
+            --cov-report=xml \
+            --tb=short

@@ -1,0 +1,23 @@
+name: Deploy to Staging
+
+on:
+  push:
+    branches: [ develop ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Build Docker Image
+        run: docker build -t astraguard:staging .
+
+      - name: Deploy to Staging
+        run: |
+          echo "Deploying to Staging Environment..."
+          # Placeholder for deployment script (e.g., kubectl apply, helm upgrade)
+          # kubectl apply -f infra/k8s/staging/

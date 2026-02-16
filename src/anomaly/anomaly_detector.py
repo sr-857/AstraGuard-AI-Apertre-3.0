@@ -3,7 +3,7 @@ import os
 import pickle
 import logging
 import asyncio
-from typing import Any, Dict, Tuple, Optional, cast
+from typing import Any, Dict, List, Tuple, Optional, cast
 
 # Import centralized error handling
 from core.error_handling import (
@@ -36,6 +36,11 @@ MODEL_PATH: str = os.path.join(os.path.dirname(__file__), "anomaly_if.pkl")
 _MODEL: Optional[Any] = None
 _MODEL_LOADED: bool = False
 _USING_HEURISTIC_MODE: bool = False
+
+# Resource status cache to avoid blocking psutil.cpu_percent(interval=0.1) on every call
+_RESOURCE_STATUS_CACHE: Optional[Dict[str, str]] = None
+_RESOURCE_STATUS_CACHE_TIME: float = 0.0
+_RESOURCE_CACHE_TTL: float = 3.0  # seconds
 
 # Initialize circuit breaker for model loading
 _model_loader_cb: CircuitBreaker = register_circuit_breaker(
@@ -448,6 +453,26 @@ def _detect_anomaly_heuristic(data: Dict[str, Any]) -> Tuple[bool, float]:
     return is_anomalous, min(score, 1.0)  # Cap at 1.0
 
 
+async def _get_resource_status_cached() -> Dict[str, str]:
+    """
+    Get resource status with caching to avoid blocking psutil.cpu_percent(interval=0.1)
+    on every detect_anomaly call. Runs the blocking check in thread pool.
+    """
+    global _RESOURCE_STATUS_CACHE, _RESOURCE_STATUS_CACHE_TIME
+    now = time.time()
+    if (
+        _RESOURCE_STATUS_CACHE is not None
+        and (now - _RESOURCE_STATUS_CACHE_TIME) < _RESOURCE_CACHE_TTL
+    ):
+        return _RESOURCE_STATUS_CACHE
+    resource_monitor = get_resource_monitor()
+    _RESOURCE_STATUS_CACHE = await asyncio.to_thread(
+        resource_monitor.check_resource_health
+    )
+    _RESOURCE_STATUS_CACHE_TIME = now
+    return _RESOURCE_STATUS_CACHE
+
+
 @async_timeout(seconds=10.0, operation_name="anomaly_detection")
 async def detect_anomaly(data: Dict[str, Any]) -> Tuple[bool, float]:
     """
@@ -471,7 +496,6 @@ async def detect_anomaly(data: Dict[str, Any]) -> Tuple[bool, float]:
     """
     global _USING_HEURISTIC_MODE
     health_monitor = get_health_monitor()
-    resource_monitor = get_resource_monitor()
 
     # Track latency
     start_time: float = time.time()
@@ -480,14 +504,14 @@ async def detect_anomaly(data: Dict[str, Any]) -> Tuple[bool, float]:
         # Always ensure component is registered (safe: idempotent)
         health_monitor.register_component("anomaly_detector")
         
-        # Check resource availability before heavy operations
-        resource_status: Dict[str, Any] = resource_monitor.check_resource_health()
-        if resource_status['overall'] == 'critical':
+        # Check resource availability (cached, run in thread to avoid blocking)
+        resource_status: Dict[str, str] = await _get_resource_status_cached()
+        if resource_status.get('overall') == 'critical':
             logger.warning(
-                f"Resource check failed: {e}. Proceeding with detection.",
+                "Resources critical. Proceeding with detection.",
                 extra={
                     "component": "anomaly_detector",
-                    "error_type": type(e).__name__
+                    "resource_status": resource_status,
                 }
             )
 
@@ -539,22 +563,24 @@ async def detect_anomaly(data: Dict[str, Any]) -> Tuple[bool, float]:
             try:
                 # Prepare features (order matters for model consistency)
                 features: List[float] = [
-                    data.get("voltage", 8.0),
-                    data.get("temperature", 25.0),
-                    abs(data.get("gyro", 0.0)),
-                    data.get("current", 1.0),
-                    data.get("wheel_speed", 5.0),
+                    float(data.get("voltage", 8.0)),
+                    float(data.get("temperature", 25.0)),
+                    abs(float(data.get("gyro", 0.0))),
+                    float(data.get("current", 1.0)),
+                    float(data.get("wheel_speed", 5.0)),
                 ]
 
-                # Model prediction (assumes binary classifier)
-                is_anomalous = await asyncio.to_thread(_MODEL.predict, [features])
-                is_anomalous = is_anomalous[0]
-                score = (
-                    await asyncio.to_thread(_MODEL.score_samples, [features])
-                    if hasattr(_MODEL, "score_samples")
-                    else [0.5]
-                )
-                score = score[0]
+                # Run predict and score_samples in parallel when both available
+                if hasattr(_MODEL, "score_samples"):
+                    pred_result, score_result = await asyncio.gather(
+                        asyncio.to_thread(_MODEL.predict, [features]),
+                        asyncio.to_thread(_MODEL.score_samples, [features]),
+                    )
+                    is_anomalous = pred_result[0]
+                    score = score_result[0]
+                else:
+                    is_anomalous = (await asyncio.to_thread(_MODEL.predict, [features]))[0]
+                    score = 0.5
                 # Ensure score is a valid float, default to 0.5 if None
                 if score is None:
                     score = 0.5

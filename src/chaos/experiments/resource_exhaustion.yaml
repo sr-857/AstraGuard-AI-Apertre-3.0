@@ -1,0 +1,120 @@
+title: Resource Exhaustion Test
+description: |
+  Validates system behavior under resource pressure (CPU, memory, disk).
+  Tests that:
+  1. System detects resource exhaustion
+  2. Safe mode activates when resources critical
+  3. Non-essential services are deprioritized
+  4. Service recovers when resources freed
+
+steady-state-hypothesis:
+  title: Resources are healthy before chaos
+  probes:
+    - type: probe
+      name: resource-check-before
+      tolerance:
+        type: jsonpath
+        path: $.resources.status.overall
+        expect: healthy
+      provider:
+        type: http
+        url: http://localhost:8000/health/state
+      timeout: 5
+
+method:
+  - type: action
+    name: consume-memory
+    provider:
+      type: python
+      module: chaos.actions.resource_chaos
+      func: consume_memory
+      arguments:
+        duration_seconds: 30
+        memory_mb: 512
+    pauses:
+      after: 5
+
+  - type: action
+    name: consume-cpu
+    provider:
+      type: python
+      module: chaos.actions.resource_chaos
+      func: consume_cpu
+      arguments:
+        duration_seconds: 30
+        cpu_percent: 80
+    pauses:
+      after: 5
+
+  - type: probe
+    name: verify-resource-critical
+    tolerance:
+      type: jsonpath
+        path: $.resources.status.overall
+        expect: critical
+    provider:
+      type: http
+      url: http://localhost:8000/health/state
+    timeout: 10
+
+  - type: probe
+    name: verify-safe-mode
+    tolerance:
+      type: jsonpath
+      path: $.fallback.mode
+      expect: SAFE
+    provider:
+      type: http
+      url: http://localhost:8000/health/state
+    timeout: 10
+
+  - type: action
+    name: release-resources
+    provider:
+      type: python
+      module: chaos.actions.resource_chaos
+      func: release_resources
+    pauses:
+      after: 15
+
+  - type: probe
+    name: verify-resource-recovery
+    tolerance:
+      type: jsonpath
+      path: $.resources.status.overall
+      expect: healthy
+    provider:
+      type: http
+      url: http://localhost:8000/health/state
+    timeout: 30
+
+  - type: probe
+    name: verify-fallback-primary
+    tolerance:
+      type: jsonpath
+      path: $.fallback.mode
+      expect: PRIMARY
+    provider:
+      type: http
+      url: http://localhost:8000/health/state
+    timeout: 30
+
+rollbacks:
+  - type: action
+    name: ensure-resources-released
+    provider:
+      type: python
+      module: chaos.actions.resource_chaos
+      func: release_resources
+
+tags:
+  - resilience
+  - resource
+  - memory
+  - cpu
+  - safe-mode
+
+configuration:
+  slo:
+    max_safe_mode_duration: 60
+    max_recovery_time: 30
