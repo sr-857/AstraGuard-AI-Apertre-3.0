@@ -1,0 +1,1 @@
+Found 0 medium/high severity issues:

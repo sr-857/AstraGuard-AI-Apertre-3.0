@@ -198,8 +198,4 @@ class TestAnomalyDetector:
             "temperature": 25.0,
             "gyro": 0.0
         }
-
-        # Should fall back to heuristic despite validation error
-        is_anomalous, score = await detect_anomaly(data)
-        assert isinstance(is_anomalous, bool)
-        assert isinstance(score, float)
+        

@@ -11,35 +11,23 @@ on:
   pull_request:
     branches: [ main ]
 
+# Fix: Remove duplicate key and ensure cancel-in-progress is false
+# so long simulations finish even if new code is pushed.
 concurrency:
-  group: swarm-sim-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   swarm-tests:
     name: Swarm Simulator Tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
+
+    # Fix: Define project name at Job Level to ensure isolation across all steps
+    env:
+      COMPOSE_PROJECT_NAME: swarm-test-${{ github.run_id }}
     
-    services:
-      redis:
-        image: redis:7-alpine
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-      
-      rabbitmq:
-        image: rabbitmq:3.12-management-alpine
-        env:
-          RABBITMQ_DEFAULT_USER: guest
-          RABBITMQ_DEFAULT_PASS: guest
-        options: >-
-          --health-cmd "rabbitmq-diagnostics ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+    # REMOVED: services block caused port conflicts with docker-compose
     
     steps:
       - uses: actions/checkout@v4
@@ -61,11 +49,37 @@ jobs:
           sudo service docker start || true
           docker info
       
-      - name: Start Swarm Constellation
+      - name: Create Environment File
         run: |
+          cp infra/docker/.env.example infra/docker/.env
+      
+      - name: Start Swarm Constellation
+        # Env var inherited from job level, ensuring unique network names
+        run: |
+          # Build and start the infrastructure
           docker compose -f infra/docker/docker-compose.swarm.yml up -d --build
+
+          
+          echo "Waiting for Event Bus (RabbitMQ) to be healthy..."
+          # Loop until RabbitMQ reports 'healthy' or timeout after 60s
+          timeout=60
+          counter=0
+          until [ "$(docker inspect --format='{{.State.Health.Status}}' swarm-${{ github.run_id }}-event-bus-1 2>/dev/null)" == "healthy" ]; do
+            if [ $counter -ge $timeout ]; then
+              echo "Timeout waiting for RabbitMQ health check"
+              docker logs swarm-${{ github.run_id }}-event-bus-1
+              exit 1
+            fi
+            printf '.'
+            sleep 2
+            counter=$((counter+2))
+          done
+          echo "Event Bus is healthy!"
+          
+
           echo "Waiting for services to be healthy..."
           sleep 10
+
           docker compose -f infra/docker/docker-compose.swarm.yml ps
       
       - name: Wait for Agents Ready
@@ -74,17 +88,38 @@ jobs:
           import asyncio
           import httpx
           import time
+          import subprocess
+          import os
           
           async def wait_agents():
+              # Environment variable is now automatically available
+              result = subprocess.run(['docker', 'compose', '-f', 'infra/docker/docker-compose.swarm.yml', 'ps', '--format', 'json'],
+
+                                      capture_output=True, text=True, env={**os.environ, **env})
+              print('Container status:', result.stdout)
+              
+              # Check if port is actually mapped
+              result = subprocess.run(['docker', 'compose', '-f', 'infra/docker/docker-compose.swarm.yml', 'port', 'agent-1', '8000'],
+                                      capture_output=True, text=True, env={**os.environ, **env})
+
+                                    capture_output=True, text=True)
+              print('Container status:', result.stdout)
+              
+              result = subprocess.run(['docker', 'compose', '-f', 'infra/docker/docker-compose.swarm.yml', 'port', 'agent-1', '8000'],
+                                    capture_output=True, text=True)
+
+         print('Port mapping:', result.stdout)
+              
               for i in range(60):
                   try:
                       async with httpx.AsyncClient() as client:
-                          resp = await client.get('http://localhost:8001/health', timeout=2)
+                          resp = await client.get('http://localhost:8001/health/live', timeout=2)
                           if resp.status_code == 200:
                               print('Agent SAT-001-A ready')
                               return True
-                  except:
-                      pass
+                  except Exception as e:
+                      if i % 10 == 0:
+                          print(f'Attempt {i}: {str(e)}')
                   await asyncio.sleep(1)
               return False
           
@@ -92,6 +127,13 @@ jobs:
               print('Agents ready')
           else:
               print('Timeout waiting for agents')
+
+              # Show container logs before failing
+              env = {'COMPOSE_PROJECT_NAME': f'swarm-{os.environ.get("GITHUB_RUN_ID", "local")}'}
+              subprocess.run(['docker', 'compose', '-f', 'infra/docker/docker-compose.swarm.yml', 'logs', '--tail=50'], env={**os.environ, **env})
+
+              subprocess.run(['docker', 'compose', '-f', 'infra/docker/docker-compose.swarm.yml', 'logs', '--tail=50'])
+
               exit(1)
           "
       
@@ -105,7 +147,7 @@ jobs:
         run: |
           mkdir -p test-artifacts
           
-          # Docker compose logs
+          # Docker compose logs (uses global COMPOSE_PROJECT_NAME)
           docker compose -f infra/docker/docker-compose.swarm.yml logs > test-artifacts/docker-compose.log || true
           
           # Prometheus metrics
@@ -116,7 +158,6 @@ jobs:
             curl -s http://localhost:$port/metrics > test-artifacts/agent-$port-metrics.txt || true
           done
           
-          # Test output
           cp test-output.txt test-artifacts/ || true
       
       - name: Generate Coverage Report
@@ -146,6 +187,7 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
+          # Uses the correct project name to tear down the specific containers for this run
           docker compose -f infra/docker/docker-compose.swarm.yml down -v || true
       
       - name: Test Summary
@@ -165,6 +207,10 @@ jobs:
     name: Performance Validation
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    
+    # Fix: Unique project name for performance job to avoid collision with test job
+    env:
+      COMPOSE_PROJECT_NAME: swarm-perf-${{ github.run_id }}
     
     steps:
       - uses: actions/checkout@v4
@@ -186,8 +232,11 @@ jobs:
       
       - name: Run Performance Tests
         run: |
-          # Start constellation
+          # Uses job-level COMPOSE_PROJECT_NAME automatically
           docker compose -f infra/docker/docker-compose.swarm.yml up -d --build
+          
+          # Wait for healthy stack (reusing logic)
+          echo "Waiting for Event Bus to initialize..."
           sleep 15
           
           # Run timing tests
@@ -202,7 +251,7 @@ jobs:
                   for _ in range(10):
                       start = time.time()
                       try:
-                          resp = await client.get('http://localhost:8001/health', timeout=2)
+                          resp = await client.get('http://localhost:8001/health/live', timeout=2)
                           times.append((time.time() - start) * 1000)
                       except:
                           pass
@@ -219,7 +268,8 @@ jobs:
       
       - name: Cleanup
         if: always()
-        run: docker-compose -f infra/docker/docker-compose.swarm.yml down -v || true
+        run: |
+          docker compose -f infra/docker/docker-compose.swarm.yml down -v || true
 
   render-deployment:
     name: Render Deployment Readiness
@@ -231,10 +281,8 @@ jobs:
       
       - name: Validate Render Config
         run: |
-          # Check render.yaml exists
           if [ -f render.yaml ]; then
             echo "✓ render.yaml found"
-            # Validate YAML
             python -c "import yaml; yaml.safe_load(open('render.yaml'))"
             echo "✓ render.yaml is valid"
           else
@@ -243,7 +291,6 @@ jobs:
       
       - name: Check Docker Image
         run: |
-          # Verify docker image can be built
           if [ -f infra/docker/Dockerfile.swarm ]; then
             docker build -t astraguard:swarm-test -f infra/docker/Dockerfile.swarm . --target base --no-cache 2>&1 | head -50
             echo "✓ Docker image builds successfully"

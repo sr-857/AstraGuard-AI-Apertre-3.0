@@ -8,7 +8,7 @@ and shared state across multiple instances.
 
 import time
 import os
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -20,21 +20,40 @@ from core.secrets import get_secret
 # Prometheus metrics
 try:
     from prometheus_client import Counter, Histogram
-    rate_limit_hits = Counter(
-        'astra_rate_limit_hits_total',
-        'Total number of requests allowed by rate limiter',
-        ['endpoint']
-    )
-    rate_limit_blocks = Counter(
-        'astra_rate_limit_blocks_total',
-        'Total number of requests blocked by rate limiter',
-        ['endpoint']
-    )
-    rate_limit_latency = Histogram(
-        'astra_rate_limit_check_duration_seconds',
-        'Time spent checking rate limits',
-        ['endpoint']
-    )
+    try:
+        rate_limit_hits = Counter(
+            'astra_rate_limit_hits_total',
+            'Total number of requests allowed by rate limiter',
+            ['endpoint']
+        )
+        rate_limit_blocks = Counter(
+            'astra_rate_limit_blocks_total',
+            'Total number of requests blocked by rate limiter',
+            ['endpoint']
+        )
+        rate_limit_latency = Histogram(
+            'astra_rate_limit_check_duration_seconds',
+            'Time spent checking rate limits',
+            ['endpoint']
+        )
+    except ValueError:
+        # Metrics already registered (e.g. during testing or reload)
+        # We can't easily get the existing metric objects from the default registry
+        # without private API access or strict registry management.
+        # For now, we accept that they exist. If we need to instrument, we should
+        # use a getter that retrieves from registry.
+        # But for simpler code, we might just leave them as None or re-fetch.
+        # Re-fetching is safer if we really need them, but complex.
+        # Let's import the global registry and get them if possible, or just pass.
+        # A simple pass might break code using these variables if it assumes they are set.
+        # Let's just catch the error and let the variables be defined.
+        # Actually, if they failed, the variables aren't bound.
+        # We need to bind them to SOMETHING.
+        from prometheus_client import REGISTRY
+        rate_limit_hits = REGISTRY._names_to_collectors.get('astra_rate_limit_hits_total') 
+        rate_limit_blocks = REGISTRY._names_to_collectors.get('astra_rate_limit_blocks_total')
+        rate_limit_latency = REGISTRY._names_to_collectors.get('astra_rate_limit_check_duration_seconds')
+
 except ImportError:
     # Fallback if prometheus not available
     rate_limit_hits = None
@@ -192,7 +211,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return response
 
 
-def parse_rate_limit_config(rate_str: str) -> tuple[float, int]:
+def parse_rate_limit_config(rate_str: str) -> Tuple[float, int]:
     """
     Parse rate limit configuration string.
 
@@ -238,7 +257,7 @@ def parse_rate_limit_config(rate_str: str) -> tuple[float, int]:
         return 10.0, 100
 
 
-def get_rate_limit_config() -> Dict[str, tuple[float, int]]:
+def get_rate_limit_config() -> Dict[str, Tuple[float, int]]:
     """
     Get rate limit configurations from environment variables.
 

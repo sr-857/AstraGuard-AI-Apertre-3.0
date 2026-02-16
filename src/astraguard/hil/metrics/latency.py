@@ -3,6 +3,7 @@
 import time
 import csv
 import logging
+import heapq
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, asdict
 
@@ -27,10 +28,10 @@ class LatencyMeasurement:
 class LatencyCollector:
     """Captures high-resolution timing data across swarm (10Hz cadence)."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize collector with empty measurements."""
         self.measurements: List[LatencyMeasurement] = []
-        self._start_time = time.time()
+        self._start_time: float = time.time()
         self._measurement_log: Dict[str, int] = defaultdict(int)
         self._cached_stats: Optional[Dict[str, Any]] = None
         self._cache_valid = False
@@ -182,7 +183,23 @@ class LatencyCollector:
         # Compute stats for each type
         stats = {}
         for metric_type, latencies in by_type.items():
-            stats[metric_type] = self._compute_stats(latencies)
+            if not latencies:
+                continue
+            
+            # Calculate sum before sorting for efficiency
+            total = sum(latencies)
+            sorted_latencies = sorted(latencies)
+            count = len(sorted_latencies)
+
+            stats[metric_type] = {
+                "count": count,
+                "mean_ms": total / count,  # Use pre-calculated sum
+                "p50_ms": sorted_latencies[count // 2],
+                "p95_ms": sorted_latencies[int(count * 0.95)],
+                "p99_ms": sorted_latencies[int(count * 0.99)],
+                "max_ms": sorted_latencies[-1],  # O(1) from sorted list
+                "min_ms": sorted_latencies[0],   # O(1) from sorted list
+            }
 
         logger.debug(f"Calculated statistics for {len(stats)} metric types")
         return stats
@@ -198,25 +215,29 @@ class LatencyCollector:
         if not self.measurements:
             return {}
 
-        # Single-pass: group by satellite and type
         by_satellite: Dict[str, Dict[str, List[float]]] = defaultdict(lambda: defaultdict(list))
 
         for m in self.measurements:
             by_satellite[m.satellite_id][m.metric_type].append(m.duration_ms)
 
-        # Compute stats for each satellite and type
-        stats = {}
+        stats: Dict[str, Dict[str, Any]] = {}
         for sat_id, metrics in by_satellite.items():
             stats[sat_id] = {}
             for metric_type, latencies in metrics.items():
-                # Use simplified stats (p50, p95, max) for satellite view
-                computed = self._compute_stats(latencies)
+                if not latencies:
+                    continue
+                
+                # Calculate sum before sorting for efficiency
+                total = sum(latencies)
+                sorted_latencies = sorted(latencies)
+                count = len(sorted_latencies)
+
                 stats[sat_id][metric_type] = {
-                    "count": computed["count"],
-                    "mean_ms": computed["mean_ms"],
-                    "p50_ms": computed["p50_ms"],
-                    "p95_ms": computed["p95_ms"],
-                    "max_ms": computed["max_ms"],
+                    "count": count,
+                    "mean_ms": total / count,  # Use pre-calculated sum
+                    "p50_ms": sorted_latencies[count // 2],
+                    "p95_ms": sorted_latencies[int(count * 0.95)],
+                    "max_ms": sorted_latencies[-1],  # O(1) from sorted list
                 }
 
         logger.debug(f"Calculated statistics for {len(stats)} satellites")
@@ -229,6 +250,10 @@ class LatencyCollector:
 
         Args:
             filename: Path to output CSV file
+            
+        Raises:
+            ValueError: If filename is invalid or no measurements to export
+            OSError: If file cannot be created or written (permissions, disk space, etc.)
         """
         if not isinstance(filename, str) or not filename.strip():
             raise ValueError(f"Invalid filename: must be non-empty string, got {filename}")
@@ -237,27 +262,66 @@ class LatencyCollector:
             raise ValueError("No measurements to export")
 
         filepath = Path(filename)
-        filepath.parent.mkdir(parents=True, exist_ok=True)
+        
+        try:
+            filepath.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            logger.error(
+                f"Failed to create directory for CSV export: {e}",
+                extra={
+                    "directory": str(filepath.parent),
+                    "error_type": "OSError",
+                    "operation": "mkdir"
+                },
+                exc_info=True
+            )
+            raise
 
-        with open(filepath, "w", newline="", encoding='utf-8') as f:
-            fieldnames = [
-                "timestamp",
-                "metric_type",
-                "satellite_id",
-                "duration_ms",
-                "scenario_time_s",
-            ]
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
+        try:
+            with open(filepath, "w", newline="", encoding='utf-8') as f:
+                fieldnames = [
+                    "timestamp",
+                    "metric_type",
+                    "satellite_id",
+                    "duration_ms",
+                    "scenario_time_s",
+                ]
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                writer.writeheader()
 
-            # Write in batches for better performance using writerows
-            batch_size = 1000
-            for i in range(0, len(self.measurements), batch_size):
-                batch = self.measurements[i:i + batch_size]
-                writer.writerows(asdict(m) for m in batch)
+                # Write in batches for better performance
+                batch_size = 1000
+                for i in range(0, len(self.measurements), batch_size):
+                    batch = self.measurements[i:i + batch_size]
+                    # Use writerows for true batch writing
+                    writer.writerows([asdict(m) for m in batch])
 
-
-        logger.info(f"Exported {len(self.measurements)} measurements to {filepath}")
+            logger.info(f"Exported {len(self.measurements)} measurements to {filepath}")
+            
+        except OSError as e:
+            logger.error(
+                f"Failed to write CSV file: {e}",
+                extra={
+                    "filepath": str(filepath),
+                    "measurement_count": len(self.measurements),
+                    "error_type": "OSError",
+                    "operation": "file_write"
+                },
+                exc_info=True
+            )
+            raise
+        except Exception as e:
+            # Catch unexpected errors during CSV serialization
+            logger.error(
+                f"Unexpected error during CSV export: {e}",
+                extra={
+                    "filepath": str(filepath),
+                    "error_type": type(e).__name__,
+                    "operation": "csv_export"
+                },
+                exc_info=True
+            )
+            raise
 
     def get_summary(self) -> Dict[str, Any]:
         """
@@ -311,7 +375,6 @@ class LatencyCollector:
         self._measurement_log.clear()
         self._cached_stats = None
         self._cache_valid = False
-
 
 
 

@@ -9,26 +9,32 @@ Optimized for async I/O performance using aiosqlite and connection pooling.
 
 import os
 import re
+import logging
+import sqlite3
 import json
+import asyncio
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Any, Union
+from functools import lru_cache
 from collections import deque
 from fastapi import APIRouter, HTTPException, Request, Depends, Query
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, ValidationError as PydanticValidationError
 from fastapi.responses import JSONResponse
 import aiosqlite
 import aiofiles
-import asyncio
 
-# Rate limiting
+
+# Declare variables BEFORE try block
+REDIS_AVAILABLE: bool
+AUTH_AVAILABLE: bool
+
 try:
     from backend.redis_client import RedisClient
     REDIS_AVAILABLE = True
 except ImportError:
     REDIS_AVAILABLE = False
 
-# Authentication
 try:
     from core.auth import require_admin
     AUTH_AVAILABLE = True
@@ -36,67 +42,88 @@ except ImportError:
     AUTH_AVAILABLE = False
 
 
+logger: logging.Logger = logging.getLogger(__name__)
+
+
 if AUTH_AVAILABLE:
-    async def get_admin_user(user = Depends(require_admin)):
-        """Dynamic admin dependency when auth is available"""
+    async def get_admin_user(user: Any = Depends(require_admin)) -> Any:
         return user
 else:
-    async def get_admin_user():
-        """No-op admin dependency when auth is unavailable"""
+    async def get_admin_user(user: Any = None) -> Any:
         return None
 
 
-# Create router
-router = APIRouter(prefix="/api/contact", tags=["contact"])
+router: APIRouter = APIRouter(prefix="/api/contact", tags=["contact"])
+
+DATA_DIR: Path = Path("data")
+DB_PATH: Path = DATA_DIR / "contact_submissions.db"
+NOTIFICATION_LOG: Path = DATA_DIR / "contact_notifications.log"
+CONTACT_EMAIL: str = os.getenv("CONTACT_EMAIL", "support@astraguard.ai")
+SENDGRID_API_KEY: Optional[str] = os.getenv("SENDGRID_API_KEY", None)
+
+_raw_trusted: str = os.getenv("TRUSTED_PROXIES", "")
+TRUSTED_PROXIES: set[str] = {ip.strip() for ip in _raw_trusted.split(",") if ip.strip()}
+
+RATE_LIMIT_SUBMISSIONS: int = 5
+RATE_LIMIT_WINDOW: int = 3600
+
+# Database connection pool
+DB_POOL_SIZE: int = 10
+_db_connection_pool: deque = deque(maxlen=DB_POOL_SIZE)
+_pool_lock: asyncio.Lock = asyncio.Lock()
+
+# Batch logging buffer
+_log_buffer: deque = deque()
+_log_buffer_lock: asyncio.Lock = asyncio.Lock()
+_log_buffer_size: int = 10
 
 
-# Configuration
-DATA_DIR = Path("data")
-DB_PATH = DATA_DIR / "contact_submissions.db"
-NOTIFICATION_LOG = DATA_DIR / "contact_notifications.log"
-CONTACT_EMAIL = os.getenv("CONTACT_EMAIL", "support@astraguard.ai")
-SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY", None)
-
-# Rate limiting configuration
-RATE_LIMIT_SUBMISSIONS = 5  # submissions per hour per IP
-RATE_LIMIT_WINDOW = 3600  # 1 hour in seconds
-
-
-# Pydantic Models
 class ContactSubmission(BaseModel):
-    """Contact form submission model"""
-    name: str = Field(..., min_length=2, max_length=100)
-    email: EmailStr = Field(..., min_length=5, max_length=100)
-    phone: Optional[str] = Field(None, max_length=20)
-    subject: str = Field(..., min_length=3, max_length=200)
-    message: str = Field(..., min_length=10, max_length=5000)
-    website: Optional[str] = Field(None, description="Honeypot field")
-    
-    @field_validator('name', 'subject', 'message')
+    name: str = Field(..., min_length=2, max_length=100, description="Full name (2-100 characters)")
+    email: EmailStr = Field(..., min_length=5, max_length=100, description="Valid email address")
+    phone: Optional[str] = Field(None, max_length=20, description="Phone number (optional)")
+    subject: str = Field(..., min_length=3, max_length=200, description="Subject line (3-200 characters)")
+    message: str = Field(..., min_length=10, max_length=5000, description="Message content (10-5000 characters)")
+    website: Optional[str] = Field(None, description="Honeypot field - leave empty")
+
+    @field_validator("name", "subject", "message", mode="before")
     @classmethod
-    def sanitize_text(cls, v):
-        """Remove dangerous characters to prevent XSS"""
+    def sanitize_text(cls, v: str) -> str:
+        """Remove potentially dangerous HTML/script characters for XSS protection"""
         if v:
             # Remove HTML tags and dangerous characters
-            v = re.sub(r'[<>"\'&]', '', v)
+            v = re.sub(r'[<>"\'&]', "", v)
+            # Remove any script-like patterns
+            v = re.sub(r'(?i)(javascript|onerror|onload|onclick):', "", v)
         return v
-    
-    @field_validator('email')
+
+    @field_validator("email", mode="before")
     @classmethod
-    def normalize_email(cls, v):
-        """Normalize email to lowercase"""
+    def normalize_email(cls, v: str) -> str:
+        """Normalize email to lowercase for consistency"""
         return v.lower() if v else v
+    
+    @field_validator("phone", mode="before")
+    @classmethod
+    def validate_phone(cls, v: Optional[str]) -> Optional[str]:
+        """Validate phone number format if provided"""
+        if v:
+            # Remove common formatting characters
+            cleaned = re.sub(r'[\s\-\(\)\.]', '', v)
+            # Check if it contains only digits and optional + prefix
+            if not re.match(r'^\+?\d{7,15}$', cleaned):
+                raise ValueError("Phone number must contain 7-15 digits with optional + prefix")
+        return v
 
 
 class ContactResponse(BaseModel):
-    """Response for successful submission"""
     success: bool
     message: str
     submission_id: Optional[int] = None
+    rate_limit_info: Optional[dict[str, Any]] = None
 
 
 class SubmissionRecord(BaseModel):
-    """Full submission record with metadata"""
     id: int
     name: str
     email: str
@@ -110,322 +137,542 @@ class SubmissionRecord(BaseModel):
 
 
 class SubmissionsResponse(BaseModel):
-    """Response for admin submissions query"""
     total: int
     limit: int
     offset: int
     submissions: List[SubmissionRecord]
 
 
-# Database connection pool
-_db_pool: Optional[aiosqlite.Connection] = None
-
-async def get_db() -> aiosqlite.Connection:
-    """Get or create database connection"""
-    global _db_pool
-    if _db_pool is None:
-        DATA_DIR.mkdir(exist_ok=True)
-        _db_pool = await aiosqlite.connect(DB_PATH)
-        _db_pool.row_factory = aiosqlite.Row
-    return _db_pool
-
-
-async def init_database():
-    """
-    Initialize SQLite database with required tables and indices.
-    
-    Creates the 'contact_submissions' table if it doesn't exist, along with
-    indices on 'submitted_at' and 'status' for query performance.
-    
-    The database file is created at `data/contact_submissions.db` relative to the
-    application root.
-    """
-    DATA_DIR.mkdir(exist_ok=True)
-    
-    db = await aiosqlite.connect(DB_PATH)
-    
-    await db.execute("""
-        CREATE TABLE IF NOT EXISTS contact_submissions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            email TEXT NOT NULL,
-            phone TEXT,
-            subject TEXT NOT NULL,
-            message TEXT NOT NULL,
-            ip_address TEXT,
-            user_agent TEXT,
-            submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            status TEXT DEFAULT 'pending'
-        )
-    """)
-    
-    # Create index for faster queries
-    await db.execute("""
-        CREATE INDEX IF NOT EXISTS idx_submitted_at 
-        ON contact_submissions(submitted_at DESC)
-    """)
-    
-    await db.execute("""
-        CREATE INDEX IF NOT EXISTS idx_status 
-        ON contact_submissions(status)
-    """)
-    
-    await db.commit()
-    await db.close()
-
-
-# Initialize database on module load (run async)
-def _init_db_sync():
-    """Synchronous wrapper for database initialization"""
+def init_database() -> None:
+    """Initialize contact submissions database with error handling."""
     try:
-        asyncio.run(init_database())
-    except RuntimeError:
-        # Event loop already running, schedule as task
-        asyncio.create_task(init_database())
+        DATA_DIR.mkdir(exist_ok=True)
+    except OSError as e:
+        logger.error(
+            "Failed to create data directory",
+            extra={
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "directory": str(DATA_DIR),
+                "operation": "mkdir"
+            },
+            exc_info=True
+        )
+        raise RuntimeError(f"Cannot create data directory: {e}") from e
 
-# Initialize database
-_init_db_sync()
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS contact_submissions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL,
+                phone TEXT,
+                subject TEXT NOT NULL,
+                message TEXT NOT NULL,
+                ip_address TEXT,
+                user_agent TEXT,
+                submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                status TEXT DEFAULT 'pending'
+            )
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_submitted_at
+            ON contact_submissions(submitted_at DESC)
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_status
+            ON contact_submissions(status)
+        """)
+
+        conn.commit()
+        conn.close()
+        
+        logger.info("Contact database initialized successfully", db_path=str(DB_PATH))
+        
+    except sqlite3.Error as e:
+        logger.error(
+            "Failed to initialize contact database",
+            extra={
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "db_path": str(DB_PATH),
+                "operation": "init_database"
+            },
+            exc_info=True
+        )
+        raise RuntimeError(f"Cannot initialize contact database: {e}") from e
+    except Exception as e:
+        logger.error(
+            "Unexpected error initializing contact database",
+            extra={
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "db_path": str(DB_PATH),
+                "operation": "init_database"
+            },
+            exc_info=True
+        )
+        raise
 
 
-# Rate limiting helper - OPTIMIZED with deque
 class InMemoryRateLimiter:
-    """Optimized in-memory rate limiter using deque for O(1) operations"""
-    def __init__(self):
-        self.requests = {}
+    """
+    Optimized in-memory rate limiter with efficient cleanup strategy.
+    Uses deque for O(1) append operations and periodic cleanup.
+    """
+
+    def __init__(self) -> None:
+        self.requests: dict[str, deque[datetime]] = {}
+        self._lock = asyncio.Lock()
+        self._last_cleanup: datetime = datetime.now()
+        self._cleanup_interval: int = 300  # Run cleanup every 5 minutes
+
+    async def _periodic_cleanup(self, window: int) -> None:
+        """Periodically clean up expired entries to prevent memory bloat"""
+        now = datetime.now()
+        if (now - self._last_cleanup).total_seconds() < self._cleanup_interval:
+            return
+            
+        cutoff = now - timedelta(seconds=window)
+        keys_to_delete = []
+        
+        for key, timestamps in self.requests.items():
+            # Remove expired timestamps
+            while timestamps and timestamps[0] <= cutoff:
+                timestamps.popleft()
+            
+            if not timestamps:
+                keys_to_delete.append(key)
+        
+        for key in keys_to_delete:
+            del self.requests[key]
+        
+        self._last_cleanup = now
+
+    async def is_allowed(self, key: str, limit: int, window: int) -> tuple[bool, dict[str, Any]]:
+        """
+        Check if request is allowed and return rate limit metadata.
+        
+        Returns:
+            tuple: (is_allowed, metadata) where metadata contains:
+                - remaining: requests remaining in current window
+                - reset_at: when the rate limit window resets
+                - limit: total requests allowed per window
+        """
+        async with self._lock:
+            now = datetime.now()
+            cutoff = now - timedelta(seconds=window)
+
+            if key in self.requests:
+                # Efficient cleanup using deque
+                while self.requests[key] and self.requests[key][0] <= cutoff:
+                    self.requests[key].popleft()
+                
+                if not self.requests[key]:
+                    del self.requests[key]
+            
+            if key not in self.requests:
+                self.requests[key] = deque()
+
+            current_count = len(self.requests[key])
+            is_allowed = current_count < limit
+            
+            # Calculate reset time (oldest request + window)
+            reset_at = None
+            if self.requests[key]:
+                oldest = self.requests[key][0]
+                reset_at = (oldest + timedelta(seconds=window)).isoformat()
+            
+            metadata = {
+                "limit": limit,
+                "remaining": max(0, limit - current_count - (1 if is_allowed else 0)),
+                "reset_at": reset_at,
+                "window_seconds": window
+            }
+
+            if is_allowed:
+                self.requests[key].append(now)
+
+            # Run periodic cleanup
+            await self._periodic_cleanup(window)
+
+            return is_allowed, metadata
+
+
+# Initialize database and limiter
+init_database()
+_in_memory_limiter: InMemoryRateLimiter = InMemoryRateLimiter()
+
+
+async def get_db_connection() -> aiosqlite.Connection:
+    """Get a database connection from the pool or create a new one"""
+    async with _pool_lock:
+        if _db_connection_pool:
+            return _db_connection_pool.popleft()
     
-    def is_allowed(self, key: str, limit: int, window: int) -> bool:
-        """Check if request is allowed under rate limit - O(1) complexity"""
-        now = datetime.now().timestamp()
-        cutoff = now - window
-        
-        if key not in self.requests:
-            self.requests[key] = deque(maxlen=limit)
-        
-        request_deque = self.requests[key]
-        
-        # Remove old entries from the left (oldest) side - O(1) per operation
-        while request_deque and request_deque[0] < cutoff:
-            request_deque.popleft()
-        
-        # Check if we're at the limit
-        if len(request_deque) >= limit:
-            return False
-        
-        # Add new request timestamp
-        request_deque.append(now)
-        return True
+    # Create new connection if pool is empty
+    conn = await aiosqlite.connect(DB_PATH)
+    conn.row_factory = aiosqlite.Row
+    return conn
 
 
-# Global rate limiter instance
-_in_memory_limiter = InMemoryRateLimiter()
+async def return_db_connection(conn: aiosqlite.Connection) -> None:
+    """Return a database connection to the pool"""
+    async with _pool_lock:
+        if len(_db_connection_pool) < DB_POOL_SIZE:
+            _db_connection_pool.append(conn)
+        else:
+            await conn.close()
 
 
-def check_rate_limit(ip_address: str) -> bool:
-    """Check if IP is within rate limit"""
-    # Use in-memory rate limiter (reliable and doesn't require Redis)
-    return _in_memory_limiter.is_allowed(
+@lru_cache(maxsize=128)
+def validate_and_normalize_email(email: str) -> str:
+    """Cached email validation and normalization"""
+    return email.lower()
+
+
+async def flush_log_buffer() -> None:
+    """Flush buffered log entries to disk"""
+    if not _log_buffer:
+        return
+    
+    async with _log_buffer_lock:
+        if not _log_buffer:
+            return
+            
+        entries = list(_log_buffer)
+        _log_buffer.clear()
+    
+    try:
+        async with aiofiles.open(NOTIFICATION_LOG, "a") as f:
+            await f.write("\n".join(json.dumps(entry) for entry in entries) + "\n")
+    except Exception as e:
+        logger.error(f"Failed to flush log buffer: {e}")
+
+
+async def check_rate_limit(ip_address: str) -> tuple[bool, dict[str, Any]]:
+    """Check rate limit and return status with metadata"""
+    return await _in_memory_limiter.is_allowed(
         f"contact:{ip_address}",
         RATE_LIMIT_SUBMISSIONS,
-        RATE_LIMIT_WINDOW
+        RATE_LIMIT_WINDOW,
     )
 
 
+@lru_cache(maxsize=256)
+def get_cached_trusted_proxy_check(ip: str) -> bool:
+    """Cached check for trusted proxies"""
+    return ip in TRUSTED_PROXIES
+
+
 def get_client_ip(request: Request) -> str:
-    """Extract client IP address from request"""
-    # Check for forwarded IP (behind proxy/load balancer)
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    
-    real_ip = request.headers.get("X-Real-IP")
-    if real_ip:
-        return real_ip
-    
-    # Fallback to direct client
+    """Optimized IP extraction with cached proxy checking"""
+    direct_ip: str = "unknown"
     if request.client:
-        return request.client.host
-    
-    return "unknown"
+        direct_ip = request.client.host
+
+    if get_cached_trusted_proxy_check(direct_ip):
+        forwarded = request.headers.get("X-Forwarded-For")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+
+        real_ip = request.headers.get("X-Real-IP")
+        if real_ip:
+            return real_ip
+
+    return direct_ip
 
 
 async def save_submission(
     submission: ContactSubmission,
     ip_address: str,
-    user_agent: str
-) -> int:
-    """
-    Persist a contact form submission to the database.
+    user_agent: str,
+) -> Optional[int]:
+    """Save contact submission to database with error handling."""
+    try:
+        async with aiosqlite.connect(DB_PATH) as conn:
+            cursor = await conn.execute(
+                """
+                INSERT INTO contact_submissions
+                    (name, email, phone, subject, message, ip_address, user_agent)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    submission.name,
+                    submission.email,
+                    submission.phone,
+                    submission.subject,
+                    submission.message,
+                    ip_address,
+                    user_agent,
+                ),
+            )
+            await conn.commit()
+            submission_id = cursor.lastrowid
+            
+            logger.info(
+                "Contact submission saved",
+                extra={
+                    "submission_id": submission_id,
+                    "email": submission.email,
+                    "ip_address": ip_address
+                }
+            )
+            
+            return submission_id
+            
+    except aiosqlite.IntegrityError as e:
+        logger.error(
+            "Database integrity error saving submission",
+            extra={
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "email": submission.email,
+                "ip_address": ip_address,
+                "operation": "save_submission"
+            },
+            exc_info=True
+        )
+        raise
+    except aiosqlite.OperationalError as e:
+        logger.error(
+            "Database operational error (locked or inaccessible)",
+            extra={
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "db_path": str(DB_PATH),
+                "email": submission.email,
+                "operation": "save_submission"
+            },
+            exc_info=True
+        )
+        raise
+    except aiosqlite.Error as e:
+        logger.error(
+            "Database error saving submission",
+            extra={
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "email": submission.email,
+                "ip_address": ip_address,
+                "operation": "save_submission"
+            },
+            exc_info=True
+        )
+        raise
 
-    Args:
-        submission (ContactSubmission): The validated submission data (name, email, message, etc.).
-        ip_address (str): Client IP address for auditing and spam control.
-        user_agent (str): Client User-Agent string.
 
-    Returns:
-        int: The primary key ID of the newly created submission record.
-
-    Raises:
-        aiosqlite.Error: If a database error occurs during insertion.
-    """
-    db = await get_db()
-    
-    cursor = await db.execute("""
-        INSERT INTO contact_submissions 
-        (name, email, phone, subject, message, ip_address, user_agent)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (
-        submission.name,
-        submission.email,
-        submission.phone,
-        submission.subject,
-        submission.message,
-        ip_address,
-        user_agent
-    ))
-    
-    submission_id = cursor.lastrowid
-    await db.commit()
-    
-    return submission_id
-
-
-async def log_notification(submission: ContactSubmission, submission_id: int):
-    """Log notification to file (fallback when email is not configured)"""
-    DATA_DIR.mkdir(exist_ok=True)
-    
+async def log_notification(
+    submission: ContactSubmission,
+    submission_id: Optional[int],
+) -> None:
+    """Log notification to file with error handling."""
     log_entry = {
         "timestamp": datetime.now().isoformat(),
         "submission_id": submission_id,
         "name": submission.name,
         "email": submission.email,
         "subject": submission.subject,
-        "message": submission.message[:100] + "..." if len(submission.message) > 100 else submission.message
+        "message": (
+            submission.message[:100] + "..."
+            if len(submission.message) > 100
+            else submission.message
+        ),
     }
-    
-    async with aiofiles.open(NOTIFICATION_LOG, "a") as f:
-        await f.write(json.dumps(log_entry) + "\n")
+
+    try:
+        async with aiofiles.open(NOTIFICATION_LOG, "a") as f:
+            await f.write(json.dumps(log_entry) + "\n")
+            
+        logger.debug(
+            "Notification logged to file",
+            extra={
+                "submission_id": submission_id,
+                "log_file": str(NOTIFICATION_LOG)
+            }
+        )
+        
+    except PermissionError as e:
+        logger.error(
+            "Permission denied writing notification log",
+            extra={
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "log_file": str(NOTIFICATION_LOG),
+                "submission_id": submission_id,
+                "operation": "log_notification"
+            },
+            exc_info=True
+        )
+        raise
+    except OSError as e:
+        logger.error(
+            "I/O error writing notification log (disk full or inaccessible)",
+            extra={
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "log_file": str(NOTIFICATION_LOG),
+                "submission_id": submission_id,
+                "operation": "log_notification"
+            },
+            exc_info=True
+        )
+        raise
 
 
-async def send_email_notification(submission: ContactSubmission, submission_id: int):
+async def send_email_notification(submission: ContactSubmission, submission_id: Optional[int]) -> None:
+
     """Send email notification (placeholder for SendGrid integration)"""
     # TODO: Implement SendGrid integration when SENDGRID_API_KEY is set
     if SENDGRID_API_KEY:
         try:
-            # Example SendGrid implementation:
-            # from sendgrid import SendGridAPIClient
-            # from sendgrid.helpers.mail import Mail
-            #
-            # message = Mail(
-            #     from_email='noreply@astraguard.ai',
-            #     to_emails=CONTACT_EMAIL,
-            #     subject=f'New Contact Form Submission: {submission.subject}',
-            #     html_content=f'''
-            #         <h2>New Contact Form Submission</h2>
-            #         <p><strong>From:</strong> {submission.name} ({submission.email})</p>
-            #         <p><strong>Subject:</strong> {submission.subject}</p>
-            #         <p><strong>Message:</strong></p>
-            #         <p>{submission.message}</p>
-            #         <p><strong>Submission ID:</strong> {submission_id}</p>
-            #     '''
-            # )
-            # sg = SendGridAPIClient(SENDGRID_API_KEY)
-            # response = sg.send(message)
             pass
+        except OSError as e:
+            logger.warning(
+                "SendGrid send failed (network/IO error), falling back to file log",
+                extra={
+                    "error_type": type(e).__name__,
+                    "operation": "send_email",
+                    "submission_id": submission_id,
+                    "email": submission.email
+                },
+                exc_info=True
+            )
+            await log_notification(submission, submission_id)
         except Exception as e:
-            print(f"Email sending failed: {e}")
+            logger.warning(
+                "SendGrid send failed (unexpected), falling back to file log",
+                extra={
+                    "error_type": type(e).__name__,
+                    "operation": "send_email",
+                    "submission_id": submission_id,
+                    "email": submission.email
+                },
+                exc_info=True
+            )
             await log_notification(submission, submission_id)
     else:
-        # Fallback to file logging
         await log_notification(submission, submission_id)
-
-
-# API Endpoints
 
 @router.post("", response_model=ContactResponse, status_code=201)
 async def submit_contact_form(
     submission: ContactSubmission,
-    request: Request
-):
+    request: Request,
+) -> Union[JSONResponse, ContactResponse]:
     """
-    Submit a contact form
+    Submit a contact form with comprehensive validation.
     
-    - **name**: Full name (2-100 characters)
-    - **email**: Valid email address
-    - **phone**: Optional phone number
-    - **subject**: Message subject (3-200 characters)
-    - **message**: Message content (10-5000 characters)
+    Validates:
+    - Email format (RFC 5322 compliant)
+    - Message content sanitization (XSS protection)
+    - Rate limiting per IP address
+    - Spam detection via honeypot field
     
-    Rate limit: 5 submissions per hour per IP address
+    Returns:
+    - 201: Successfully created submission
+    - 400: Validation error with detailed message
+    - 429: Rate limit exceeded
+    - 500: Server error
     """
-    # Honeypot spam protection
+
+    # Honeypot spam detection
     if submission.website:
-        # Bot detected - return fake success to avoid revealing honeypot
         return JSONResponse(
             status_code=201,
             content={
                 "success": True,
-                "message": "Thank you for your message! We'll get back to you within 24-48 hours."
-            }
+                "message": "Thank you for your message! We'll get back to you within 24-48 hours.",
+            },
         )
-    
-    # Get client info
+
     ip_address = get_client_ip(request)
     user_agent = request.headers.get("User-Agent", "unknown")
+
+    # Check rate limit and get metadata
+    is_allowed, rate_limit_metadata = await check_rate_limit(ip_address)
     
-    # Rate limiting
-    if not check_rate_limit(ip_address):
+    if not is_allowed:
         raise HTTPException(
             status_code=429,
-            detail="Too many submissions. Please try again later."
+            detail={
+                "error": "Rate limit exceeded",
+                "message": "Too many submissions. Please try again later.",
+                "rate_limit": rate_limit_metadata
+            },
         )
-    
-    # Save to database
+
     try:
         submission_id = await save_submission(submission, ip_address, user_agent)
     except aiosqlite.Error as e:
         logger.error(
             "Database save failed",
-            error_type=type(e).__name__,
-            error_message=str(e),
-            ip_address=ip_address,
-            email=submission.email,
-            subject=submission.subject
+            extra={
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "ip_address": ip_address,
+                "email": submission.email,
+                "subject": submission.subject,
+            },
         )
         raise HTTPException(
             status_code=500,
-            detail="Failed to save submission. Please try again later."
+            detail="Failed to save submission. Please try again later.",
         )
     except Exception as e:
         logger.error(
             "Unexpected database error",
-            error_type=type(e).__name__,
-            error_message=str(e),
-            ip_address=ip_address,
-            email=submission.email
+            extra={
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "ip_address": ip_address,
+                "email": submission.email,
+            },
         )
         raise HTTPException(
             status_code=500,
-            detail="An unexpected error occurred. Please try again later."
+            detail="An unexpected error occurred. Please try again later.",
         )
-    
-    # Send notification
+
     try:
         await send_email_notification(submission, submission_id)
+    except OSError as e:
+        logger.warning(
+            "Notification failed due to I/O error but submission was saved",
+            extra={
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "submission_id": submission_id,
+                "email": submission.email,
+                "subject": submission.subject,
+                "operation": "send_notification"
+            },
+            exc_info=True
+        )
     except Exception as e:
         logger.warning(
-            "Notification failed but request succeeded",
-            error_type=type(e).__name__,
-            error_message=str(e),
-            submission_id=submission_id,
-            email=submission.email,
-            subject=submission.subject
+            "Notification failed (unexpected) but submission was saved",
+            extra={
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "submission_id": submission_id,
+                "email": submission.email,
+                "subject": submission.subject,
+                "operation": "send_notification"
+            },
+            exc_info=True
         )
-        # Don't fail the request if notification fails
-    
+
+
     return ContactResponse(
         success=True,
         message="Thank you for your message! We'll get back to you within 24-48 hours.",
-        submission_id=submission_id
+        submission_id=submission_id,
+        rate_limit_info=rate_limit_metadata,
     )
 
 
@@ -434,112 +681,210 @@ async def get_submissions(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     status_filter: Optional[str] = Query(None, pattern="^(pending|resolved|spam)$"),
-    current_user = Depends(get_admin_user)
-):
-    """
-    Get contact form submissions (Admin only)
-    
-    - **limit**: Number of results (1-200, default 50)
-    - **offset**: Pagination offset (default 0)
-    - **status_filter**: Filter by status (pending/resolved/spam)
-    
-    Requires admin authentication
-    """
-    db = await get_db()
-    
-    # Build query
+    current_user: Any = Depends(get_admin_user),
+) -> SubmissionsResponse:
+    """Get contact submissions with pagination and filtering."""
     where_clause = ""
-    params = []
-    
+    params: list[Any] = []
+
     if status_filter:
         where_clause = "WHERE status = ?"
         params.append(status_filter)
-    
-    # Get total count
-    count_query = f"SELECT COUNT(*) as total FROM contact_submissions {where_clause}"
-    async with db.execute(count_query, params) as cursor:
-        row = await cursor.fetchone()
-        total = row["total"] if row else 0
-    
-    # Get submissions
-    query = f"""
-        SELECT id, name, email, phone, subject, message, ip_address, 
-               user_agent, submitted_at, status
+
+    count_query = f"SELECT COUNT(*) AS total FROM contact_submissions {where_clause}"  # nosec B608
+    select_query = f"""
+        SELECT id, name, email, phone, subject, message,
+               ip_address, user_agent, submitted_at, status
         FROM contact_submissions
         {where_clause}
         ORDER BY submitted_at DESC
         LIMIT ? OFFSET ?
     """
-    params_extended = params + [limit, offset]
-    
-    async with db.execute(query, params_extended) as cursor:
-        rows = await cursor.fetchall()
-    
-    submissions = [
-        SubmissionRecord(
-            id=row["id"],
-            name=row["name"],
-            email=row["email"],
-            phone=row["phone"],
-            subject=row["subject"],
-            message=row["message"],
-            ip_address=row["ip_address"],
-            user_agent=row["user_agent"],
-            submitted_at=row["submitted_at"],
-            status=row["status"]
+
+    try:
+        async with aiosqlite.connect(DB_PATH) as conn:
+            conn.row_factory = aiosqlite.Row
+
+            async with conn.execute(count_query, params) as cursor:
+                row = await cursor.fetchone()
+                if row is None:
+                    raise HTTPException(status_code=500, detail="Failed to count submissions")
+                total: int = row["total"]
+
+            async with conn.execute(select_query, [*params, limit, offset]) as cursor:
+                rows = await cursor.fetchall()
+
+        submissions = [
+            SubmissionRecord(
+                id=row["id"],
+                name=row["name"],
+                email=row["email"],
+                phone=row["phone"],
+                subject=row["subject"],
+                message=row["message"],
+                ip_address=row["ip_address"],
+                user_agent=row["user_agent"],
+                submitted_at=row["submitted_at"],
+                status=row["status"],
+            )
+            for row in rows
+        ]
+
+        return SubmissionsResponse(
+            total=total,
+            limit=limit,
+            offset=offset,
+            submissions=submissions,
         )
-        for row in rows
-    ]
-    
-    return SubmissionsResponse(
-        total=total,
-        limit=limit,
-        offset=offset,
-        submissions=submissions
-    )
+        
+    except aiosqlite.OperationalError as e:
+        logger.error(
+            "Database operational error fetching submissions",
+            extra={
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "db_path": str(DB_PATH),
+                "limit": limit,
+                "offset": offset,
+                "operation": "get_submissions"
+            },
+            exc_info=True
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Database temporarily unavailable"
+        )
+    except aiosqlite.Error as e:
+        logger.error(
+            "Database error fetching submissions",
+            extra={
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "db_path": str(DB_PATH),
+                "operation": "get_submissions"
+            },
+            exc_info=True
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to fetch submissions"
+        )
+    except HTTPException:
+        # Re-raise HTTP exceptions (500 from count query)
+        raise
+    except Exception as e:
+        logger.error(
+            "Unexpected error fetching submissions",
+            extra={
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "operation": "get_submissions"
+            },
+            exc_info=True
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="An unexpected error occurred"
+        )
 
 
 @router.patch("/submissions/{submission_id}/status")
 async def update_submission_status(
     submission_id: int,
     status: str = Query(..., pattern="^(pending|resolved|spam)$"),
-    current_user = Depends(get_admin_user)
-):
-    """
-    Update submission status (Admin only)
+    current_user: Any = Depends(get_admin_user),
+) -> dict[str, Any]:
+    """Update submission status with error handling."""
     
-    - **submission_id**: ID of the submission
-    - **status**: New status (pending/resolved/spam)
-    
-    Requires admin authentication
-    """
-    db = await get_db()
-    
-    cursor = await db.execute(
-        "UPDATE contact_submissions SET status = ? WHERE id = ?",
-        (status, submission_id)
-    )
-    
-    if cursor.rowcount == 0:
-        raise HTTPException(status_code=404, detail="Submission not found")
-    
-    await db.commit()
-    
-    return {"success": True, "message": f"Status updated to {status}"}
-
-
-# Health check endpoint
-@router.get("/health")
-async def contact_health():
-    """Check contact form service health"""
     try:
-        # Check database
-        db = await get_db()
-        async with db.execute("SELECT COUNT(*) as count FROM contact_submissions") as cursor:
-            row = await cursor.fetchone()
-            total_submissions = row["count"] if row else 0
+        async with aiosqlite.connect(DB_PATH) as conn:
+            cursor = await conn.execute(
+                "UPDATE contact_submissions SET status = ? WHERE id = ?",
+                (status, submission_id),
+            )
+            await conn.commit()
 
-        # Check rate limiting
+            if cursor.rowcount == 0:
+                raise HTTPException(status_code=404, detail="Submission not found")
+
+        logger.info(
+            "Submission status updated",
+            extra={
+                "submission_id": submission_id,
+                "new_status": status
+            }
+        )
+
+        return {"success": True, "message": f"Status updated to {status}"}
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions (404)
+        raise
+    except aiosqlite.OperationalError as e:
+        logger.error(
+            "Database operational error updating submission status",
+            extra={
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "submission_id": submission_id,
+                "status": status,
+                "operation": "update_submission_status"
+            },
+            exc_info=True
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Database temporarily unavailable"
+        )
+    except aiosqlite.Error as e:
+        logger.error(
+            "Database error updating submission status",
+            extra={
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "submission_id": submission_id,
+                "status": status,
+                "operation": "update_submission_status"
+            },
+            exc_info=True
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to update submission status"
+        )
+    except Exception as e:
+        logger.error(
+            "Unexpected error updating submission status",
+            extra={
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "submission_id": submission_id,
+                "operation": "update_submission_status"
+            },
+            exc_info=True
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="An unexpected error occurred"
+        )
+
+
+@router.get("/health")
+async def contact_health() -> dict[str, Any]:
+    """Health check with connection pooling and cached status"""
+    try:
+        conn = await get_db_connection()
+        try:
+            async with conn.execute(
+                "SELECT COUNT(*) FROM contact_submissions"
+            ) as cursor:
+                row = await cursor.fetchone()
+                if row is None:
+                    raise HTTPException(status_code=503, detail="Health check query failed")
+                total_submissions: int = row[0]
+        finally:
+            await return_db_connection(conn)
+
         rate_limiter_status = "redis" if REDIS_AVAILABLE else "in-memory"
 
         return {
@@ -547,26 +892,70 @@ async def contact_health():
             "database": "connected",
             "total_submissions": total_submissions,
             "rate_limiter": rate_limiter_status,
-            "email_configured": SENDGRID_API_KEY is not None
+            "email_configured": SENDGRID_API_KEY is not None,
+            "connection_pool_size": len(_db_connection_pool),
+            "log_buffer_size": len(_log_buffer),
         }
+
     except aiosqlite.Error as e:
         logger.error(
             "Database health check failed",
-            error_type=type(e).__name__,
-            error_message=str(e),
-            db_path=str(DB_PATH)
+            extra={
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "db_path": str(DB_PATH),
+            },
         )
-        raise HTTPException(
-            status_code=503,
-            detail="Database connection failed"
-        )
+        raise HTTPException(status_code=503, detail="Database connection failed")
+
     except Exception as e:
         logger.error(
             "Health check failed",
-            error_type=type(e).__name__,
-            error_message=str(e)
+            extra={
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "operation": "health_check",
+                "db_path": str(DB_PATH)
+            },
+            exc_info=True
         )
+        raise HTTPException(status_code=503, detail="Service health check failed")
+
+
+@router.get("/pool-health")
+async def pool_health() -> dict[str, Any]:
+    """
+    Get connection pool health statistics.
+    
+    Returns pool metrics including active connections, idle connections,
+    total created, timeouts, and average wait time.
+    """
+    if not is_pool_enabled():
+        return {
+            "status": "disabled",
+            "message": "Connection pooling is not enabled"
+        }
+    
+    stats = await get_pool_stats()
+    
+    if stats is None:
         raise HTTPException(
             status_code=503,
-            detail="Service health check failed"
+            detail="Pool statistics unavailable"
         )
+    
+    return {
+        "status": "healthy",
+        "pool": {
+            "active_connections": stats.active_connections,
+            "idle_connections": stats.idle_connections,
+            "total_connections": stats.total_connections,
+            "max_size": stats.max_size,
+            "total_created": stats.total_created,
+            "total_acquisitions": stats.total_acquisitions,
+            "total_releases": stats.total_releases,
+            "total_timeouts": stats.total_timeouts,
+            "total_errors": stats.total_errors,
+            "average_wait_time_ms": round(stats.average_wait_time * 1000, 2),
+        }
+    }

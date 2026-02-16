@@ -1,0 +1,59 @@
+name: Security Scanning
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: '0 0 * * 0'  # Weekly on Sunday
+
+jobs:
+  bandit:
+    name: Bandit Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install Bandit
+      run: |
+        pip install bandit[toml]
+    
+    - name: Run Bandit
+      run: |
+        bandit -r src/ -f json -o bandit-report.json
+        bandit -r src/ -f txt
+      continue-on-error: true
+    
+    - name: Upload Bandit Report
+      uses: actions/upload-artifact@v3
+      with:
+        name: bandit-report
+        path: bandit-report.json
+  
+  safety:
+    name: Dependency Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install Safety
+      run: |
+        pip install safety
+    
+    - name: Run Safety Check
+      run: |
+        pip freeze | safety check --stdin
+      continue-on-error: true

@@ -8,10 +8,13 @@ env:
   DOCKER_BUILDKIT: 1
   BUILDKIT_PROGRESS: plain
   REGISTRY: ghcr.io
+  # Fix #809: Unique identifier to prevent Docker network/volume conflicts
+  COMPOSE_PROJECT_NAME: ci-cd-${{ github.run_id }}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Fix #809: Set to false to ensure deployments complete and aren't killed mid-process
+  cancel-in-progress: false
 
 jobs:
   build:
