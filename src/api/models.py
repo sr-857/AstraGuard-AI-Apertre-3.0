@@ -7,7 +7,15 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+
+import re
 from pydantic import BaseModel, Field, field_validator, model_validator, ValidationError, ConfigDict
+
+def sanitize_html(text: str) -> str:
+    """Remove HTML tags from string to prevent XSS."""
+    clean = re.compile('<.*?>')
+    return re.sub(clean, '', text)
+
 
 logger = logging.getLogger(__name__)
 
@@ -353,7 +361,12 @@ class LoginRequest(BaseModel):
         if len(username) > 50:
             raise ValueError("Username cannot exceed 50 characters")
 
-        return username
+        return username.lower()
+
+    @field_validator('password')
+    @classmethod
+    def sanitize_input(cls, v: str) -> str:
+        return sanitize_html(v)
 
 
 class TokenResponse(BaseModel):
@@ -394,6 +407,11 @@ class UserCreateRequest(BaseModel):
             )
 
         return username.lower()
+
+    @field_validator('username')
+    @classmethod
+    def sanitize_username_create(cls, v: str) -> str:
+        return sanitize_html(v)
 
     @field_validator('password')
     @classmethod
@@ -451,6 +469,11 @@ class APIKeyCreateRequest(BaseModel):
             },
         )
         return name
+
+    @field_validator('name')
+    @classmethod
+    def sanitize_key_name(cls, v: str) -> str:
+        return sanitize_html(v)
 
     @field_validator('permissions')
     @classmethod
