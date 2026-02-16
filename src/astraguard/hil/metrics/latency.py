@@ -356,5 +356,6 @@ class LatencyCollector:
 
 
     def __len__(self) -> int:
+
         """Return number of measurements."""
         return len(self.measurements)
