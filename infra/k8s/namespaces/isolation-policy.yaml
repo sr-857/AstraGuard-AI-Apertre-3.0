@@ -1,0 +1,18 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-from-other-namespaces
+  namespace: astraguard
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector: {}
+      namespaceSelector:
+        matchLabels:
+          name: astraguard
+    - namespaceSelector:
+        matchLabels:
+          name: observability # Allow monitoring tools
