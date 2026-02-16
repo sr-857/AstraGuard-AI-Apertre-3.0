@@ -29,6 +29,8 @@ from core.metrics import (
     ANOMALY_DETECTION_LATENCY,
 )
 import time
+import hashlib
+import aiofiles
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -108,6 +110,37 @@ async def _load_model_impl() -> bool:
             component="anomaly_detector",
             context={"model_path": MODEL_PATH},
         )
+
+    # Checksum Validation (#350)
+    try:
+        checksum_path = MODEL_PATH + ".sha256"
+        if os.path.exists(checksum_path):
+            logger.info(f"Validating model checksum from {checksum_path}")
+            async with aiofiles.open(checksum_path, 'r') as f:
+                expected_sha = (await f.read()).strip()
+            
+            sha256_hash = hashlib.sha256()
+            async with aiofiles.open(MODEL_PATH, "rb") as f:
+                # Read chunks to avoid memory issues
+                chunk = await f.read(4096)
+                while chunk:
+                    sha256_hash.update(chunk)
+                    chunk = await f.read(4096)
+            
+            calculated_sha = sha256_hash.hexdigest()
+            if calculated_sha != expected_sha:
+                error_msg = f"Model checksum mismatch! Expected {expected_sha}, got {calculated_sha}"
+                logger.critical(error_msg, extra={"component": "anomaly_detector", "security_alert": "integrity_failure"})
+                raise ModelLoadError(error_msg, component="anomaly_detector", context={"security": "integrity_check_failed"})
+            logger.info("Model checksum verified successfully")
+        else:
+            logger.warning("No checksum file found. Skipping integrity check.", extra={"model_path": MODEL_PATH})
+            
+    except Exception as e:
+        if isinstance(e, ModelLoadError):
+            raise
+        logger.error(f"Error during checksum validation: {e}", exc_info=True)
+        # We might want to fail open or closed here. Failing open (warning) for now to avoid breaking existing deployments without checksums.
 
     # Load model with comprehensive error handling
     try:

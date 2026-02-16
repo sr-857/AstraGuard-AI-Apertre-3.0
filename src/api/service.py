@@ -86,7 +86,9 @@ if TYPE_CHECKING:
 from fastapi.responses import Response
 from core.metrics import get_metrics_text, get_metrics_content_type
 from core.rate_limiter import RateLimiter, RateLimitMiddleware, get_rate_limit_config
+from core.rate_limiter import RateLimiter, RateLimitMiddleware, get_rate_limit_config
 from backend.redis_client import RedisClient
+from core.dlq import DeadLetterQueue
 import numpy as np
 from numpy.typing import NDArray
 from astraguard.logging_config import get_logger
@@ -135,6 +137,7 @@ start_time: float = time.time()
 redis_client: Optional[RedisClient] = None
 telemetry_limiter: Optional[RateLimiter] = None
 api_limiter: Optional[RateLimiter] = None
+dlq: Optional[DeadLetterQueue] = None
 
 
 async def initialize_components() -> None:
@@ -235,7 +238,7 @@ def _check_credential_security() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan manager."""
-    global redis_client, telemetry_limiter, api_limiter
+    global redis_client, telemetry_limiter, api_limiter, dlq
     
     # Initialize database connection pool
     try:
@@ -275,6 +278,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             rate_configs["telemetry"][0],  # rate_per_second
             rate_configs["telemetry"][1]   # burst_capacity
         )
+
         api_limiter = RateLimiter(
             redis_client.redis,
             "api",
@@ -282,7 +286,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             rate_configs["api"][1]   # burst_capacity
         )
 
-        print("[OK] Rate limiting initialized successfully")
+        # Initialize Dead Letter Queue
+        dlq = DeadLetterQueue(redis_client.redis)
+
+        print("[OK] Rate limiting and DLQ initialized successfully")
     except Exception as e:
         logger.error(f"Unexpected error initializing rate limiting: {e}", exc_info=True)
         print("Rate limiting will be disabled")
@@ -495,12 +502,13 @@ async def process_telemetry_batch(telemetry_list: List[Dict[str, Any]]) -> Dict[
             # Process individual telemetry (extracted from submit_telemetry logic)
             processed_count += 1
             
-            # Collect detected anomalies
-            # Note: This function appears incomplete in original code
-            # Keeping minimal implementation for now
+            # Placeholder for actual processing logic
+            # In a real implementation, this would involve sending data to the anomaly detector
             
         except Exception as e:
             logger.error(f"Failed to process telemetry item: {e}")
+            if dlq:
+                await dlq.enqueue(telemetry, error=str(e), source="batch_processing")
             continue
     
     # Store all anomalies at once with lock (more efficient than multiple appends)
@@ -589,6 +597,22 @@ async def validate_tls_configuration() -> Dict[str, Any]:
         "timestamp": datetime.now().isoformat()
     }
 
+
+@app.post("/admin/model/reload", dependencies=[Depends(require_admin)])
+async def reload_model_endpoint() -> Dict[str, Any]:
+    """
+    Force reload of the anomaly detection model.
+    Only accessible by admins.
+    """
+    try:
+        success = await load_model()
+        if success:
+            return {"status": "success", "message": "Model reloaded successfully"}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to reload model")
+    except Exception as e:
+        logger.error(f"Model reload failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/metrics", tags=["monitoring"])
@@ -740,6 +764,27 @@ async def health_ready() -> Response:
             "message": f"Redis connection failed: {str(e)}"
         }
         all_ready = False
+    
+        all_ready = False
+    
+    # Check MemoryStore health
+    try:
+        if memory_store:
+            stats = memory_store.get_stats()
+            checks["memory_store"] = {
+                "status": "healthy",
+                "stats": stats
+            }
+        else:
+            checks["memory_store"] = {
+                "status": "warning",
+                "message": "MemoryStore not initialized"
+            }
+    except Exception as e:
+        checks["memory_store"] = {
+            "status": "unhealthy",
+            "message": str(e)
+        }
     
     # Check component health
     try:

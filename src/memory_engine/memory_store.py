@@ -9,13 +9,16 @@ try:
 except ImportError:
     np = None
 
-import math
+import json
 import threading
 import tempfile
 import asyncio
 from datetime import datetime, timedelta
 from typing import List, Dict, Tuple, Optional, Union, Any, TYPE_CHECKING
-import pickle
+import os
+import logging
+import fasteners
+from prometheus_client import Gauge, Histogram
 import os
 import logging
 import fasteners
@@ -55,16 +58,53 @@ RECURRENCE_BOOST_FACTOR = 0.3
 EPSILON = 1e-10
 
 
+# Metrics
+MEMORY_STORE_SIZE = Gauge("memory_store_events_total", "Total events in memory store")
+MEMORY_STORE_OP_LATENCY = Histogram("memory_store_op_latency_seconds", "Latency of memory store operations", ["operation"])
+
 class MemoryEvent:
     """Represents a stored memory event."""
 
-    def __init__(self, embedding: Union[List[float], "np.ndarray"], metadata: Dict, timestamp: datetime):
-        self.embedding = embedding
+    def __init__(self, embedding: Union[List[float], "np.ndarray"], metadata: Dict, timestamp: Union[datetime, str]):
+        # Handle numpy arrays -> list for storage
+        if np is not None and isinstance(embedding, np.ndarray):
+            self.embedding = embedding.tolist()
+        else:
+            self.embedding = embedding
+            
         self.metadata = metadata
-        self.timestamp = timestamp
+        
+        # Handle timestamp parsing
+        if isinstance(timestamp, str):
+            self.timestamp = datetime.fromisoformat(timestamp)
+        else:
+            self.timestamp = timestamp
+            
         self.base_importance = metadata.get("severity", 0.5)
         self.recurrence_count = 1
         self.is_critical = metadata.get("critical", False)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize to dictionary for JSON storage."""
+        return {
+            "embedding": self.embedding,
+            "metadata": self.metadata,
+            "timestamp": self.timestamp.isoformat(),
+            "recurrence_count": self.recurrence_count,
+            "is_critical": self.is_critical
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "MemoryEvent":
+        """Deserialize from dictionary."""
+        event = cls(
+            embedding=data["embedding"],
+            metadata=data["metadata"],
+            timestamp=datetime.fromisoformat(data["timestamp"])
+        )
+        event.recurrence_count = data.get("recurrence_count", 1)
+        event.is_critical = data.get("is_critical", False)
+        return event
 
     def age_seconds(self) -> float:
         """Calculate age in seconds."""
@@ -99,9 +139,14 @@ class AdaptiveMemoryStore:
             raise ValueError("max_capacity must be positive")
         self.decay_lambda = decay_lambda
         self.max_capacity = max_capacity
+        self.max_capacity = max_capacity
         self.memory: List[MemoryEvent] = []
-        self.storage_path = "memory_engine/memory_store.pkl"
+        # JSON file extension
+        self.storage_path = "memory_engine/memory_store.json"
         self._lock = threading.RLock()  # Reentrant lock for thread safety
+        
+        # Initialize metrics
+        MEMORY_STORE_SIZE.set(0)
 
     async def write(
         self,
@@ -138,6 +183,9 @@ class AdaptiveMemoryStore:
             # Add new event
             event = MemoryEvent(embedding, metadata, timestamp)
             self.memory.append(event)
+
+        # Update size metric
+        MEMORY_STORE_SIZE.set(len(self.memory))
 
         # Auto-prune if capacity exceeded
         if len(self.memory) > self.max_capacity:
@@ -229,6 +277,7 @@ class AdaptiveMemoryStore:
                 self.memory = [event for event in self.memory if event.timestamp > cutoff]
 
             pruned_count = initial_count - len(self.memory)
+            MEMORY_STORE_SIZE.set(len(self.memory))
             return pruned_count
 
     @with_timeout(seconds=30.0)
@@ -264,33 +313,38 @@ class AdaptiveMemoryStore:
             return [event.metadata for event in filtered_events]
 
     async def save(self) -> None:
-        """Persist memory to disk with path validation and file locking."""
+        """Persist memory to disk with path validation, JSON format, and async I/O."""
+        # Use asyncio.to_thread to avoid blocking the event loop during file I/O
+        with MEMORY_STORE_OP_LATENCY.labels(operation="save").time():
+            await asyncio.to_thread(self._save_sync)
+
+    def _save_sync(self) -> None:
+        """Synchronous save method to be run in thread."""
         with self._lock:
             try:
-                # Security: Validate storage path is within base directory (prevents path traversal)
+                # Security: Validate storage path
                 resolved_path = os.path.realpath(os.path.abspath(self.storage_path))
-                # Allow paths starting with MEMORY_STORE_BASE_DIR, /tmp, or system temp dir (for testing)
                 is_safe = (
                     resolved_path.startswith(MEMORY_STORE_BASE_DIR) or
-                    resolved_path.startswith("/tmp") or  # nosec B108
+                    resolved_path.startswith("/tmp") or # nosec B108
                     resolved_path.startswith(SYSTEM_TEMP_DIR)
                 )
 
                 if not is_safe:
-                    logger.error(
-                        f"⚠️  Storage path traversal attempt blocked: {self.storage_path} -> {resolved_path}"
-                    )
-                    logger.debug(f"Allowed bases: {MEMORY_STORE_BASE_DIR}, {os.path.realpath('/tmp')}, {SYSTEM_TEMP_DIR}")
-                    raise ValueError(
-                        f"Storage path must be within {MEMORY_STORE_BASE_DIR}, /tmp, or system temp directory"
-                    )
+                    logger.error(f"⚠️ Storage path traversal attempt blocked: {self.storage_path}")
+                    raise ValueError(f"Storage path must be within allowed directories")
 
                 os.makedirs(os.path.dirname(resolved_path), exist_ok=True)
-                # Use inter-process file lock to prevent concurrent access corruption
+                
+                # Serialize data
+                data_to_save = [e.to_dict() for e in self.memory]
+                
+                # Use inter-process file lock
                 lock_path = resolved_path + ".lock"
                 with fasteners.InterProcessLock(lock_path):
-                    with open(resolved_path, "wb") as f:
-                        pickle.dump(self.memory, f)
+                    with open(resolved_path, "w") as f:
+                        json.dump(data_to_save, f)
+                        
                 logger.debug(f"Memory store saved to {resolved_path}")
             except Exception as e:
                 logger.error(f"Failed to save memory store: {e}", exc_info=True)
@@ -298,40 +352,45 @@ class AdaptiveMemoryStore:
 
     @with_timeout(seconds=60.0)
     @monitor_operation_resources()
-    def load(self) -> bool:
-        """Load memory from disk with validation, error handling, and file locking."""
+    @with_timeout(seconds=60.0)
+    @monitor_operation_resources()
+    async def load(self) -> bool:
+        """Load memory from disk (async wrapper)."""
+        with MEMORY_STORE_OP_LATENCY.labels(operation="load").time():
+             return await asyncio.to_thread(self._load_sync)
+
+    def _load_sync(self) -> bool:
+        """Synchronous load method to be run in thread."""
         with self._lock:
             try:
-                # Security: Validate storage path is within base directory (prevents path traversal)
+                # Security: Validate storage path
                 resolved_path = os.path.realpath(os.path.abspath(self.storage_path))
-                # Allow paths starting with MEMORY_STORE_BASE_DIR, /tmp, or system temp dir (for testing)
                 is_safe = (
                     resolved_path.startswith(MEMORY_STORE_BASE_DIR) or
-                    resolved_path.startswith("/tmp") or  # nosec B108
+                    resolved_path.startswith("/tmp") or # nosec B108
                     resolved_path.startswith(SYSTEM_TEMP_DIR)
                 )
 
                 if not is_safe:
-                    logger.error(
-                        f"⚠️  Storage path traversal attempt blocked: {self.storage_path} -> {resolved_path}"
-                    )
-                    logger.debug(f"Allowed bases: {MEMORY_STORE_BASE_DIR}, {os.path.realpath('/tmp')}, {SYSTEM_TEMP_DIR}")
-                    raise ValueError(
-                        f"Storage path must be within {MEMORY_STORE_BASE_DIR}, /tmp, or system temp directory"
-                    )
+                    logger.error(f"⚠️ Storage path traversal attempt blocked: {self.storage_path}")
+                    raise ValueError(f"Storage path must be within allowed directories")
 
                 if os.path.exists(resolved_path):
-                    # Use inter-process file lock to prevent concurrent access corruption
                     lock_path = resolved_path + ".lock"
                     with fasteners.InterProcessLock(lock_path):
-                        with open(resolved_path, "rb") as f:
-                            self.memory = pickle.load(f)  # nosec B301 - trusted internal persistence format
+                        with open(resolved_path, "r") as f:
+                            data = json.load(f)
+                            self.memory = [MemoryEvent.from_dict(item) for item in data]
+                            
                     logger.debug(f"Memory store loaded from {resolved_path}")
+                    MEMORY_STORE_SIZE.set(len(self.memory))
                     return True
                 return False
-            except (pickle.UnpicklingError, EOFError, ValueError) as e:
+            except (json.JSONDecodeError, ValueError) as e:
                 logger.error(f"Failed to load memory store: {e}", exc_info=True)
                 self.memory = []
+                # Try to load legacy pickle if JSON fails? 
+                # For now, just reset. Migration could be added if needed.
                 return False
             except Exception as e:
                 logger.error(f"Unexpected error loading memory store: {e}", exc_info=True)
