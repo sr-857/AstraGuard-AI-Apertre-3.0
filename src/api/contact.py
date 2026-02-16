@@ -192,7 +192,10 @@ def init_database() -> None:
         conn.commit()
         conn.close()
         
-        logger.info("Contact database initialized successfully", db_path=str(DB_PATH))
+        logger.info(
+            "Contact database initialized successfully",
+            extra={"db_path": str(DB_PATH)}
+        )
         
     except sqlite3.Error as e:
         logger.error(

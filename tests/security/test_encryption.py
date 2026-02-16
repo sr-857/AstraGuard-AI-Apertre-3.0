@@ -8,7 +8,7 @@ import tempfile
 import shutil
 from datetime import datetime, timedelta
 
-from security import (
+from src.security import (
     init_encryption_system,
     get_encryption_status,
     encrypt_data,
@@ -200,7 +200,7 @@ async def test_encryption_with_different_sizes(encryption_system):
 @pytest.mark.asyncio
 async def test_encryption_engine_direct(encryption_system):
     """Test using encryption engine directly."""
-    from security import get_encryption_engine
+    from src.security import get_encryption_engine
     
     engine = get_encryption_engine()
     

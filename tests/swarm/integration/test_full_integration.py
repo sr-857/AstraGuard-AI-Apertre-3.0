@@ -18,6 +18,7 @@ Date: 2026-01-12
 
 import asyncio
 import time
+import pytest
 from dataclasses import dataclass, field
 
 # Mark full stack integration tests as slow
