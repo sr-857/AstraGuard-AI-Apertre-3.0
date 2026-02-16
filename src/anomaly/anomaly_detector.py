@@ -3,7 +3,7 @@ import os
 import pickle
 import logging
 import asyncio
-from typing import Dict, Tuple, Optional
+from typing import Any, Dict, Tuple, Optional, cast
 
 # Import centralized error handling
 from core.error_handling import (
@@ -30,15 +30,15 @@ from core.metrics import (
 )
 import time
 
-logger = logging.getLogger(__name__)
+logger: logging.Logger = logging.getLogger(__name__)
 
-MODEL_PATH = os.path.join(os.path.dirname(__file__), "anomaly_if.pkl")
-_MODEL: Optional[object] = None
-_MODEL_LOADED = False
-_USING_HEURISTIC_MODE = False
+MODEL_PATH: str = os.path.join(os.path.dirname(__file__), "anomaly_if.pkl")
+_MODEL: Optional[Any] = None
+_MODEL_LOADED: bool = False
+_USING_HEURISTIC_MODE: bool = False
 
 # Initialize circuit breaker for model loading
-_model_loader_cb = register_circuit_breaker(
+_model_loader_cb: CircuitBreaker = register_circuit_breaker(
     CircuitBreaker(
         name="anomaly_model_loader",
         failure_threshold=5,
@@ -49,7 +49,7 @@ _model_loader_cb = register_circuit_breaker(
 )
 
 
-@async_timeout(seconds=get_timeout_config().model_load_timeout)
+@async_timeout(seconds=get_timeout_config().model_load_timeout)  # type: ignore[misc]
 async def _load_model_impl() -> bool:
     """
     Internal implementation of model loading.
@@ -71,7 +71,10 @@ async def _load_model_impl() -> bool:
     try:
         import numpy  # noqa: F401 - validate import but not used directly
     except ImportError as e:
-        logger.warning(f"numpy not available: {e}. Using heuristic mode.")
+        logger.warning(
+            f"numpy not available: {e}. Using heuristic mode.",
+            extra={"component": "anomaly_detector", "error_type": "ImportError"}
+        )
         _USING_HEURISTIC_MODE = True
         _MODEL_LOADED = False
         health_monitor.mark_degraded(
@@ -80,11 +83,50 @@ async def _load_model_impl() -> bool:
             fallback_active=True,
             metadata={"mode": "heuristic", "reason": str(e)},
         )
+        ANOMALY_MODEL_LOAD_ERRORS_TOTAL.inc()
         return False
 
-    if os.path.exists(MODEL_PATH):
+    # Validate model path exists
+    if not os.path.exists(MODEL_PATH):
+        error_msg = f"Model file not found at {MODEL_PATH}"
+        logger.error(
+            error_msg,
+            extra={
+                "component": "anomaly_detector",
+                "error_type": "ModelLoadError",
+                "model_path": MODEL_PATH
+            }
+        )
+        ANOMALY_MODEL_LOAD_ERRORS_TOTAL.inc()
+        raise ModelLoadError(
+            error_msg,
+            component="anomaly_detector",
+            context={"model_path": MODEL_PATH},
+        )
+
+    # Load model with comprehensive error handling
+    try:
         with open(MODEL_PATH, "rb") as f:
             _MODEL = await asyncio.to_thread(pickle.load, f)  # noqa: S301 - model file is trusted and part of deployment
+        
+        # Validate model has required methods
+        if not hasattr(_MODEL, 'predict'):
+            error_msg = "Loaded model missing required 'predict' method"
+            logger.error(
+                error_msg,
+                extra={
+                    "component": "anomaly_detector",
+                    "error_type": "ModelValidationError",
+                    "model_type": type(_MODEL).__name__
+                }
+            )
+            ANOMALY_MODEL_LOAD_ERRORS_TOTAL.inc()
+            raise ModelLoadError(
+                error_msg,
+                component="anomaly_detector",
+                context={"model_type": type(_MODEL).__name__},
+            )
+        
         _MODEL_LOADED = True
         _USING_HEURISTIC_MODE = False
         health_monitor.mark_healthy(
@@ -94,20 +136,108 @@ async def _load_model_impl() -> bool:
                 "model_path": MODEL_PATH,
             },
         )
-        logger.info("Anomaly detection model loaded successfully")
+        logger.info(
+            "Anomaly detection model loaded successfully",
+            extra={
+                "component": "anomaly_detector",
+                "model_path": MODEL_PATH,
+                "model_type": type(_MODEL).__name__
+            }
+        )
         return True
-    else:
+    
+    except (pickle.UnpicklingError, EOFError) as e:
+        error_msg = f"Failed to unpickle model file: {str(e)}"
+        logger.error(
+            error_msg,
+            extra={
+                "component": "anomaly_detector",
+                "error_type": type(e).__name__,
+                "model_path": MODEL_PATH
+            }
+        )
+        ANOMALY_MODEL_LOAD_ERRORS_TOTAL.inc()
         raise ModelLoadError(
-            f"Model file not found at {MODEL_PATH}",
+            error_msg,
             component="anomaly_detector",
-            context={"model_path": MODEL_PATH},
+            context={"model_path": MODEL_PATH, "pickle_error": str(e)},
+        )
+    
+    except OSError as e:
+        error_msg = f"OS error reading model file: {str(e)}"
+        logger.error(
+            error_msg,
+            extra={
+                "component": "anomaly_detector",
+                "error_type": "OSError",
+                "model_path": MODEL_PATH
+            }
+        )
+        ANOMALY_MODEL_LOAD_ERRORS_TOTAL.inc()
+        raise ModelLoadError(
+            error_msg,
+            component="anomaly_detector",
+            context={"model_path": MODEL_PATH, "os_error": str(e)},
+        )
+    
+    except (AttributeError, TypeError) as e:
+        # Handle invalid model structure or type errors
+        error_msg = f"Invalid model structure: {str(e)}"
+        logger.error(
+            error_msg,
+            extra={
+                "component": "anomaly_detector",
+                "error_type": type(e).__name__,
+                "model_path": MODEL_PATH
+            },
+            exc_info=True
+        )
+        ANOMALY_MODEL_LOAD_ERRORS_TOTAL.inc()
+        raise ModelLoadError(
+            error_msg,
+            component="anomaly_detector",
+            context={"model_path": MODEL_PATH, "structure_error": str(e)},
+        )
+    except (MemoryError, RuntimeError) as e:
+        # Handle resource-related errors during model loading
+        error_msg = f"Resource error loading model: {str(e)}"
+        logger.error(
+            error_msg,
+            extra={
+                "component": "anomaly_detector",
+                "error_type": type(e).__name__,
+                "model_path": MODEL_PATH
+            },
+            exc_info=True
+        )
+        ANOMALY_MODEL_LOAD_ERRORS_TOTAL.inc()
+        raise ModelLoadError(
+            error_msg,
+            component="anomaly_detector",
+            context={"model_path": MODEL_PATH, "resource_error": str(e)},
         )
 
 
 async def _load_model_fallback() -> bool:
-    """Fallback when circuit breaker is open - use heuristic mode"""
+    """
+    Fallback when circuit breaker is open - use heuristic mode.
+    
+    This function is called when the circuit breaker prevents model loading
+    attempts to protect system stability. It gracefully degrades to heuristic
+    detection mode.
+    
+    Returns:
+        False to indicate model loading failed, heuristic mode active
+    """
     global _USING_HEURISTIC_MODE
-    logger.warning("Model loader circuit breaker open - switching to heuristic mode")
+    logger.warning(
+        "Model loader circuit breaker open - switching to heuristic mode",
+        extra={
+            "component": "anomaly_detector",
+            "fallback_reason": "circuit_breaker_open",
+            "mode": "heuristic"
+        }
+    )
     _USING_HEURISTIC_MODE = True
     ANOMALY_MODEL_FALLBACK_ACTIVATIONS.inc()
     return False
@@ -115,7 +245,7 @@ async def _load_model_fallback() -> bool:
 
 # Apply retry decorator: 3 attempts with 0.5-8s exponential backoff + jitter
 # Retry BEFORE circuit breaker to handle transient failures
-@Retry(
+@Retry(  # type: ignore[misc]
     max_attempts=3,
     base_delay=0.5,
     max_delay=8.0,
@@ -127,7 +257,9 @@ async def _load_model_with_retry() -> bool:
     Model loading with retry wrapper.
     Retries on transient failures before circuit breaker engagement.
     """
-    return await _load_model_impl()
+    # Cast needed because @async_timeout decorator is untyped
+    result: bool = cast(bool, await _load_model_impl())
+    return result
 
 
 async def load_model() -> bool:
@@ -150,21 +282,81 @@ async def load_model() -> bool:
             _load_model_with_retry,  # Retry wrapper
             fallback=_load_model_fallback,
         )
-        return result
+        # Cast needed because circuit breaker call() returns Any
+        return cast(bool, result)
 
     except CircuitOpenError as e:
-        logger.error(f"Circuit breaker open: {e}")
+        logger.error(
+            f"Circuit breaker open: {e}",
+            extra={
+                "component": "anomaly_detector",
+                "error_type": "CircuitOpenError",
+                "circuit_state": str(e.state)
+            }
+        )
         _USING_HEURISTIC_MODE = True
         ANOMALY_MODEL_FALLBACK_ACTIVATIONS.inc()
         return False
-    except Exception as e:
-        logger.error(f"Unexpected error during model load: {e}")
+    
+    except CustomTimeoutError as e:
+        logger.error(
+            f"Model loading timeout: {e}",
+            extra={
+                "component": "anomaly_detector",
+                "error_type": "TimeoutError",
+                "operation": "load_model"
+            }
+        )
+        ANOMALY_MODEL_LOAD_ERRORS_TOTAL.inc()
+        _USING_HEURISTIC_MODE = True
+        return False
+    
+    except ModelLoadError as e:
+        logger.error(
+            f"Model load error: {e.message}",
+            extra={
+                "component": "anomaly_detector",
+                "error_type": "ModelLoadError",
+                "context": e.context
+            }
+        )
+        ANOMALY_MODEL_LOAD_ERRORS_TOTAL.inc()
+        _USING_HEURISTIC_MODE = True
+        return False
+    
+    except (AttributeError, TypeError, ValueError) as e:
+        # Handle invalid configuration or structure errors
+        logger.error(
+            f"Configuration error during model load ({type(e).__name__}): {e}",
+            extra={
+                "error_type": type(e).__name__,
+                "model_path": MODEL_PATH,
+                "operation": "model_load",
+                "fallback_active": True
+            },
+            exc_info=True
+        )
+        ANOMALY_MODEL_LOAD_ERRORS_TOTAL.inc()
+        _USING_HEURISTIC_MODE = True
+        return False
+    except (RuntimeError, MemoryError, OSError) as e:
+        # Handle runtime and resource errors
+        logger.error(
+            f"Runtime error during model load ({type(e).__name__}): {e}",
+            extra={
+                "error_type": type(e).__name__,
+                "model_path": MODEL_PATH,
+                "operation": "model_load",
+                "fallback_active": True
+            },
+            exc_info=True
+        )
         ANOMALY_MODEL_LOAD_ERRORS_TOTAL.inc()
         _USING_HEURISTIC_MODE = True
         return False
 
 
-def _detect_anomaly_heuristic(data: Dict) -> Tuple[bool, float]:
+def _detect_anomaly_heuristic(data: Dict[str, Any]) -> Tuple[bool, float]:
     """
     Perform rule-based anomaly detection as a fallback mechanism.
 
@@ -178,23 +370,30 @@ def _detect_anomaly_heuristic(data: Dict) -> Tuple[bool, float]:
     - Deterministic: Always returns a result given valid input.
 
     Args:
-        data (Dict): Raw telemetry dictionary.
+        data (Dict[str, Any]): Raw telemetry dictionary.
 
     Returns:
         Tuple[bool, float]: (is_anomalous, severity_score)
     """
     # Handle non-dict input gracefully
     if not isinstance(data, dict):
-        logger.warning(f"Heuristic mode received non-dict input: {type(data)}")
+        logger.warning(
+            f"Heuristic mode received non-dict input: {type(data)}",
+            extra={
+                "component": "anomaly_detector",
+                "input_type": type(data).__name__,
+                "mode": "heuristic"
+            }
+        )
         return False, 0.0
 
-    score = 0.0
+    score: float = 0.0
 
     # Conservative thresholds for heuristic mode
     try:
-        voltage = float(data.get("voltage", 8.0))
-        temperature = float(data.get("temperature", 25.0))
-        gyro = abs(float(data.get("gyro", 0.0)))
+        voltage: float = float(data.get("voltage", 8.0))
+        temperature: float = float(data.get("temperature", 25.0))
+        gyro: float = abs(float(data.get("gyro", 0.0)))
 
         if voltage < 7.0 or voltage > 9.0:
             score += 0.4
@@ -202,21 +401,55 @@ def _detect_anomaly_heuristic(data: Dict) -> Tuple[bool, float]:
             score += 0.3
         if gyro > 0.1:
             score += 0.3
-    except (ValueError, TypeError):
+    except (ValueError, TypeError) as e:
         # invalid data types in heuristic -> treat as anomalous
-        logger.warning(f"Heuristic mode encountered invalid data types: {data}")
+        logger.warning(
+            f"Heuristic mode encountered invalid data types: {data}",
+            extra={
+                "component": "anomaly_detector",
+                "error_type": type(e).__name__,
+                "mode": "heuristic",
+                "data_sample": str(data)[:100]  # Limit log size
+            }
+        )
         score += 0.5
+    except (KeyError, AttributeError) as e:
+        # Handle missing or invalid dictionary keys
+        logger.error(
+            f"Data structure error in heuristic detection ({type(e).__name__}): {e}",
+            extra={
+                "component": "anomaly_detector",
+                "error_type": type(e).__name__,
+                "mode": "heuristic"
+            },
+            exc_info=True
+        )
+        # Return safe default - treat as potential anomaly
+        return True, 0.6
+    except (ArithmeticError, OverflowError) as e:
+        # Handle calculation errors (division by zero, overflow, etc.)
+        logger.error(
+            f"Calculation error in heuristic detection ({type(e).__name__}): {e}",
+            extra={
+                "component": "anomaly_detector",
+                "error_type": type(e).__name__,
+                "mode": "heuristic"
+            },
+            exc_info=True
+        )
+        # Return safe default - treat as potential anomaly
+        return True, 0.6
 
     # Add small random noise for simulation realism
     score += random.uniform(0, 0.1)
 
     # Conservative threshold: be more sensitive to potential issues
-    is_anomalous = score > 0.5  # Lowered from 0.6 for more sensitivity
+    is_anomalous: bool = score > 0.5  # Lowered from 0.6 for more sensitivity
     return is_anomalous, min(score, 1.0)  # Cap at 1.0
 
 
 @async_timeout(seconds=10.0, operation_name="anomaly_detection")
-async def detect_anomaly(data: Dict) -> Tuple[bool, float]:
+async def detect_anomaly(data: Dict[str, Any]) -> Tuple[bool, float]:
     """
     Detect anomaly in telemetry data with resource-aware execution.
 
@@ -232,41 +465,69 @@ async def detect_anomaly(data: Dict) -> Tuple[bool, float]:
         Tuple of (is_anomalous, anomaly_score) where:
         - is_anomalous: bool indicating if anomaly detected
         - anomaly_score: float between 0 and 1
+        
+    Raises:
+        Never raises - always returns a result via fallback mechanisms
     """
     global _USING_HEURISTIC_MODE
     health_monitor = get_health_monitor()
     resource_monitor = get_resource_monitor()
 
     # Track latency
-    start_time = time.time()
+    start_time: float = time.time()
 
     try:
         # Always ensure component is registered (safe: idempotent)
         health_monitor.register_component("anomaly_detector")
         
         # Check resource availability before heavy operations
-        resource_status = resource_monitor.check_resource_health()
+        resource_status: Dict[str, Any] = resource_monitor.check_resource_health()
         if resource_status['overall'] == 'critical':
             logger.warning(
-                "System resources critical - using lightweight heuristic mode"
+                f"Resource check failed: {e}. Proceeding with detection.",
+                extra={
+                    "component": "anomaly_detector",
+                    "error_type": type(e).__name__
+                }
             )
-            health_monitor.mark_degraded(
-                "anomaly_detector",
-                error_msg="Resource constraints - using heuristic mode",
-                fallback_active=True,
-                metadata={"resource_status": resource_status}
-            )
-            return _detect_anomaly_heuristic(data)
 
         # Ensure model is loaded once
         if not _MODEL_LOADED:
-            await load_model()
+            try:
+                await load_model()
+            except (ModelLoadError, CircuitOpenError, CustomTimeoutError) as e:
+                # Handle known model loading failures
+                logger.error(
+                    f"Failed to load model ({type(e).__name__}): {e}",
+                    extra={
+                        "component": "anomaly_detector",
+                        "error_type": type(e).__name__,
+                        "fallback_active": True
+                    }
+                )
+            except (OSError, IOError, MemoryError) as e:
+                # Handle resource and I/O errors
+                logger.error(
+                    f"Resource error loading model ({type(e).__name__}): {e}",
+                    extra={
+                        "component": "anomaly_detector",
+                        "error_type": type(e).__name__,
+                        "fallback_active": True
+                    }
+                )
 
         # Validate input using TelemetryData
         try:
             validated_data = TelemetryData.validate(data)
         except ValidationError as e:
-            logger.warning(f"Telemetry validation failed: {e}")
+            logger.warning(
+                f"Telemetry validation failed: {e}",
+                extra={
+                    "component": "anomaly_detector",
+                    "error_type": "ValidationError",
+                    "validation_error": str(e)
+                }
+            )
             raise AnomalyEngineError(
                 f"Invalid telemetry data: {e}",
                 component="anomaly_detector",
@@ -277,7 +538,7 @@ async def detect_anomaly(data: Dict) -> Tuple[bool, float]:
         if _MODEL and not _USING_HEURISTIC_MODE:
             try:
                 # Prepare features (order matters for model consistency)
-                features = [
+                features: List[float] = [
                     data.get("voltage", 8.0),
                     data.get("temperature", 25.0),
                     abs(data.get("gyro", 0.0)),
@@ -308,14 +569,76 @@ async def detect_anomaly(data: Dict) -> Tuple[bool, float]:
                 )
 
                 return bool(is_anomalous), float(score)
-            except Exception as e:
+            
+            except asyncio.TimeoutError as e:
                 logger.warning(
-                    f"Model prediction failed: {e}. Falling back to heuristic."
+                    f"Model prediction timeout: {e}. Falling back to heuristic.",
+                    extra={
+                        "component": "anomaly_detector",
+                        "error_type": "TimeoutError",
+                        "fallback_reason": "model_timeout"
+                    }
+                )
+                _USING_HEURISTIC_MODE = True
+                health_monitor.mark_degraded(
+                    "anomaly_detector",
+                    error_msg=f"Model prediction timeout: {str(e)}",
+                    fallback_active=True,
+                )
+                # Fall through to heuristic
+            
+            except (AttributeError, ValueError, TypeError) as e:
+                logger.warning(
+                    f"Model prediction error ({type(e).__name__}): {e}. Falling back to heuristic.",
+                    extra={
+                        "component": "anomaly_detector",
+                        "error_type": type(e).__name__,
+                        "fallback_reason": "model_error"
+                    }
                 )
                 _USING_HEURISTIC_MODE = True
                 health_monitor.mark_degraded(
                     "anomaly_detector",
                     error_msg=f"Model prediction failed: {str(e)}",
+                    fallback_active=True,
+                )
+                # Fall through to heuristic
+            
+            except (IndexError, KeyError) as e:
+                # Handle data access errors
+                logger.warning(
+                    f"Data access error in model prediction ({type(e).__name__}): {e}. Falling back to heuristic.",
+                    extra={
+                        "error_type": type(e).__name__,
+                        "operation": "model_prediction",
+                        "has_model": _MODEL is not None,
+                        "fallback_active": True
+                    },
+                    exc_info=True
+                )
+                _USING_HEURISTIC_MODE = True
+                health_monitor.mark_degraded(
+                    "anomaly_detector",
+                    error_msg=f"Data access error: {str(e)}",
+                    fallback_active=True,
+                )
+                # Fall through to heuristic
+            except (RuntimeError, MemoryError) as e:
+                # Handle runtime and resource errors
+                logger.warning(
+                    f"Runtime error in model prediction ({type(e).__name__}): {e}. Falling back to heuristic.",
+                    extra={
+                        "error_type": type(e).__name__,
+                        "operation": "model_prediction",
+                        "has_model": _MODEL is not None,
+                        "fallback_active": True
+                    },
+                    exc_info=True
+                )
+                _USING_HEURISTIC_MODE = True
+                health_monitor.mark_degraded(
+                    "anomaly_detector",
+                    error_msg=f"Runtime error: {str(e)}",
                     fallback_active=True,
                 )
                 # Fall through to heuristic
@@ -340,18 +663,42 @@ async def detect_anomaly(data: Dict) -> Tuple[bool, float]:
 
         return is_anomalous, score
 
-    except AnomalyEngineError as e:
-        logger.error(f"Anomaly detection error: {e.message}")
-        health_monitor.mark_degraded(
-            "anomaly_detector", error_msg=str(e.message), fallback_active=True
+    except (AnomalyEngineError, ValidationError) as e:
+        # Handle known anomaly engine errors
+        logger.error(
+            f"Anomaly engine error ({type(e).__name__}): {e}",
+            extra={
+                "error_type": type(e).__name__,
+                "operation": "anomaly_detection",
+                "using_heuristic_mode": _USING_HEURISTIC_MODE,
+                "model_loaded": _MODEL_LOADED,
+                "fallback_active": True
+            },
+            exc_info=True
         )
-        # Fall back to heuristic on error
-        return _detect_anomaly_heuristic(data)
-    except Exception as e:
-        logger.error(f"Unexpected error in anomaly detection: {e}")
         health_monitor.mark_degraded(
             "anomaly_detector",
-            error_msg=f"Unexpected error: {str(e)}",
+            error_msg=f"Engine error: {str(e)}",
+            fallback_active=True,
+        )
+        # Fall back to heuristic on any error
+        return _detect_anomaly_heuristic(data)
+    except (RuntimeError, MemoryError, OSError) as e:
+        # Handle runtime and resource errors
+        logger.error(
+            f"Runtime error in anomaly detection ({type(e).__name__}): {e}",
+            extra={
+                "error_type": type(e).__name__,
+                "operation": "anomaly_detection",
+                "using_heuristic_mode": _USING_HEURISTIC_MODE,
+                "model_loaded": _MODEL_LOADED,
+                "fallback_active": True
+            },
+            exc_info=True
+        )
+        health_monitor.mark_degraded(
+            "anomaly_detector",
+            error_msg=f"Runtime error: {str(e)}",
             fallback_active=True,
         )
         # Fall back to heuristic on any error

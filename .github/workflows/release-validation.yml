@@ -15,8 +15,9 @@ on:
   schedule:
     - cron: '0 0 * * *'  # Daily at midnight UTC
 
+# Fix: Removed duplicate 'concurrency' key
 concurrency:
-  group: release-validation
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -28,6 +29,10 @@ jobs:
     name: 'Full Stack Integration Test'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    
+    # Fix #809: Unique project name for integration tests
+    env:
+      COMPOSE_PROJECT_NAME: release-int-${{ github.run_id }}
     
     services:
       redis:
@@ -71,6 +76,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r src/config/requirements-ci.txt
           pip install pytest pytest-asyncio pytest-cov
+      
+      - name: 'Create Environment File'
+        run: |
+          cp infra/docker/.env.example infra/docker/.env
       
       - name: 'Boot Docker Compose Stack'
         run: |
@@ -302,6 +311,10 @@ jobs:
     timeout-minutes: 120
     if: github.event.schedule == '0 0 * * *' || github.event_name == 'workflow_dispatch'
     needs: release-certification
+    
+    # Fix #809: Unique project name for stress tests
+    env:
+      COMPOSE_PROJECT_NAME: release-stress-${{ github.run_id }}
     
     steps:
       - name: 'Checkout Code'

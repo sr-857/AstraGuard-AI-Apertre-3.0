@@ -15,11 +15,20 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
+# Fix #809: Prevent cancellation of expensive E2E tests
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   e2e-suite:
     name: E2E Recovery Tests (${{ matrix.scenario }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    
+    # Fix #809: Unique project name per matrix scenario to prevent collisions
+    env:
+      COMPOSE_PROJECT_NAME: e2e-${{ github.run_id }}-${{ matrix.scenario }}
     
     strategy:
       matrix:
@@ -68,6 +77,12 @@ jobs:
           pip install -r src/config/requirements-ci.txt
           pip install pytest pytest-asyncio pytest-docker docker
       
+      - name: Print Environment Info
+        run: |
+          python --version
+          pip freeze
+          env
+
       - name: Start constellation (docker-compose)
         run: |
           docker compose -f infra/docker/docker-compose.swarm.yml up -d --build
@@ -89,10 +104,40 @@ jobs:
       - name: Run E2E test - ${{ matrix.scenario }}
         run: |
           pytest tests/swarm/e2e/test_recovery_pipeline.py::TestRecoveryPipeline::test_${{ matrix.scenario }} \
-            -v --tb=short -o timeout=600
+            -vv --maxfail=1 --durations=10 --log-cli-level=DEBUG --tb=short -o timeout=600
         env:
           SCENARIO: ${{ matrix.scenario }}
       
+      - name: Create Debug Directory
+        if: always()
+        run: mkdir -p ci-debug/${{ github.run_id }}
+
+      - name: Capture Docker Logs
+        if: failure()
+        run: |
+          docker ps -a
+          docker compose -f infra/docker/docker-compose.swarm.yml logs > ci-debug/${{ github.run_id }}/docker-compose.log 2>&1
+
+      - name: Capture Service Health
+        if: failure()
+        run: |
+          if [ -n "$(docker ps -q)" ]; then
+            docker inspect $(docker ps -q) > ci-debug/${{ github.run_id }}/docker-inspect.log
+          else
+            echo "No running containers to inspect" > ci-debug/${{ github.run_id }}/docker-inspect.log
+          fi
+
+      - name: Capture Prometheus Metrics (Failure Context)
+        if: failure()
+        run: |
+          curl http://localhost:9090/metrics > ci-debug/${{ github.run_id }}/prometheus-metrics.log || true
+
+      - name: Collect Agent Logs
+        if: failure()
+        run: |
+          mkdir -p ci-debug/${{ github.run_id }}/agent-logs
+          cp -r infra/docker/logs/* ci-debug/${{ github.run_id }}/agent-logs/ || true
+
       - name: Collect Prometheus metrics
         if: always()
         run: |
@@ -119,6 +164,14 @@ jobs:
         with:
           name: e2e-metrics-${{ matrix.scenario }}
           path: e2e-metrics-${{ matrix.scenario }}.json
+
+      - name: Upload Debug Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-debug-artifacts-${{ matrix.scenario }}
+          path: ci-debug/
+          if-no-files-found: ignore
       
       - name: Cleanup
         if: always()
@@ -172,20 +225,20 @@ jobs:
               repo: context.repo.repo,
               body: `## ✅ E2E Recovery Pipeline Tests PASSED
 
-**MTTR SLA Achieved**: p95 <30s ✓
-
-### Test Results
-- Battery Fault Recovery: ✓ 100% pass
-- Attitude Fault (Safety Block): ✓ 100% pass  
-- Leader Crash During Recovery: ✓ 100% pass
-
-### Key Metrics
-- Mean MTTR: 24.7s
-- Consensus Rate: 96%+
-- Compliance Rate: 94%+
-- Safety Blocks: Working ✓
-
-**Status**: E2E pipeline complete! Ready for final integration.`
+            **MTTR SLA Achieved**: p95 <30s ✓
+            
+            ### Test Results
+            - Battery Fault Recovery: ✓ 100% pass
+            - Attitude Fault (Safety Block): ✓ 100% pass  
+            - Leader Crash During Recovery: ✓ 100% pass
+            
+            ### Key Metrics
+            - Mean MTTR: 24.7s
+            - Consensus Rate: 96%+
+            - Compliance Rate: 94%+
+            - Safety Blocks: Working ✓
+            
+            **Status**: E2E pipeline complete! Ready for final integration.`
             })
 
   e2e-stress:
@@ -193,6 +246,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     if: github.event_name == 'schedule'
+
+    # Fix #809: Unique project name for stress tests
+    env:
+      COMPOSE_PROJECT_NAME: e2e-stress-${{ github.run_id }}
     
     steps:
       - name: Checkout code

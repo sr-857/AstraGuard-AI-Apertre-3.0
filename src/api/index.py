@@ -19,32 +19,42 @@ try:
     project_root: Path = Path(__file__).parent.parent
 except NameError as e:
     logger.critical(
-        "__file__ is not defined; cannot resolve project root in serverless environment",
-        exc_info=True,
+        f"__file__ is not defined; cannot resolve project root: {e}",
+        extra={
+            "error_type": "NameError",
+            "runtime_context": "serverless_environment"
+        },
+        exc_info=True
     )
     raise RuntimeError("Invalid runtime environment: __file__ is undefined") from e
 
+
 project_root_str: str = str(project_root)
 
-# Add project root to sys.path for imports
-if project_root_str not in sys.path:
-    sys.path.insert(0, project_root_str)
 
 # Import FastAPI application
 try:
     from api.service import app
 except ModuleNotFoundError as e:
     logger.critical(
-        "Failed to import 'api.service.app' (module not found). "
-        "Check project structure and PYTHONPATH.",
-        exc_info=True,
+        f"Failed to import 'api.service.app' (module not found): {e}",
+        extra={
+            "module_name": "api.service",
+            "sys_path": sys.path[:5],  # First 5 entries for context
+            "error_type": "ModuleNotFoundError"
+        },
+        exc_info=True
     )
     raise
 except ImportError as e:
     logger.critical(
-        "ImportError while importing 'api.service.app'. "
-        "This may be caused by import-time side effects or missing dependencies.",
-        exc_info=True,
+        f"ImportError while importing 'api.service.app': {e}",
+        extra={
+            "module_name": "api.service",
+            "error_type": "ImportError",
+            "error_details": str(e)
+        },
+        exc_info=True
     )
     raise
 

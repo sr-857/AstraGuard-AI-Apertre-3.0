@@ -214,9 +214,9 @@ class TestSystemHealthMonitor:
         monitor.mark_healthy("comp1")
         monitor.mark_failed("comp2")
 
-        assert monitor._system_status == HealthStatus.DEGRADED  # System is degraded if any component fails
+        assert monitor._system_status == HealthStatus.FAILED  # System is FAILED if critical component fails
         assert not monitor.is_system_healthy()
-        assert monitor.is_system_degraded()
+        assert not monitor.is_system_degraded()  # Should be FAILED, not DEGRADED
 
     def test_system_status_empty_components(self, monitor):
         """Test system status with no components"""
@@ -268,7 +268,7 @@ class TestSystemHealthMonitor:
 
         status = monitor.get_system_status()
 
-        assert status["overall_status"] == "degraded"
+        assert status["overall_status"] == "failed"
         assert "timestamp" in status
         assert status["component_counts"]["healthy"] == 1
         assert status["component_counts"]["degraded"] == 1
@@ -404,9 +404,10 @@ class TestIntegrationScenarios:
         monitor.mark_failed("memory_engine", "Out of memory")
         monitor.mark_degraded("api_server", "High error rate")
 
-        # System should be degraded
-        assert monitor.is_system_degraded()
+        # System should be FAILED (anomaly_detector and memory_engine are critical)
+        assert not monitor.is_system_degraded()
         assert not monitor.is_system_healthy()
+        assert monitor._system_status == HealthStatus.FAILED
 
         # Check system status details
         status = monitor.get_system_status()
