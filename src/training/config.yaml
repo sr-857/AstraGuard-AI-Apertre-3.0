@@ -18,3 +18,4 @@ model:
 paths:
   model_output: "src/anomaly/anomaly_if.pkl"
   pipeline_output: "src/anomaly/pipeline.pkl"
+  metadata_output: "src/anomaly/metadata.json"
