@@ -1,0 +1,147 @@
+"""
+Chaos Experiment: Migration Failure Injection
+
+Tests the resilience of the zero-downtime migration system under various failure scenarios.
+"""
+
+name: "migration_failure_injection"
+description: "Test migration system resilience under failure conditions"
+duration: "10m"
+parallel: false
+
+environment:
+  variables:
+    DB_PATH: "test_migration.db"
+    BACKUP_DIR: "migrations/backups"
+    CHAOS_ENABLED: "true"
+
+steady_state_hypothesis:
+  title: "Migration system is healthy"
+  probes:
+    - name: "database-accessible"
+      type: probe
+      tolerance: true
+      provider:
+        type: python
+        module: chaos.actions.database_chaos
+        func: check_database_health
+        arguments:
+          db_path: "${DB_PATH}"
+
+method:
+  # Phase 1: Start migration and inject failure during dual-write
+  - type: action
+    name: "start-migration-with-chaos"
+    provider:
+      type: python
+      module: chaos.actions.database_chaos
+      func: inject_migration_failure
+      arguments:
+        db_path: "${DB_PATH}"
+        failure_type: "connection_loss"
+        duration: 30
+        target_phase: "dual_write"
+    pauses:
+      after: 5
+
+  # Phase 2: Verify automatic rollback
+  - type: probe
+    name: "verify-rollback-executed"
+    provider:
+      type: python
+      module: chaos.actions.database_chaos
+      func: verify_rollback_completed
+      arguments:
+        db_path: "${DB_PATH}"
+    tolerance: true
+
+  # Phase 3: Test data integrity after rollback
+  - type: probe
+    name: "verify-data-integrity"
+    provider:
+      type: python
+      module: chaos.actions.database_chaos
+      func: verify_data_integrity
+      arguments:
+        db_path: "${DB_PATH}"
+        expected_checksum: "auto"
+    tolerance: true
+
+  # Phase 4: Test performance impact under chaos
+  - type: action
+    name: "measure-performance-under-chaos"
+    provider:
+      type: python
+      module: chaos.actions.database_chaos
+      func: measure_migration_performance
+      arguments:
+        db_path: "${DB_PATH}"
+        duration: 60
+    pauses:
+      after: 2
+
+  # Phase 5: Verify system returns to steady state
+  - type: probe
+    name: "system-healthy-after-chaos"
+    provider:
+      type: python
+      module: chaos.actions.database_chaos
+      func: check_database_health
+      arguments:
+        db_path: "${DB_PATH}"
+    tolerance: true
+
+rollbacks:
+  - type: action
+    name: "cleanup-test-artifacts"
+    provider:
+      type: python
+      module: chaos.actions.database_chaos
+      func: cleanup_migration_test
+      arguments:
+        db_path: "${DB_PATH}"
+        backup_dir: "${BACKUP_DIR}"
+
+probes:
+  continuous:
+    - name: "migration-health-check"
+      type: probe
+      provider:
+        type: python
+        module: chaos.actions.database_chaos
+        func: check_migration_health
+        arguments:
+          db_path: "${DB_PATH}"
+      frequency: 5
+
+    - name: "performance-monitoring"
+      type: probe
+      provider:
+        type: python
+        module: chaos.actions.database_chaos
+        func: monitor_performance_impact
+        arguments:
+          db_path: "${DB_PATH}"
+          threshold_percent: 5.0
+      frequency: 10
+
+success_criteria:
+  - "Automatic rollback executed within 30 seconds"
+  - "Data integrity maintained (100% checksum match)"
+  - "Performance impact remained under 5%"
+  - "System returned to steady state after chaos"
+  - "No data loss detected"
+
+failure_modes_tested:
+  - connection_loss: "Database connection lost during migration"
+  - disk_full: "Disk space exhausted during migration"
+  - memory_pressure: "High memory usage during migration"
+  - network_partition: "Network partition between old and new schemas"
+  - query_timeout: "Query timeout during dual-write phase"
+
+metrics:
+  - rollback_time_seconds: "Time to complete rollback"
+  - data_integrity_score: "Percentage of data integrity maintained"
+  - performance_impact_percent: "Performance impact during migration"
+  - availability_percent: "System availability during migration"
+  - consistency_violations: "Number of consistency violations detected"
