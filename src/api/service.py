@@ -11,9 +11,14 @@ from typing import List, Optional, Any, Union, Dict, TYPE_CHECKING
 from datetime import datetime, timedelta
 from collections import deque
 from asyncio import Lock
-from fastapi import FastAPI, HTTPException, status, Depends
+from fastapi import FastAPI, HTTPException, status, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
+from starlette.middleware.sessions import SessionMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
+from starlette.types import ASGIApp, Receive, Scope, Send
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator, Deque, Dict, List, Optional, Tuple, Union
@@ -351,23 +356,88 @@ if tls_config.enabled:
 from api.contact import router as contact_router
 app.include_router(contact_router)
 
-# CORS configuration from environment variables
-# Security: Never use allow_origins=["*"] with allow_credentials=True in production
+# ============================================================================
+# Security Middleware Configuration
+# ============================================================================
+
+# 1. Trusted Host Middleware (Prevents Host Header Attack)
+allowed_hosts = get_secret("allowed_hosts", "localhost,127.0.0.1,astraguard.ai").split(",")
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=allowed_hosts
+)
+
+# 2. CORS Configuration (Strict)
 allowed_origins_str = get_secret("allowed_origins") or "http://localhost:3000,http://localhost:8000"
 ALLOWED_ORIGINS = [origin.strip() for origin in allowed_origins_str.split(",")]
 
-# CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,  # Configured via ALLOWED_ORIGINS env var
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "Accept"],
+    allow_headers=["Content-Type", "Authorization", "Accept", "X-CSRF-Token"],
+    max_age=600, # Cache preflight requests for 10 minutes
 )
 
-# Request logging middleware
+# 3. Secure Session Middleware (Secure Cookies)
+# Ensures cookies are HTTPOnly, Secure (HTTPS), and SameSite=Lax
+secret_key = get_secret("app_secret_key")
+if not secret_key:
+    logger.warning("APP_SECRET_KEY not set - generating temporary key for sessions")
+    secret_key = secrets.token_urlsafe(32)
+
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=secret_key,
+    session_cookie="astraguard_session",
+    max_age=3600, # 1 hour
+    same_site="lax",
+    https_only=True, # Requires HTTPS
+)
+
+# 4. Content Security Policy (CSP) & Security Headers
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; object-src 'none'; frame-ancestors 'none';"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        return response
+
+app.add_middleware(SecurityHeadersMiddleware)
+
+# 5. Payload Size Limiting Middleware (DoS Protection)
+MAX_CONTENT_LENGTH = 10 * 1024 * 1024  # 10 MB
+
+class LimitUploadSizeMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        content_length = request.headers.get("content-length")
+        if content_length:
+            if int(content_length) > MAX_CONTENT_LENGTH:
+                return JSONResponse(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    content={"error": "Payload too large. Max size is 10MB."}
+                )
+        return await call_next(request)
+
+app.add_middleware(LimitUploadSizeMiddleware)
+
+# 6. Global Exception Handler (Suppress Detailed Errors)
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Global exception: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": "Internal Server Error. Please contact support if the issue persists."},
+    )
+
+# Request logging middleware (Keep at bottom to log all requests)
 log_level = get_secret("log_level", "INFO")
-sample_rate = float(get_secret("log_sample_rate", "0.1"))  # 10% sampling for high-traffic endpoints
+sample_rate = float(get_secret("log_sample_rate", "0.1"))
 app.add_middleware(
     RequestLoggingMiddleware,
     log_level=log_level,
