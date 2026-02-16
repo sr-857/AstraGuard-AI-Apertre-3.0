@@ -99,6 +99,21 @@ from .key_recovery import (
     submit_recovery_share,
 )
 
+# DDoS Protection
+from .ddos_protection import (
+    DDoSProtection,
+    DDoSProtectionMiddleware,
+    DDoSConfig,
+    ThreatScore,
+    get_ddos_protection,
+)
+
+from .ddos_config_loader import (
+    DDoSConfigLoader,
+    load_ddos_config,
+    is_ddos_protection_enabled,
+)
+
 # Compliance
 from .compliance import (
     ComplianceManager,
@@ -460,6 +475,16 @@ __all__ = [
     "generate_client_keys",
     "client_encrypt",
     "client_decrypt",
+    
+    # DDoS Protection
+    "DDoSProtection",
+    "DDoSProtectionMiddleware",
+    "DDoSConfig",
+    "ThreatScore",
+    "get_ddos_protection",
+    "DDoSConfigLoader",
+    "load_ddos_config",
+    "is_ddos_protection_enabled",
     
     # Middleware
     "EncryptionMiddleware",

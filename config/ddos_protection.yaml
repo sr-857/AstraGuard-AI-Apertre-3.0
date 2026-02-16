@@ -1,0 +1,166 @@
+# AstraGuard DDoS Protection Configuration
+# Comprehensive Distributed Denial of Service (DDoS) mitigation settings
+
+ddos_protection:
+  # Enable/disable DDoS protection
+  enabled: true
+
+  # Rate limiting configuration
+  rate_limiting:
+    max_requests_per_second: 10
+    max_requests_per_minute: 60
+    max_requests_per_hour: 3600
+
+  # Connection limits
+  connection_limits:
+    max_concurrent_per_ip: 10
+    max_total_concurrent: 1000
+    connection_timeout_seconds: 30
+
+  # Request pattern analysis
+  pattern_detection:
+    enabled: true
+    suspicious_pattern_threshold: 5
+    request_window_seconds: 60
+    check_user_agent: true
+    check_sql_injection: true
+    check_xss: true
+    check_path_traversal: true
+    detect_replay_attacks: true
+
+  # IP blocking configuration
+  ip_blocking:
+    enabled: true
+    auto_block_threshold: 80.0 # Threat score 0-100
+    block_duration_seconds: 3600 # 1 hour
+    permanent_block_threshold: 5 # Number of blocks before permanent ban
+
+    # Temporary block durations by severity
+    block_durations:
+      low: 300 # 5 minutes
+      medium: 1800 # 30 minutes
+      high: 3600 # 1 hour
+      critical: 86400 # 24 hours
+
+  # Attack detection thresholds
+  attack_detection:
+    # HTTP flood detection
+    http_flood_threshold: 100 # requests per second
+
+    # Slowloris detection
+    slowloris_timeout_seconds: 30
+    slowloris_connection_threshold: 50
+
+    # Amplification attack detection
+    response_size_ratio_threshold: 10.0 # response_size / request_size
+
+    # Bot detection
+    missing_user_agent_score: 20.0
+    suspicious_user_agent_score: 15.0
+
+  # Whitelisting
+  whitelist:
+    # Whitelisted IP addresses (never blocked)
+    ips:
+      - "127.0.0.1"
+      - "::1"
+      # Add trusted IPs here
+      # - "10.0.0.100"
+      # - "192.168.1.50"
+
+    # Whitelisted User-Agent patterns
+    user_agents:
+      - "AstraGuard-Monitor"
+      - "AstraGuard-HealthCheck"
+      # Add trusted user agents here
+
+    # Whitelisted paths (bypass DDoS checks)
+    paths:
+      - "/health"
+      - "/readiness"
+      - "/liveness"
+
+  # Geographic filtering (optional)
+  geo_filtering:
+    enabled: false
+
+    # Block these countries (ISO 3166-1 alpha-2 codes)
+    blocked_countries: []
+    # - "CN"  # China
+    # - "RU"  # Russia
+
+    # If set, only allow these countries (empty = allow all)
+    allowed_countries: []
+    # - "US"  # United States
+    # - "CA"  # Canada
+    # - "GB"  # United Kingdom
+
+  # Threat scoring
+  threat_scoring:
+    # Score decay rate (points per minute)
+    decay_rate: 1.0
+
+    # Violation scores
+    violation_scores:
+      rate_limit_exceeded: 15.0
+      connection_limit_exceeded: 10.0
+      suspicious_pattern: 20.0
+      sql_injection_attempt: 50.0
+      xss_attempt: 50.0
+      path_traversal_attempt: 40.0
+      replay_attack: 30.0
+      unusual_method: 25.0
+      excessive_url_length: 20.0
+      missing_user_agent: 20.0
+
+  # Logging and monitoring
+  logging:
+    log_blocked_requests: true
+    log_threat_score_updates: true
+    log_level: "INFO" # DEBUG, INFO, WARNING, ERROR
+
+  # Redis configuration for distributed state
+  redis:
+    use_redis: true
+    key_prefix: "astra:ddos"
+    key_ttl_seconds: 86400 # 24 hours
+
+  # Advanced features
+  advanced:
+    # Machine learning-based anomaly detection
+    ml_detection_enabled: false
+
+    # Challenge-response for suspicious requests
+    captcha_enabled: false
+    captcha_threshold: 70.0
+
+    # Honeypot endpoints
+    honeypot_enabled: false
+    honeypot_paths:
+      - "/admin"
+      - "/phpmyadmin"
+      - "/wp-admin"
+
+# Environment-specific overrides
+environments:
+  development:
+    ddos_protection:
+      enabled: true
+      rate_limiting:
+        max_requests_per_second: 100 # More lenient for dev
+      ip_blocking:
+        auto_block_threshold: 90.0 # Higher threshold for dev
+
+  staging:
+    ddos_protection:
+      enabled: true
+
+  production:
+    ddos_protection:
+      enabled: true
+      rate_limiting:
+        max_requests_per_second: 10
+        max_requests_per_minute: 60
+      ip_blocking:
+        auto_block_threshold: 75.0 # More strict in production
+        block_duration_seconds: 7200 # 2 hours
