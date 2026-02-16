@@ -95,14 +95,16 @@ class TelemetryInput(BaseModel):
         if isinstance(v, str):
             try:
                 return datetime.fromisoformat(v.replace('Z', '+00:00'))
-            except ValueError as exc:
+            except (ValueError, OverflowError) as e:
+
                 logger.warning(
                     "timestamp_parsing_failed",
                     extra={
                         "provided_value": v[:50] if len(v) > 50 else v,
-                        "error": str(exc),
-                        "action": "using_current_timestamp",
-                    },
+                        "error": str(e),
+                        "error_type": type(e).__name__,
+                        "action": "using_current_timestamp"
+                    }
                 )
                 return datetime.now()
 
@@ -274,13 +276,14 @@ class AnomalyHistoryQuery(BaseModel):
         if isinstance(v, str):
             try:
                 return datetime.fromisoformat(v.replace('Z', '+00:00'))
-            except ValueError:
+            except (ValueError, OverflowError) as e:
                 logger.warning(
                     "datetime_parse_failed",
                     extra={
                         "provided_value": v[:50] if len(v) > 50 else v,
-                        "action": "ignored",
-                    },
+                        "error_type": type(e).__name__,
+                        "action": "ignored"
+                    }
                 )
                 return None
         return v

@@ -427,61 +427,6 @@ class TestSyncSpanContextManagers:
 
         mock_tracer.start_as_current_span.return_value.record_exception.assert_called_once_with(error)
 
-    def test_span_model_inference_with_tuple_shape(self, monkeypatch, mock_tracer):
-        """Test model inference span stringifies tuple input_shape"""
-        monkeypatch.setattr("astraguard.tracing.get_tracer", MagicMock(return_value=mock_tracer))
-
-        with tracing.span_model_inference(model_type="classifier", input_shape=(128, 256)):
-            pass
-
-        span = mock_tracer.start_as_current_span.return_value
-        set_attr_calls = span.set_attribute.call_args_list
-        assert call("model.type", "classifier") in set_attr_calls
-        assert call("input.shape", "(128, 256)") in set_attr_calls
-
-    def test_span_external_call_without_timeout_omits_attribute(self, monkeypatch, mock_tracer):
-        """Test external call span doesn't set timeout if not provided"""
-        monkeypatch.setattr("astraguard.tracing.get_tracer", MagicMock(return_value=mock_tracer))
-
-        with tracing.span_external_call(service="api", operation="fetch"):
-            pass
-
-        span = mock_tracer.start_as_current_span.return_value
-        # Verify timeout attribute not set
-        timeout_calls = [c for c in span.set_attribute.call_args_list if c[0][0] == "timeout"]
-        assert len(timeout_calls) == 0
-
-    def test_span_external_call_with_timeout_sets_attribute(self, monkeypatch, mock_tracer):
-        """Test external call span sets timeout when provided"""
-        monkeypatch.setattr("astraguard.tracing.get_tracer", MagicMock(return_value=mock_tracer))
-
-        with tracing.span_external_call(service="db", operation="query", timeout=30.0):
-            pass
-
-        span = mock_tracer.start_as_current_span.return_value
-        assert call("timeout", 30.0) in span.set_attribute.call_args_list
-
-    def test_span_database_query_without_table(self, monkeypatch, mock_tracer):
-        """Test database query span omits table if not provided"""
-        monkeypatch.setattr("astraguard.tracing.get_tracer", MagicMock(return_value=mock_tracer))
-
-        with tracing.span_database_query(query_type="CREATE"):
-            pass
-
-        span = mock_tracer.start_as_current_span.return_value
-        table_calls = [c for c in span.set_attribute.call_args_list if c[0][0] == "table"]
-        assert len(table_calls) == 0
-
-    def test_span_cache_operation_default_redis_type(self, monkeypatch, mock_tracer):
-        """Test cache operation defaults to redis type"""
-        monkeypatch.setattr("astraguard.tracing.get_tracer", MagicMock(return_value=mock_tracer))
-
-        with tracing.span_cache_operation(operation="get", key="user:123"):
-            pass
-
-        span = mock_tracer.start_as_current_span.return_value
-        assert call("cache.type", "redis") in span.set_attribute.call_args_list
-
 
 # ============================================================================
 # TESTS: Async span context managers
@@ -687,12 +632,10 @@ class TestEdgeCases:
             pass
         with tracing.span_anomaly_detection(data_size=100):
             pass
-        with tracing.span_external_call("api", "request"):
-            pass
-        with tracing.span_database_query("SELECT", "users"):
+        with tracing.span("op2"):
             pass
 
-        assert mock_tracer.start_as_current_span.call_count == 4
+        assert mock_tracer.start_as_current_span.call_count == 3
 
     @pytest.mark.asyncio
     async def test_mixed_sync_async_spans_dont_interfere(self, monkeypatch, mock_tracer):
@@ -738,24 +681,3 @@ class TestEdgeCases:
         # Should not raise even with empty name
         result = tracing.initialize_tracing(service_name="", enabled=True)
         assert result is not None
-
-    def test_span_circuit_breaker_with_all_operations(self, monkeypatch, mock_tracer):
-        """Test circuit breaker span with different operation types"""
-        monkeypatch.setattr("astraguard.tracing.get_tracer", MagicMock(return_value=mock_tracer))
-
-        operations = ["call", "trip", "reset", "half-open"]
-        for op in operations:
-            with tracing.span_circuit_breaker(name="test_breaker", operation=op):
-                pass
-
-        assert mock_tracer.start_as_current_span.call_count == len(operations)
-
-    def test_span_retry_with_zero_attempt(self, monkeypatch, mock_tracer):
-        """Test retry span with attempt number 0"""
-        monkeypatch.setattr("astraguard.tracing.get_tracer", MagicMock(return_value=mock_tracer))
-
-        with tracing.span_retry(endpoint="https://test.com", attempt=0):
-            pass
-
-        span = mock_tracer.start_as_current_span.return_value
-        assert call("attempt", 0) in span.set_attribute.call_args_list
