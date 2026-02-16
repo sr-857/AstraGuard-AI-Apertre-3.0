@@ -1,0 +1,24 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: astraguard-vs
+  namespace: astraguard
+spec:
+  hosts:
+  - "astraguard.ai"
+  gateways:
+  - astraguard-gateway
+  http:
+  - match:
+    - uri:
+        prefix: /api
+    route:
+    - destination:
+        host: astraguard-api
+        port:
+          number: 8000
+  - route:
+    - destination:
+        host: astraguard-ui
+        port:
+          number: 3000
