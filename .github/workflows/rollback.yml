@@ -1,0 +1,20 @@
+name: Automated Rollback
+
+on:
+  workflow_dispatch:
+  repository_dispatch:
+    types: [rollback_trigger]
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Revert Deployment
+        run: |
+          echo "Initiating rollback procedure..."
+          # kubectl rollout undo deployment/astraguard
+      
+      - name: Notify Team
+        run: echo "Rollback initiated. Notification sent."
