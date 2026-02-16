@@ -212,6 +212,18 @@ MEMORY_STORE_PRUNINGS = Counter(
     registry=REGISTRY
 )
 
+SYSTEM_CPU_USAGE = Gauge(
+    'astraguard_system_cpu_usage_percent',
+    'System CPU usage percentage',
+    registry=REGISTRY
+)
+
+SYSTEM_MEMORY_USAGE = Gauge(
+    'astraguard_system_memory_usage_percent',
+    'System memory usage percentage',
+    registry=REGISTRY
+)
+
 # ============================================================================
 # Mission & Recovery Metrics (New)
 # ============================================================================

@@ -131,6 +131,8 @@ class PhaseAwareAnomalyHandler:
         # Recurrence tracking - optimized data structures
         self.enable_recurrence_tracking = enable_recurrence_tracking
         self.anomaly_history: List[Tuple[str, datetime]] = []  # List of (anomaly_type, timestamp) tuples
+        self._anomaly_counts: Dict[str, int] = defaultdict(int)
+        self._anomaly_timestamps: Dict[str, List[datetime]] = defaultdict(list)
         self.recurrence_window = timedelta(seconds=3600)  # 1 hour default
         
         logger.info("Phase-aware anomaly handler initialized")
@@ -330,6 +332,23 @@ class PhaseAwareAnomalyHandler:
             'time_since_last_seconds': time_since_last
         }
     
+    def _cleanup_old_entries(self, now: datetime) -> None:
+        """Cleanup old entries from recurrence tracking."""
+        cutoff = now - self.recurrence_window
+
+        # Cleanup timestamp lists
+        for anomaly_type in list(self._anomaly_timestamps.keys()):
+            self._anomaly_timestamps[anomaly_type] = [
+                ts for ts in self._anomaly_timestamps[anomaly_type]
+                if ts > cutoff
+            ]
+
+        # Cleanup history list (keep recent)
+        self.anomaly_history = [
+            (atype, ts) for atype, ts in self.anomaly_history
+            if ts > cutoff
+        ]
+
     def _execute_escalation(self, decision: Dict[str, Any]) -> None:
         """
         Execute escalation to SAFE_MODE.

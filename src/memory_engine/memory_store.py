@@ -387,6 +387,40 @@ class AdaptiveMemoryStore:
         self, embedding: Union[List[float], "np.ndarray"], threshold: float = DEFAULT_SIMILARITY_THRESHOLD
     ) -> Optional[MemoryEvent]:
         """Find similar event in memory."""
+        if not self.memory:
+            return None
+
+        if np is not None:
+            try:
+                # Vectorized search
+                # This is much faster than iterating for large memory sizes
+                embeddings = [e.embedding for e in self.memory]
+                matrix = np.array(embeddings)
+                query = np.array(embedding)
+
+                # Normalize query
+                query_norm = np.linalg.norm(query)
+                if query_norm == 0:
+                    return None
+                normalized_query = query / query_norm
+
+                # Normalize matrix (axis=1)
+                matrix_norms = np.linalg.norm(matrix, axis=1)
+                # Avoid division by zero
+                matrix_norms[matrix_norms == 0] = 1.0
+                normalized_matrix = matrix / matrix_norms[:, np.newaxis]
+
+                # Cosine similarity = dot product of normalized vectors
+                sims = np.dot(normalized_matrix, normalized_query)
+
+                # Find best match
+                max_idx = np.argmax(sims)
+                if sims[max_idx] > threshold:
+                    return self.memory[max_idx]
+                return None
+            except Exception as e:
+                logger.warning(f"Vectorized search failed: {e}. Falling back to loop.")
+
         for event in self.memory:
             if self._cosine_similarity(embedding, event.embedding) > threshold:
                 return event

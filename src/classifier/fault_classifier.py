@@ -1,4 +1,5 @@
-from typing import Dict
+from typing import Dict, List
+import numpy as np
 
 
 def classify(data: Dict) -> str:
@@ -57,3 +58,39 @@ def get_fault_description(fault_type: str) -> str:
         "unknown_fault": "Unidentified anomaly detected",                 # Something unexpected
     }
     return desc_map.get(fault_type, "Unknown system state")
+
+
+def classify_batch(data: Dict[str, List[float]]) -> List[str]:
+    """
+    Classify a batch of telemetry data.
+    Vectorized implementation of classify().
+    """
+    n = len(data.get("voltage", []))
+    if n == 0:
+        return []
+
+    # Defaults matching scalar function
+    voltage = np.array(data.get("voltage", [8.0] * n))
+    temperature = np.array(data.get("temperature", [25.0] * n))
+    gyro = np.abs(np.array(data.get("gyro", [0.0] * n)))
+
+    # Initialize with 'normal'
+    # Use object array or string array. object is safer for variable length strings in Python lists
+    results = np.full(n, "normal", dtype=object)
+
+    # Apply rules in reverse priority order (so higher priority overwrites)
+    # Priority: power_fault > thermal_fault > attitude_fault > normal
+
+    # 3. Attitude (lowest priority fault)
+    mask_attitude = gyro > 0.05
+    results[mask_attitude] = "attitude_fault"
+
+    # 2. Thermal
+    mask_thermal = temperature > 32.0
+    results[mask_thermal] = "thermal_fault"
+
+    # 1. Power (highest priority)
+    mask_power = voltage < 7.3
+    results[mask_power] = "power_fault"
+
+    return results.tolist()

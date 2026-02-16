@@ -105,7 +105,7 @@ class TelemetryInput(BaseModel):
 
 class TelemetryBatch(BaseModel):
     """Batch of telemetry data points."""
-    telemetry: List[TelemetryInput] = Field(..., min_length=1, max_length=1000)
+    telemetry: List[TelemetryInput] = Field(..., min_length=1, max_length=10000)
 
     @field_validator('telemetry')
     @classmethod
@@ -121,16 +121,16 @@ class TelemetryBatch(BaseModel):
             )
             raise ValueError("Telemetry batch must contain at least one item")
 
-        if len(v) > 1000:
+        if len(v) > 10000:
             logger.warning(
                 "telemetry_batch_too_large",
                 extra={
                     "batch_size": len(v),
-                    "max_allowed": 1000,
+                    "max_allowed": 10000,
                     "action": "truncated_to_max"
                 }
             )
-            return v[:1000]
+            return v[:10000]
 
         return v
 

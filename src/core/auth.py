@@ -128,6 +128,8 @@ class User:
         data['created_at'] = datetime.fromisoformat(data['created_at'])
         if data.get('last_login'):
             data['last_login'] = datetime.fromisoformat(data['last_login'])
+        if isinstance(data.get('role'), str):
+            data['role'] = UserRole(data['role'])
         return cls(**data)
 
 
@@ -143,7 +145,27 @@ class APIKey:
     permissions: Set[str] = field(default_factory=lambda: {"read", "write"})  # Default permissions
     rate_limit: int = 1000  # Requests per hour
     is_active: bool = True
+    last_used: Optional[datetime] = None
     metadata: Dict[str, str] = field(default_factory=dict)
+
+    def is_expired(self) -> bool:
+        """Check if key is expired."""
+        if self.expires_at is None:
+            return False
+        return datetime.now() > self.expires_at
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for storage."""
+        data = asdict(self)
+        data['created_at'] = self.created_at.isoformat()
+        if self.expires_at:
+            data['expires_at'] = self.expires_at.isoformat()
+        if self.last_used:
+            data['last_used'] = self.last_used.isoformat()
+        # permissions is a set, convert to list
+        if isinstance(data.get('permissions'), set):
+            data['permissions'] = list(data['permissions'])
+        return data
 
 
 class APIKeyManager:
@@ -174,15 +196,31 @@ class APIKeyManager:
         self.logger = get_logger(__name__)
         self.keys_file = keys_file
         self.api_keys: Dict[str, APIKey] = {}
+        self._users: Dict[str, User] = {}
         self.key_hashes: Dict[str, str] = {}  # Store hashed versions for security
         self.rate_limits: Dict[str, List[datetime]] = {}  # Track request timestamps
+        self._jwt_secret = self._get_jwt_secret()
 
         # Load existing keys
         self._load_keys()
+        self._load_users()
 
         # Create default key if none exist (for development)
         if not self.api_keys:
             self._create_default_key()
+
+    def _load_users(self) -> None:
+        """Load users from file."""
+        if os.path.exists(USERS_FILE):
+            try:
+                with open(USERS_FILE, 'r') as f:
+                    data = json.load(f)
+                for user_data in data.get('users', []):
+                    user = User.from_dict(user_data)
+                    self._users[user.id] = user
+                self.logger.info(f"Loaded {len(self._users)} users from {USERS_FILE}")
+            except Exception as e:
+                self.logger.error(f"Failed to load users: {e}")
 
     def _load_keys(self) -> None:
         """Load API keys from file."""
@@ -202,6 +240,8 @@ class APIKeyManager:
                         key=key_data['key'],
                         name=key_data['name'],
                         created_at=created_at,
+                        id=key_data.get('id', ''),
+                        user_id=key_data.get('user_id', ''),
                         expires_at=expires_at,
                         permissions=set(key_data.get('permissions', ['read', 'write'])),
                         rate_limit=key_data.get('rate_limit', 1000),
@@ -265,7 +305,7 @@ class APIKeyManager:
 
     def _save_api_keys(self):
         """Save API keys to encrypted storage."""
-        keys_data = {kid: key.to_dict() for kid, key in self._api_keys.items()}
+        keys_data = {kid: key.to_dict() for kid, key in self.api_keys.items()}
         json_data = json.dumps(keys_data).encode()
         encrypted_data = self._fernet.encrypt(json_data)
 
@@ -405,8 +445,8 @@ class APIKeyManager:
 
         key = self.api_keys[api_key]
 
-        self._api_keys[key_id] = api_key_obj
-        self._save_api_keys()
+        self.api_keys[key_id] = api_key_obj
+        self._save_keys()
 
         self.logger.info("api_key_created", key_id=key_id, user_id=user_id, name=name)
 
@@ -424,14 +464,14 @@ class APIKeyManager:
 
     def validate_api_key(self, provided_key: str) -> Optional[Tuple[User, APIKey]]:
         """Validate API key and return user and key info."""
-        for api_key in self._api_keys.values():
+        for api_key in self.api_keys.values():
             if api_key.is_active and not api_key.is_expired():
-                if self._verify_api_key(provided_key, api_key.hashed_key):
+                if secrets.compare_digest(provided_key, api_key.key):
                     user = self._users.get(api_key.user_id)
                     if user and user.is_active:
                         # Update last used timestamp
                         api_key.last_used = datetime.now()
-                        self._save_api_keys()
+                        self._save_keys()
 
                         # Update user last login
                         self.update_user_last_login(user.id)
@@ -466,15 +506,15 @@ class APIKeyManager:
 
     def revoke_api_key(self, key_id: str, user_id: str):
         """Revoke an API key."""
-        if key_id not in self._api_keys:
+        if key_id not in self.api_keys:
             raise ValueError(f"API key {key_id} not found")
 
-        api_key = self._api_keys[key_id]
+        api_key = self.api_keys[key_id]
         if api_key.user_id != user_id:
             raise ValueError("Unauthorized to revoke this API key")
 
         api_key.is_active = False
-        self._save_api_keys()
+        self._save_keys()
 
         self.logger.info("api_key_revoked", key_id=key_id, user_id=user_id)
 
@@ -490,16 +530,16 @@ class APIKeyManager:
 
     def rotate_api_key(self, key_id: str, user_id: str, name: Optional[str] = None) -> Tuple[str, APIKey]:
         """Rotate an existing API key."""
-        if key_id not in self._api_keys:
+        if key_id not in self.api_keys:
             raise ValueError(f"API key {key_id} not found")
 
-        old_key = self._api_keys[key_id]
+        old_key = self.api_keys[key_id]
         if old_key.user_id != user_id:
             raise ValueError("Unauthorized to rotate this API key")
 
         # Revoke old key
         old_key.is_active = False
-        self._save_api_keys()
+        self._save_keys()
 
         # Generate new key with same properties
         new_name = name or f"{old_key.name} (rotated)"
@@ -524,7 +564,7 @@ class APIKeyManager:
 
     def list_user_api_keys(self, user_id: str) -> List[APIKey]:
         """List all API keys for a user."""
-        return [key for key in self._api_keys.values() if key.user_id == user_id]
+        return [key for key in self.api_keys.values() if key.user_id == user_id]
 
     def check_permission(self, user: User, permission: Permission) -> bool:
         """Check if user has a specific permission."""
@@ -620,12 +660,17 @@ class APIKeyManager:
 
     def get_user_rate_limit(self, user_id: str) -> Optional[int]:
         """Get rate limit for user (from their API keys)."""
-        user_keys = [k for k in self._api_keys.values() if k.user_id == user_id and k.is_active]
+        user_keys = [k for k in self.api_keys.values() if k.user_id == user_id and k.is_active]
         if user_keys:
             # Return the most restrictive rate limit
             limits = [k.rate_limit for k in user_keys if k.rate_limit is not None]
             return min(limits) if limits else None
         return None
+
+    def update_user_last_login(self, user_id: str) -> None:
+        """Update user last login timestamp."""
+        if user_id in self._users:
+            self._users[user_id].last_login = datetime.now()
 
 
 # Global auth manager instance
