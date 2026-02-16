@@ -66,6 +66,12 @@ class MemoryEvent:
         self.recurrence_count = 1
         self.is_critical = metadata.get("critical", False)
 
+        # Optimization: Pre-calculate norm
+        if np is not None:
+            self.norm = np.linalg.norm(embedding)
+        else:
+            self.norm = math.sqrt(sum(x * x for x in embedding))
+
     def age_seconds(self) -> float:
         """Calculate age in seconds."""
         return (datetime.now() - self.timestamp).total_seconds()
@@ -169,10 +175,32 @@ class AdaptiveMemoryStore:
             if not self.memory:
                 return []
 
+            # Optimization: Pre-calculate query norm once
+            if np is not None:
+                query_norm = np.linalg.norm(query_embedding)
+            else:
+                query_norm = math.sqrt(sum(x * x for x in query_embedding))
+
             scores = []
             for event in self.memory:
-                # Calculate similarity
-                similarity = self._cosine_similarity(query_embedding, event.embedding)
+                # Optimization: Handle backward compatibility for pickled objects
+                if not hasattr(event, 'norm'):
+                    if np is not None:
+                        event.norm = np.linalg.norm(event.embedding)
+                    else:
+                        event.norm = math.sqrt(sum(x * x for x in event.embedding))
+
+                # Optimization: Calculate similarity using pre-calculated norms
+                if np is not None:
+                    dot_product = np.dot(query_embedding, event.embedding)
+                else:
+                    dot_product = sum(x * y for x, y in zip(query_embedding, event.embedding))
+
+                denom = query_norm * event.norm
+                if denom > 0:
+                    similarity = dot_product / (denom + EPSILON)
+                else:
+                    similarity = 0.0
 
                 # Apply temporal weighting
                 temporal_weight = self._temporal_weight(event)
@@ -387,7 +415,29 @@ class AdaptiveMemoryStore:
         self, embedding: Union[List[float], "np.ndarray"], threshold: float = DEFAULT_SIMILARITY_THRESHOLD
     ) -> Optional[MemoryEvent]:
         """Find similar event in memory."""
+        # Optimization: Pre-calculate query norm
+        if np is not None:
+            query_norm = np.linalg.norm(embedding)
+        else:
+            query_norm = math.sqrt(sum(x * x for x in embedding))
+
         for event in self.memory:
-            if self._cosine_similarity(embedding, event.embedding) > threshold:
+            # Optimization: Handle backward compatibility
+            if not hasattr(event, 'norm'):
+                if np is not None:
+                    event.norm = np.linalg.norm(event.embedding)
+                else:
+                    event.norm = math.sqrt(sum(x * x for x in event.embedding))
+
+            # Optimization: Calculate similarity using pre-calculated norms
+            if np is not None:
+                dot_product = np.dot(embedding, event.embedding)
+            else:
+                dot_product = sum(x * y for x, y in zip(embedding, event.embedding))
+
+            denom = query_norm * event.norm
+            similarity = dot_product / (denom + EPSILON) if denom > 0 else 0.0
+
+            if similarity > threshold:
                 return event
         return None
