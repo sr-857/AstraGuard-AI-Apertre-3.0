@@ -1,0 +1,3 @@
+"""
+Security module tests
+"""

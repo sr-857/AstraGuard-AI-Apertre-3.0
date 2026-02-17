@@ -67,6 +67,41 @@ class RedisAdapter:
             retry_delay=config.get("retry_delay", 0.5)
         )
 
+    @classmethod
+    async def from_url(
+        cls,
+        url: str,
+        max_retries: int = 5,
+        retry_delay: float = 2.0
+    ) -> "RedisAdapter":
+        """
+        Create adapter from URL with connection retries.
+
+        Args:
+            url: Redis connection URL
+            max_retries: Number of connection attempts
+            retry_delay: Delay between attempts in seconds
+
+        Returns:
+            Connected RedisAdapter instance
+
+        Raises:
+            RuntimeError: If connection fails after retries
+        """
+        adapter = cls(redis_url=url)
+
+        for attempt in range(max_retries):
+            if await adapter.connect():
+                return adapter
+
+            logger.warning(
+                f"Redis connection failed (attempt {attempt + 1}/{max_retries}). Retrying in {retry_delay}s..."
+            )
+            if attempt < max_retries - 1:
+                await asyncio.sleep(retry_delay)
+
+        raise RuntimeError(f"Failed to connect to Redis at {url} after {max_retries} attempts")
+
     async def connect(self) -> bool:
         """
         Establish connection to Redis.

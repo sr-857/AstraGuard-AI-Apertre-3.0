@@ -7,7 +7,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator, ValidationError
+from pydantic import BaseModel, Field, field_validator, model_validator, ValidationError, ConfigDict
 
 logger = logging.getLogger(__name__)
 
@@ -95,14 +95,16 @@ class TelemetryInput(BaseModel):
         if isinstance(v, str):
             try:
                 return datetime.fromisoformat(v.replace('Z', '+00:00'))
-            except ValueError as exc:
+            except (ValueError, OverflowError) as e:
+
                 logger.warning(
                     "timestamp_parsing_failed",
                     extra={
                         "provided_value": v[:50] if len(v) > 50 else v,
-                        "error": str(exc),
-                        "action": "using_current_timestamp",
-                    },
+                        "error": str(e),
+                        "error_type": type(e).__name__,
+                        "action": "using_current_timestamp"
+                    }
                 )
                 return datetime.now()
 
@@ -274,13 +276,14 @@ class AnomalyHistoryQuery(BaseModel):
         if isinstance(v, str):
             try:
                 return datetime.fromisoformat(v.replace('Z', '+00:00'))
-            except ValueError:
+            except (ValueError, OverflowError) as e:
                 logger.warning(
                     "datetime_parse_failed",
                     extra={
                         "provided_value": v[:50] if len(v) > 50 else v,
-                        "action": "ignored",
-                    },
+                        "error_type": type(e).__name__,
+                        "action": "ignored"
+                    }
                 )
                 return None
         return v
@@ -490,3 +493,88 @@ class APIKeyCreateResponse(BaseModel):
     permissions: List[str]
     created_at: datetime
     expires_at: Optional[datetime]
+
+
+# ============================================================================
+# Feedback Models
+# ============================================================================
+
+class FeedbackLabel(str, Enum):
+    """Operator assessment of recovery action efficacy."""
+    CORRECT = "correct"
+    INSUFFICIENT = "insufficient"
+    WRONG = "wrong"
+
+
+class FeedbackSubmitRequest(BaseModel):
+    """Request model for submitting operator feedback on anomaly detection."""
+    
+    fault_id: str = Field(..., min_length=1, max_length=64, description="Unique identifier for the fault/anomaly")
+    anomaly_type: str = Field(..., min_length=1, max_length=64, description="Type of anomaly detected")
+    recovery_action: str = Field(..., min_length=1, max_length=128, description="Recovery action that was taken")
+    label: FeedbackLabel = Field(..., description="Operator's assessment of the recovery action")
+    operator_notes: Optional[str] = Field(None, max_length=500, description="Optional notes from the operator")
+    mission_phase: MissionPhaseEnum = Field(..., description="Mission phase when the anomaly occurred")
+    confidence_score: float = Field(1.0, ge=0.0, le=1.0, description="Confidence score of the feedback (0.0-1.0)")
+    
+    @field_validator('fault_id')
+    @classmethod
+    def validate_fault_id(cls, v):
+        """Validate fault_id format."""
+        if not v or not v.strip():
+            raise ValueError("fault_id cannot be empty")
+        return v.strip()
+    
+    @field_validator('anomaly_type')
+    @classmethod
+    def validate_anomaly_type(cls, v):
+        """Validate anomaly_type format."""
+        if not v or not v.strip():
+            raise ValueError("anomaly_type cannot be empty")
+        return v.strip()
+    
+    @field_validator('recovery_action')
+    @classmethod
+    def validate_recovery_action(cls, v):
+        """Validate recovery_action format."""
+        if not v or not v.strip():
+            raise ValueError("recovery_action cannot be empty")
+        return v.strip()
+
+
+class FeedbackSubmitResponse(BaseModel):
+    """Response model for feedback submission."""
+    
+    success: bool = Field(..., description="Whether the feedback was successfully submitted")
+    feedback_id: str = Field(..., description="Unique identifier for the submitted feedback")
+    message: str = Field(..., description="Status message")
+    timestamp: datetime = Field(default_factory=datetime.now, description="Timestamp of the response")
+    
+    model_config = ConfigDict(json_encoders={datetime: lambda v: v.isoformat()})
+
+
+
+class FeedbackPendingItem(BaseModel):
+    """Individual pending feedback item."""
+    
+    feedback_id: str = Field(..., description="Unique feedback identifier")
+    fault_id: str = Field(..., description="Fault identifier")
+    anomaly_type: str = Field(..., description="Type of anomaly")
+    recovery_action: str = Field(..., description="Recovery action taken")
+    label: Optional[FeedbackLabel] = Field(None, description="Operator's assessment")
+    operator_notes: Optional[str] = Field(None, description="Operator notes")
+    mission_phase: str = Field(..., description="Mission phase")
+    confidence_score: float = Field(..., description="Confidence score")
+    submitted_by: str = Field(..., description="Username who submitted")
+    submitted_at: str = Field(..., description="Submission timestamp")
+    timestamp: str = Field(..., description="Original event timestamp")
+
+
+class FeedbackPendingResponse(BaseModel):
+    """Response model for pending feedback list."""
+    
+    count: int = Field(..., description="Number of pending feedback items")
+    pending_feedback: List[FeedbackPendingItem] = Field(..., description="List of pending feedback items")
+    timestamp: datetime = Field(default_factory=datetime.now, description="Response timestamp")
+    
+    model_config = ConfigDict(json_encoders={datetime: lambda v: v.isoformat()})

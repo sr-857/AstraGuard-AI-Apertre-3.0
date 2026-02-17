@@ -278,13 +278,7 @@ def _make_signal_handler(label: str):
     return handler
 
 
-
 if __name__ == "__main__":
-    # Register signal handlers before anything else so the process is
-    # always interruptible, even if app loading takes a while.
-    signal.signal(signal.SIGINT, _make_signal_handler("SIGINT"))
-    signal.signal(signal.SIGTERM, _make_signal_handler("SIGTERM"))
-
     try:
         import uvicorn
     except ImportError:

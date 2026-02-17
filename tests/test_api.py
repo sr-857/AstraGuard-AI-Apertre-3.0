@@ -9,8 +9,24 @@ from api.service import app, initialize_components
 
 
 @pytest.fixture(autouse=True)
-async def setup_components():
+async def setup_components(monkeypatch):
     """Initialize components before all tests."""
+    # Mock predictive engine to avoid heavy initialization
+    from unittest.mock import AsyncMock, MagicMock
+    
+    mock_engine = AsyncMock()
+    mock_engine.initialize = AsyncMock(return_value=True)
+    mock_engine.add_training_data = AsyncMock()
+    mock_engine.predict_failures = AsyncMock(return_value=[])
+    mock_engine.trigger_preventive_actions = AsyncMock(return_value=[])
+    
+    async def mock_get_engine(memory_store):
+        return mock_engine
+        
+    # Patch the module where it is defined, because api.service imports it inside the function
+    import security_engine.predictive_maintenance
+    monkeypatch.setattr(security_engine.predictive_maintenance, "get_predictive_maintenance_engine", mock_get_engine)
+
     await initialize_components()
     # Reset memory store to ensure test isolation
     from api.service import memory_store
@@ -20,9 +36,11 @@ async def setup_components():
     # Reset component health to ensure all start as HEALTHY
     from core.component_health import get_health_monitor
     health_monitor = get_health_monitor()
+    health_monitor.reset()
+    health_monitor = get_health_monitor()
     
     # Mark all components as healthy for tests
-    for component_name in ["anomaly_detector", "memory_store", "state_machine", "circuit_breaker"]:
+    for component_name in ["anomaly_detector", "memory_store", "state_machine", "circuit_breaker", "predictive_maintenance"]:
         health_monitor.mark_healthy(component_name)
 
 
@@ -87,6 +105,7 @@ class TestHealthEndpoints:
         """Test health check endpoint."""
         response = client.get("/health")
         assert response.status_code == 200
+        data = response.json()
         data = response.json()
         assert data["status"] == "healthy"
 

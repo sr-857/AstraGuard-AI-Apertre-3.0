@@ -9,7 +9,8 @@ import logging
 from enum import Enum
 from dataclasses import dataclass, asdict
 from datetime import datetime
-from typing import Dict, Optional, List
+import asyncio
+from typing import Dict, Optional, List, Callable, Awaitable, Union
 from threading import Lock, RLock
 
 logger = logging.getLogger(__name__)
@@ -35,6 +36,9 @@ class ComponentHealth:
     last_error_time: Optional[datetime] = None
     fallback_active: bool = False
     metadata: Optional[Dict] = None
+    check_callback: Optional[Callable] = None
+    dependencies: List[str] = None
+    is_critical: bool = True
     
     def to_dict(self) -> Dict:
         """Convert to dictionary for JSON serialization."""
@@ -47,6 +51,8 @@ class ComponentHealth:
             "last_error": self.last_error,
             "last_error_time": self.last_error_time.isoformat() if self.last_error_time else None,
             "fallback_active": self.fallback_active,
+            "dependencies": self.dependencies or [],
+            "is_critical": self.is_critical,
             "metadata": self.metadata or {},
         }
 
@@ -82,13 +88,19 @@ class SystemHealthMonitor:
         self._system_status = HealthStatus.HEALTHY
         logger.debug("SystemHealthMonitor initialized")
     
-    def register_component(self, name: str, metadata: Optional[Dict] = None):
+    def register_component(self, name: str, metadata: Optional[Dict] = None,
+                          check_callback: Optional[Callable[[], Union[bool, Awaitable[bool]]]] = None,
+                          dependencies: Optional[List[str]] = None,
+                          is_critical: bool = True):
         """
         Register a new component for monitoring.
         
         Args:
             name: Component name
             metadata: Optional metadata about the component
+            check_callback: Optional function (sync or async) returning True (Healthy) or False (Unhealthy)
+            dependencies: Optional list of component names this component depends on
+            is_critical: Whether this component's failure degrades the entire system (default: True)
         """
         with self._component_lock:
             self._components[name] = ComponentHealth(
@@ -96,8 +108,11 @@ class SystemHealthMonitor:
                 status=HealthStatus.HEALTHY,
                 last_updated=datetime.now(),
                 metadata=metadata or {},
+                check_callback=check_callback,
+                dependencies=dependencies or [],
+                is_critical=is_critical
             )
-            logger.debug(f"Registered component: {name}")
+            logger.debug(f"Registered component: {name} (critical={is_critical})")
     
     def mark_healthy(self, component: str, metadata: Optional[Dict] = None):
         """
@@ -174,20 +189,101 @@ class SystemHealthMonitor:
             
             self._update_system_status()
             logger.error(f"Component {component} marked failed: {error_msg}")
+
+    async def check_component_health(self, name: str) -> HealthStatus:
+        """
+        actively check the health of a specific component by invoking its callback.
+        
+        Args:
+            name: Component name
+            
+        Returns:
+            The resulting HealthStatus
+        """
+        # Snapshot component info to release lock during callback execution
+        callback = None
+        deps = []
+        with self._component_lock:
+            if name not in self._components:
+                return HealthStatus.UNKNOWN
+            comp = self._components[name]
+            callback = comp.check_callback
+            deps = comp.dependencies
+            
+        # Check dependencies first
+        dep_status = HealthStatus.HEALTHY
+        for dep_name in deps:
+            with self._component_lock:
+                if dep_name in self._components:
+                    if self._components[dep_name].status in (HealthStatus.FAILED, HealthStatus.DEGRADED):
+                        dep_status = HealthStatus.DEGRADED
+                        break
+        
+        # If dependency failed, we are degraded
+        if dep_status != HealthStatus.HEALTHY:
+            self.mark_degraded(name, f"Dependency {dep_name} is unhealthy")
+            return HealthStatus.DEGRADED
+
+        # Execute callback if exists
+        if callback:
+            try:
+                result = callback()
+                if asyncio.iscoroutine(result):
+                    result = await result
+                
+                if result:
+                    self.mark_healthy(name)
+                    return HealthStatus.HEALTHY
+                else:
+                    self.mark_failed(name, "Health check callback returned False")
+                    return HealthStatus.FAILED
+            except Exception as e:
+                logger.error(f"Error checking health for {name}: {e}")
+                self.mark_failed(name, f"Health check exception: {str(e)}")
+                return HealthStatus.FAILED
+        
+        # No callback, just return current status
+        with self._component_lock:
+            return self._components[name].status
+
+    async def check_all(self) -> Dict[str, HealthStatus]:
+        """
+        Run active health checks for all registered components.
+        
+        Returns:
+            Dictionary mapping component names to their new statuses
+        """
+        results = {}
+        # Get list of components to iterate over (avoid holding lock during async calls)
+        with self._component_lock:
+            names = list(self._components.keys())
+            
+        for name in names:
+            results[name] = await self.check_component_health(name)
+            
+        return results
     
     def _update_system_status(self):
         """Update overall system status based on component statuses."""
-        if not self._components:
-            self._system_status = HealthStatus.UNKNOWN
-            return
-        
-        statuses = [c.status for c in self._components.values()]
-        
-        if any(s == HealthStatus.FAILED for s in statuses):
-            self._system_status = HealthStatus.DEGRADED  # System is degraded if any component fails
-        elif any(s == HealthStatus.DEGRADED for s in statuses):
-            self._system_status = HealthStatus.DEGRADED
-        else:
+        with self._component_lock:
+            # Avoid holding lock if not needed, but here we iterate
+            if not self._components:
+                self._system_status = HealthStatus.UNKNOWN
+                return
+            
+            components = self._components.values()
+            
+            # Critical failures -> System FAILED
+            if any(c.status == HealthStatus.FAILED and c.is_critical for c in components):
+                self._system_status = HealthStatus.FAILED
+                return
+
+            # Non-critical failures or any degraded -> System DEGRADED
+            if any(c.status in (HealthStatus.FAILED, HealthStatus.DEGRADED) for c in components):
+                self._system_status = HealthStatus.DEGRADED
+                return
+
+            # All good -> System HEALTHY
             self._system_status = HealthStatus.HEALTHY
     
     def get_component_health(self, component: str) -> ComponentHealth:

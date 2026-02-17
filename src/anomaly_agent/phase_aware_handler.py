@@ -18,8 +18,9 @@ from dataclasses import asdict
 from datetime import datetime, timedelta
 import json
 from pathlib import Path
-from collections import defaultdict, deque
+from collections import defaultdict, deque, Counter
 import uuid
+import aiofiles
 from models.feedback import FeedbackEvent
 
 
@@ -36,33 +37,6 @@ from anomaly.report_generator import get_report_generator
 
 
 logger: logging.Logger = logging.getLogger(__name__)
-
-def _log_with_context(
-    logger_method,
-    message: str,
-    decision_id: Optional[str] = None,
-    anomaly_type: Optional[str] = None,
-    **extra_context
-):
-    """
-    Helper to add consistent context to logs.
-    
-    Args:
-        logger_method: Logger method to call (logger.info, logger.error, etc.)
-        message: Log message
-        decision_id: Optional decision ID
-        anomaly_type: Optional anomaly type
-        **extra_context: Additional context fields
-    """
-    context = {}
-    if decision_id:
-        context['decision_id'] = decision_id
-    if anomaly_type:
-        context['anomaly_type'] = anomaly_type
-    context.update(extra_context)
-    
-    logger_method(message, extra=context)
-
 
 def _log_with_context(
     logger_method,
@@ -161,6 +135,8 @@ class PhaseAwareAnomalyHandler:
         # Recurrence tracking - optimized data structures
         self.enable_recurrence_tracking = enable_recurrence_tracking
         self.anomaly_history: List[Tuple[str, datetime]] = []  # List of (anomaly_type, timestamp) tuples
+        self._anomaly_counts = defaultdict(int)  # Track total count per type
+        self._anomaly_timestamps = defaultdict(list)  # Track timestamps per type
         self.recurrence_window = timedelta(seconds=3600)  # 1 hour default
         
         # Initialize tracking dictionaries (CRITICAL FIX)
@@ -172,8 +148,7 @@ class PhaseAwareAnomalyHandler:
             extra={'recurrence_tracking_enabled': enable_recurrence_tracking}
         )
 
-    
-    def handle_anomaly(
+    async def handle_anomaly(
         self,
         anomaly_type: str,
         severity_score: float,
@@ -317,8 +292,8 @@ class PhaseAwareAnomalyHandler:
         # Log the decision
         self._log_decision(decision)
         
-        # Record anomaly for reporting (feedback loop)
-        self._record_anomaly_for_reporting(decision, anomaly_metadata)
+        # Record anomaly for reporting (feedback loop) - async
+        await self._record_anomaly_for_reporting(decision, anomaly_metadata)
         
         # If escalation is needed, trigger it
         if should_escalate:
@@ -331,7 +306,7 @@ class PhaseAwareAnomalyHandler:
         """
         Track recurrence of anomalies within a time window.
         
-        Optimized implementation using dictionary-based indexing for O(1) lookups.
+        Optimized implementation using deque for automatic size management.
         
         Returns:
             Dict with:
@@ -348,6 +323,10 @@ class PhaseAwareAnomalyHandler:
         if self.enable_recurrence_tracking:
             self.anomaly_history.append((anomaly_type, now))
             self._anomaly_counts[anomaly_type] += 1
+            
+            # Use deque for automatic size management (keeps last 1000 per type)
+            if anomaly_type not in self._anomaly_timestamps:
+                self._anomaly_timestamps[anomaly_type] = deque(maxlen=1000)
             self._anomaly_timestamps[anomaly_type].append(now)
         
         # Get total count - O(1) lookup
@@ -365,10 +344,6 @@ class PhaseAwareAnomalyHandler:
         else:
             last_occurrence = None
             time_since_last = None
-        
-        # Periodic cleanup of old entries (every 1000 anomalies)
-        if len(self.anomaly_history) > 1000 and len(self.anomaly_history) % 100 == 0:
-            self._cleanup_old_entries(now)
         
         return {
             'count': total_count,
@@ -484,8 +459,7 @@ class PhaseAwareAnomalyHandler:
             )
 
 
-    def _log_decision(self, decision: Dict[str, Any]):
-
+    def _log_decision(self, decision: Dict[str, Any]) -> None:
         """Log the anomaly decision for audit and analysis."""
         # Structured logging
         log_entry = {
@@ -503,13 +477,13 @@ class PhaseAwareAnomalyHandler:
         
         logger.info(f"Anomaly decision: {log_entry}")
     
-    def _record_anomaly_for_reporting(
+    async def _record_anomaly_for_reporting(
         self, 
         decision: Dict[str, Any], 
         anomaly_metadata: Dict[str, Any]
     ) -> None:
         """
-        Record anomaly decision for operator feedback loop.
+        Record anomaly decision for operator feedback loop (async for non-blocking I/O).
         
         Saves the event to a pending file for review via CLI.
         """
@@ -526,9 +500,11 @@ class PhaseAwareAnomalyHandler:
             pending_file = Path("feedback_pending.json")
             events = []
             
+            # Async file read
             if pending_file.exists():
                 try:
-                    content = pending_file.read_text()
+                    async with aiofiles.open(pending_file, 'r') as f:
+                        content = await f.read()
                     if content.strip():
                         raw_events = json.loads(content)
                         events = raw_events if isinstance(raw_events, list) else []
@@ -545,7 +521,10 @@ class PhaseAwareAnomalyHandler:
                     return  # Can't proceed without reading existing data
             
             events.append(event.model_dump(mode='json'))
-            pending_file.write_text(json.dumps(events, indent=2))
+            
+            # Async file write
+            async with aiofiles.open(pending_file, 'w') as f:
+                await f.write(json.dumps(events, indent=2))
             
             logger.debug(
                 f"Recorded feedback event for decision {decision['decision_id']}",
@@ -579,23 +558,7 @@ class PhaseAwareAnomalyHandler:
             )
 
     
-    def _log_decision(self, decision: Dict[str, Any]) -> None:
-        """Log the anomaly decision for audit and analysis."""
-        # Structured logging
-        log_entry = {
-            'timestamp': decision['timestamp'].isoformat(),
-            'decision_id': decision['decision_id'],
-            'anomaly_type': decision['anomaly_type'],
-            'severity': decision['severity_score'],
-            'confidence': decision['detection_confidence'],
-            'mission_phase': decision['mission_phase'],
-            'recommended_action': decision['recommended_action'],
-            'escalation': decision['should_escalate_to_safe_mode'],
-            'recurrence_count': decision['recurrence_info']['count'],
-            'reasoning': decision['reasoning']
-        }
-        
-        logger.info(f"Anomaly decision: {log_entry}")
+
     
     def _generate_decision_id(self) -> str:
         """Generate a unique decision identifier using UUID for better performance."""
@@ -709,57 +672,71 @@ class DecisionTracer:
     Utility to trace and explain decision-making for debugging and learning.
     
     Collects decisions for a period and provides analysis.
-    Uses deque for O(1) append and automatic size management.
+    Uses indexing for O(1) lookups instead of O(n) scans.
     """
     
     def __init__(self, max_decisions: int = 1000) -> None:
-        """Initialize the decision tracer."""
+        """Initialize the decision tracer with indexed storage."""
         self.max_decisions = max_decisions
         self.decisions: List[Dict[str, Any]] = []
+        
+        # Indexes for O(1) lookups
+        self._by_phase: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+        self._by_anomaly_type: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+        self._escalations: List[Dict[str, Any]] = []
     
     def add_decision(self, decision: Dict[str, Any]) -> None:
-        """Record a decision."""
+        """Record a decision with automatic indexing."""
         self.decisions.append(decision)
+        
+        # Update indexes
+        if 'mission_phase' in decision:
+            self._by_phase[decision['mission_phase']].append(decision)
+        if 'anomaly_type' in decision:
+            self._by_anomaly_type[decision['anomaly_type']].append(decision)
+        if decision.get('should_escalate_to_safe_mode'):
+            self._escalations.append(decision)
+        
+        # Enforce max size (FIFO)
+        if len(self.decisions) > self.max_decisions:
+            removed = self.decisions.pop(0)
+            # Clean up indexes
+            if 'mission_phase' in removed:
+                self._by_phase[removed['mission_phase']].remove(removed)
+            if 'anomaly_type' in removed:
+                self._by_anomaly_type[removed['anomaly_type']].remove(removed)
+            if removed.get('should_escalate_to_safe_mode'):
+                self._escalations.remove(removed)
 
     
     def get_decisions_for_phase(self, phase: str) -> List[Dict[str, Any]]:
-        """Get all recorded decisions for a specific phase."""
-        return [d for d in self.decisions if d.get('mission_phase') == phase]
+        """Get all recorded decisions for a specific phase (O(1) lookup)."""
+        return self._by_phase.get(phase, [])
     
     def get_decisions_for_anomaly_type(self, anomaly_type: str) -> List[Dict[str, Any]]:
-        """Get all recorded decisions for a specific anomaly type."""
-        return [d for d in self.decisions if d.get('anomaly_type') == anomaly_type]
+        """Get all recorded decisions for a specific anomaly type (O(1) lookup)."""
+        return self._by_anomaly_type.get(anomaly_type, [])
     
     def get_escalations(self) -> List[Dict[str, Any]]:
-        """Get all decisions that resulted in escalation."""
-        return [d for d in self.decisions if d.get('should_escalate_to_safe_mode')]
+        """Get all decisions that resulted in escalation (O(1) lookup)."""
+        return self._escalations
 
     
     def get_summary_stats(self) -> Dict[str, Any]:
-        """Get summary statistics on recorded decisions."""
+        """Get summary statistics on recorded decisions (optimized with Counter)."""
         if not self.decisions:
             return {"total_decisions": 0}
         
-        escalations = self.get_escalations()
-        
-        phases: Dict[str, int] = {}
-        for d in self.decisions:
-            phase = d.get('mission_phase')
-            if phase:
-                phases[phase] = phases.get(phase, 0) + 1
-        
-        anomaly_types: Dict[str, int] = {}
-        for d in self.decisions:
-            a_type = d.get('anomaly_type')
-            if a_type:
-                anomaly_types[a_type] = anomaly_types.get(a_type, 0) + 1
+        # Use Counter for efficient counting
+        phases = Counter(d.get('mission_phase') for d in self.decisions if d.get('mission_phase'))
+        anomaly_types = Counter(d.get('anomaly_type') for d in self.decisions if d.get('anomaly_type'))
         
         return {
             'total_decisions': len(self.decisions),
-            'total_escalations': len(escalations),
-            'escalation_rate': len(escalations) / len(self.decisions) if self.decisions else 0,
-            'by_phase': phases,
-            'by_anomaly_type': anomaly_types
+            'total_escalations': len(self._escalations),
+            'escalation_rate': len(self._escalations) / len(self.decisions) if self.decisions else 0,
+            'by_phase': dict(phases),
+            'by_anomaly_type': dict(anomaly_types)
         }
     
     def _record_anomaly_for_reporting(self, decision: Dict[str, Any], anomaly_metadata: Dict[str, Any]) -> None:

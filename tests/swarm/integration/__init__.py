@@ -33,8 +33,6 @@ Date: 2026-01-12
 
 from .release_report import (
     ReleaseReportGenerator,
-    ReleaseReport,
-    IssueMilestone,
 )
 
 __all__ = [
@@ -45,8 +43,6 @@ __all__ = [
     # "ProductionGate",
     # "FullIntegrationResult",
     "ReleaseReportGenerator",
-    "ReleaseReport",
-    "IssueMilestone",
 ]
 
 __version__ = "3.0.0"

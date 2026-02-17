@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AstraGuard AI - Contribution Metrics Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+            color: #ffffff;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            padding: 40px 0;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+            margin-bottom: 40px;
+        }
+
+        h1 {
+            font-size: 3em;
+            background: linear-gradient(45deg, #00d4ff, #7b2ff7);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: #a0a0a0;
+            font-size: 1.2em;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 25px;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0, 212, 255, 0.3);
+        }
+
+        .stat-value {
+            font-size: 2.5em;
+            font-weight: bold;
+            background: linear-gradient(45deg, #00d4ff, #7b2ff7);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 10px;
+        }
+
+        .stat-label {
+            color: #a0a0a0;
+            font-size: 0.9em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .chart-container {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+        }
+
+        .chart-title {
+            font-size: 1.5em;
+            margin-bottom: 20px;
+            color: #00d4ff;
+        }
+
+        .tier-distribution {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .tier-bar {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .tier-label {
+            min-width: 120px;
+            font-size: 1.1em;
+        }
+
+        .tier-progress {
+            flex: 1;
+            height: 30px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .tier-fill {
+            height: 100%;
+            transition: width 1s ease-out;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding-right: 10px;
+            font-weight: bold;
+        }
+
+        .tier-legend { fill: #4ade80; }
+        .tier-core { fill: #fbbf24; }
+        .tier-regular { fill: #60a5fa; }
+        .tier-active { fill: #a78bfa; }
+        .tier-new { fill: #34d399; }
+
+        .contributors-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .contributors-table th,
+        .contributors-table td {
+            padding: 15px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .contributors-table th {
+            background: rgba(255, 255, 255, 0.1);
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.85em;
+            letter-spacing: 1px;
+        }
+
+        .contributors-table tr:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .contributor-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            vertical-align: middle;
+            margin-right: 10px;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 0.75em;
+            font-weight: bold;
+            margin-left: 5px;
+        }
+
+        .badge-legend { background: linear-gradient(45deg, #f59e0b, #d97706); }
+        .badge-core { background: linear-gradient(45deg, #fbbf24, #f59e0b); }
+        .badge-regular { background: linear-gradient(45deg, #60a5fa, #3b82f6); }
+        .badge-active { background: linear-gradient(45deg, #a78bfa, #8b5cf6); }
+        .badge-new { background: linear-gradient(45deg, #34d399, #10b981); }
+
+        .activity-timeline {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .activity-item {
+            display: flex;
+            gap: 15px;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            border-left: 3px solid #00d4ff;
+        }
+
+        .activity-date {
+            min-width: 80px;
+            color: #a0a0a0;
+            font-size: 0.9em;
+        }
+
+        .activity-content {
+            flex: 1;
+        }
+
+        .activity-title {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .activity-desc {
+            color: #a0a0a0;
+            font-size: 0.9em;
+        }
+
+        .refresh-btn {
+            background: linear-gradient(45deg, #00d4ff, #7b2ff7);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 25px;
+            font-size: 1em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-top: 20px;
+        }
+
+        .refresh-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 5px 20px rgba(0, 212, 255, 0.5);
+        }
+
+        .last-updated {
+            text-align: center;
+            color: #a0a0a0;
+            margin-top: 40px;
+            font-size: 0.9em;
+        }
+
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 2em;
+            }
+
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .contributors-table {
+                font-size: 0.85em;
+            }
+        }
+
+        .loader {
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-top: 4px solid #00d4ff;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🚀 AstraGuard AI Contribution Metrics</h1>
+            <p class="subtitle">Real-time insights into our community contributions</p>
+        </header>
+
+        <!-- Key Stats -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value" id="total-contributors">-</div>
+                <div class="stat-label">Total Contributors</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="total-prs">-</div>
+                <div class="stat-label">Merged PRs</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="total-issues">-</div>
+                <div class="stat-label">Issues Closed</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="active-contributors">-</div>
+                <div class="stat-label">Active This Month</div>
+            </div>
+        </div>
+
+        <!-- Tier Distribution -->
+        <div class="chart-container">
+            <h2 class="chart-title">📊 Contributor Tier Distribution</h2>
+            <div class="tier-distribution">
+                <div class="tier-bar">
+                    <div class="tier-label">👑 Legend</div>
+                    <div class="tier-progress">
+                        <div class="tier-fill tier-legend" id="tier-legend-bar" style="width: 0%;">
+                            <span id="tier-legend-count">0</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="tier-bar">
+                    <div class="tier-label">🌟 Core</div>
+                    <div class="tier-progress">
+                        <div class="tier-fill tier-core" id="tier-core-bar" style="width: 0%;">
+                            <span id="tier-core-count">0</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="tier-bar">
+                    <div class="tier-label">💎 Regular</div>
+                    <div class="tier-progress">
+                        <div class="tier-fill tier-regular" id="tier-regular-bar" style="width: 0%;">
+                            <span id="tier-regular-count">0</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="tier-bar">
+                    <div class="tier-label">⭐ Active</div>
+                    <div class="tier-progress">
+                        <div class="tier-fill tier-active" id="tier-active-bar" style="width: 0%;">
+                            <span id="tier-active-count">0</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="tier-bar">
+                    <div class="tier-label">🌱 New</div>
+                    <div class="tier-progress">
+                        <div class="tier-fill tier-new" id="tier-new-bar" style="width: 0%;">
+                            <span id="tier-new-count">0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Top Contributors -->
+        <div class="chart-container">
+            <h2 class="chart-title">🏆 Top Contributors</h2>
+            <table class="contributors-table">
+                <thead>
+                    <tr>
+                        <th>Rank</th>
+                        <th>Contributor</th>
+                        <th>PRs</th>
+                        <th>Tier</th>
+                        <th>Joined</th>
+                    </tr>
+                </thead>
+                <tbody id="top-contributors-body">
+                    <tr>
+                        <td colspan="5" style="text-align: center;">
+                            <div class="loader"></div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Recent Activity -->
+        <div class="chart-container">
+            <h2 class="chart-title">📈 Recent Activity</h2>
+            <div class="activity-timeline" id="recent-activity">
+                <div style="text-align: center;">
+                    <div class="loader"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Contribution Types Breakdown -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value" id="code-contribs">-</div>
+                <div class="stat-label">💻 Code Contributions</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="doc-contribs">-</div>
+                <div class="stat-label">📚 Documentation</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="bug-fixes">-</div>
+                <div class="stat-label">🐛 Bug Fixes</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="reviews">-</div>
+                <div class="stat-label">👀 Code Reviews</div>
+            </div>
+        </div>
+
+        <div style="text-align: center;">
+            <button class="refresh-btn" onclick="loadMetrics()">🔄 Refresh Data</button>
+        </div>
+
+        <div class="last-updated">
+            Last updated: <span id="last-updated-time">-</span>
+        </div>
+    </div>
+
+    <script>
+        // Load metrics from JSON file or API
+        async function loadMetrics() {
+            try {
+                const response = await fetch('contributor_metrics.json');
+                const data = await response.json();
+                
+                updateDashboard(data);
+            } catch (error) {
+                console.error('Error loading metrics:', error);
+                // Use mock data if file doesn't exist
+                loadMockData();
+            }
+        }
+
+        function updateDashboard(data) {
+            // Update key stats
+            document.getElementById('total-contributors').textContent = data.total_contributors || 0;
+            document.getElementById('total-prs').textContent = data.total_prs || 0;
+            document.getElementById('total-issues').textContent = data.total_issues || 0;
+            document.getElementById('active-contributors').textContent = data.active_this_month || 0;
+
+            // Update tier distribution
+            const tiers = data.tier_distribution || {};
+            const maxCount = Math.max(...Object.values(tiers), 1);
+            
+            updateTierBar('legend', tiers.legend || 0, maxCount);
+            updateTierBar('core', tiers.core || 0, maxCount);
+            updateTierBar('regular', tiers.regular || 0, maxCount);
+            updateTierBar('active', tiers.active || 0, maxCount);
+            updateTierBar('new', tiers.new || 0, maxCount);
+
+            // Update top contributors
+            updateTopContributors(data.top_contributors || []);
+
+            // Update recent activity
+            updateRecentActivity(data.recent_activity || []);
+
+            // Update contribution types
+            document.getElementById('code-contribs').textContent = data.contribution_types?.code || 0;
+            document.getElementById('doc-contribs').textContent = data.contribution_types?.documentation || 0;
+            document.getElementById('bug-fixes').textContent = data.contribution_types?.bug_fixes || 0;
+            document.getElementById('reviews').textContent = data.contribution_types?.reviews || 0;
+
+            // Update timestamp
+            document.getElementById('last-updated-time').textContent = new Date().toLocaleString();
+        }
+
+        function updateTierBar(tier, count, maxCount) {
+            const percentage = (count / maxCount) * 100;
+            document.getElementById(`tier-${tier}-bar`).style.width = `${percentage}%`;
+            document.getElementById(`tier-${tier}-count`).textContent = count;
+        }
+
+        function updateTopContributors(contributors) {
+            const tbody = document.getElementById('top-contributors-body');
+            tbody.innerHTML = '';
+
+            contributors.slice(0, 10).forEach((contrib, index) => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>#${index + 1}</td>
+                    <td>
+                        <img src="${contrib.avatar_url}" alt="${contrib.username}" class="contributor-avatar">
+                        <a href="${contrib.profile_url}" target="_blank" style="color: #00d4ff; text-decoration: none;">
+                            @${contrib.username}
+                        </a>
+                    </td>
+                    <td>${contrib.prs}</td>
+                    <td><span class="badge badge-${contrib.tier_key}">${contrib.tier_emoji} ${contrib.tier}</span></td>
+                    <td>${contrib.first_contribution || 'N/A'}</td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function updateRecentActivity(activities) {
+            const container = document.getElementById('recent-activity');
+            container.innerHTML = '';
+
+            activities.slice(0, 10).forEach(activity => {
+                const item = document.createElement('div');
+                item.className = 'activity-item';
+                item.innerHTML = `
+                    <div class="activity-date">${activity.date}</div>
+                    <div class="activity-content">
+                        <div class="activity-title">${activity.title}</div>
+                        <div class="activity-desc">${activity.description}</div>
+                    </div>
+                `;
+                container.appendChild(item);
+            });
+        }
+
+        function loadMockData() {
+            // Mock data for demonstration
+            const mockData = {
+                total_contributors: 42,
+                total_prs: 156,
+                total_issues: 89,
+                active_this_month: 18,
+                tier_distribution: {
+                    legend: 2,
+                    core: 5,
+                    regular: 12,
+                    active: 15,
+                    new: 8
+                },
+                top_contributors: [
+                    {
+                        username: 'sr-857',
+                        avatar_url: 'https://github.com/sr-857.png',
+                        profile_url: 'https://github.com/sr-857',
+                        prs: 85,
+                        tier: 'Legend',
+                        tier_key: 'legend',
+                        tier_emoji: '👑',
+                        first_contribution: 'Jan 2025'
+                    },
+                    {
+                        username: 'Yashaswini-V21',
+                        avatar_url: 'https://github.com/Yashaswini-V21.png',
+                        profile_url: 'https://github.com/Yashaswini-V21',
+                        prs: 12,
+                        tier: 'Regular',
+                        tier_key: 'regular',
+                        tier_emoji: '💎',
+                        first_contribution: 'Feb 2026'
+                    }
+                ],
+                recent_activity: [
+                    {
+                        date: 'Feb 15',
+                        title: 'Contributor Recognition Program Implemented',
+                        description: '@Yashaswini-V21 completed issue #702'
+                    },
+                    {
+                        date: 'Feb 14',
+                        title: 'New Feature Added',
+                        description: 'Enhanced memory engine with adaptive learning'
+                    },
+                    {
+                        date: 'Feb 13',
+                        title: '5 New Contributors Joined',
+                        description: 'Welcome to our growing community!'
+                    }
+                ],
+                contribution_types: {
+                    code: 156,
+                    documentation: 45,
+                    bug_fixes: 32,
+                    reviews: 89
+                }
+            };
+
+            updateDashboard(mockData);
+        }
+
+        // Load data on page load
+        window.addEventListener('DOMContentLoaded', loadMetrics);
+
+        // Auto-refresh every 5 minutes
+        setInterval(loadMetrics, 5 * 60 * 1000);
+    </script>
+</body>
+</html>

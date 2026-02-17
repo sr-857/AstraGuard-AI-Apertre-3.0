@@ -62,6 +62,7 @@ class TestPhaseTransitions:
         assert isinstance(phase, MissionPhase)
 
 
+@pytest.mark.timeout(300) # Added 5-minute timeout for heavy AI policy evaluation
 class TestPhaseAwareAnomalyHandling:
     """Test the phase-aware anomaly handler."""
     
@@ -197,6 +198,7 @@ class TestRecurrenceTracking:
         assert decision2['recurrence_info']['total_in_window'] >= 2
 
 
+@pytest.mark.timeout(600) # Added 10-minute timeout for complex end-to-end chaos simulations
 class TestEndToEndDecisionFlow:
     """Test complete end-to-end decision flows."""
     

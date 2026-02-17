@@ -11,6 +11,7 @@ import asyncio
 import time
 import os
 from typing import Type
+from unittest.mock import MagicMock, patch
 
 from backend.storage import Storage, MemoryStorage
 from backend.storage.redis_adapter import RedisAdapter
@@ -231,6 +232,68 @@ class TestMemoryStorage:
         # Verify all keys exist
         keys = await storage.scan_keys("concurrent:*")
         assert len(keys) == 10
+
+
+class TestRedisAdapterUnit:
+    """Unit tests for RedisAdapter using mocks."""
+
+    @pytest.mark.asyncio
+    async def test_from_url_success(self):
+        """Test from_url succeeds when connect succeeds."""
+        with patch.object(RedisAdapter, 'connect', new_callable=MagicMock) as mock_connect:
+            # Mock connect to return an awaitable that returns True
+            f = asyncio.Future()
+            f.set_result(True)
+            mock_connect.return_value = f
+
+            adapter = await RedisAdapter.from_url("redis://localhost:6379")
+
+            assert isinstance(adapter, RedisAdapter)
+            assert adapter.redis_url == "redis://localhost:6379"
+            assert mock_connect.called
+            assert mock_connect.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_from_url_retry_success(self):
+        """Test from_url retries and eventually succeeds."""
+        with patch.object(RedisAdapter, 'connect', new_callable=MagicMock) as mock_connect:
+            with patch('asyncio.sleep', new_callable=MagicMock) as mock_sleep:
+                # Mock sleep to return immediately
+                f_sleep = asyncio.Future()
+                f_sleep.set_result(None)
+                mock_sleep.return_value = f_sleep
+
+                # Mock connect to fail twice then succeed
+                f_fail = asyncio.Future()
+                f_fail.set_result(False)
+                f_success = asyncio.Future()
+                f_success.set_result(True)
+
+                mock_connect.side_effect = [f_fail, f_fail, f_success]
+
+                adapter = await RedisAdapter.from_url("redis://localhost:6379", max_retries=5, retry_delay=0.1)
+
+                assert isinstance(adapter, RedisAdapter)
+                assert mock_connect.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_from_url_failure(self):
+        """Test from_url fails after max retries."""
+        with patch.object(RedisAdapter, 'connect', new_callable=MagicMock) as mock_connect:
+            with patch('asyncio.sleep', new_callable=MagicMock) as mock_sleep:
+                f_sleep = asyncio.Future()
+                f_sleep.set_result(None)
+                mock_sleep.return_value = f_sleep
+
+                f_fail = asyncio.Future()
+                f_fail.set_result(False)
+                mock_connect.return_value = f_fail
+
+                with pytest.raises(RuntimeError) as excinfo:
+                    await RedisAdapter.from_url("redis://localhost:6379", max_retries=3, retry_delay=0.1)
+
+                assert "Failed to connect to Redis" in str(excinfo.value)
+                assert mock_connect.call_count == 3
 
 
 class TestRedisAdapter:
