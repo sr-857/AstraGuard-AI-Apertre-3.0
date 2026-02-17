@@ -43,20 +43,25 @@ except ImportError:
         def set(self, value):
             pass
 
+# Import safe metric creation to avoid duplicates
+from astraguard.observability import _safe_create_metric
 
 logger = logging.getLogger(__name__)
 
 # Prometheus metrics
-CHAOS_INJECTIONS = Counter(
-    "astra_chaos_injections_total", "Total chaos experiments injected", ["fault_type"]
+CHAOS_INJECTIONS = _safe_create_metric(
+    Counter,
+    "astra_chaos_injections_total", "Total chaos experiments injected", labelnames=["fault_type"]
 )
-CHAOS_RECOVERY_TIME = Histogram(
+CHAOS_RECOVERY_TIME = _safe_create_metric(
+    Histogram,
     "astra_chaos_recovery_seconds",
     "Time to recover from chaos injection",
-    ["fault_type"],
+    labelnames=["fault_type"],
 )
-CHAOS_ACTIVE = Gauge(
-    "astra_chaos_active", "Currently active chaos injection", ["fault_type"]
+CHAOS_ACTIVE = _safe_create_metric(
+    Gauge,
+    "astra_chaos_active", "Currently active chaos injection", labelnames=["fault_type"]
 )
 
 

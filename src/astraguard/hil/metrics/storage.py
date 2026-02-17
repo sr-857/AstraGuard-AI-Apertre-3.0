@@ -16,12 +16,9 @@ import logging
 from pathlib import Path
 from typing import Dict, Any, Optional, List, cast
 from datetime import datetime
-<<<<<<< HEAD
-=======
 import heapq
 from concurrent.futures import ThreadPoolExecutor
 
->>>>>>> f7e4e8a (Added performance optimizations and benchmarking for storage.py)
 from astraguard.hil.metrics.latency import LatencyCollector
 
 
@@ -133,26 +130,25 @@ class MetricsStorage:
 
         # Optimization: EAFP approach (Easier to Ask for Forgiveness than Permission)
         try:
-<<<<<<< HEAD
             content = summary_path.read_text()
             data = json.loads(content)
+
             if not isinstance(data, dict):
                 logging.error(
                     f"Metrics file {summary_path} does not contain a JSON object at the root; "
                     f"got {type(data).__name__} instead."
                 )
                 return None
-            return cast(Dict[str, Any], data)
 
-=======
-            metrics = json.loads(summary_path.read_text())
+            metrics = cast(Dict[str, Any], data)
+
             # Cache the result
             if use_cache:
                 self._cached_metrics = metrics
-            return cast(Dict[str, Any], metrics)
+
+            return metrics
         except FileNotFoundError:
             return None
->>>>>>> f7e4e8a (Added performance optimizations and benchmarking for storage.py)
         except (OSError, PermissionError, IsADirectoryError) as e:
             logging.error(f"Failed to read metrics file {summary_path}: {e}")
             return None
