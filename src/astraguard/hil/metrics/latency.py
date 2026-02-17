@@ -290,7 +290,7 @@ class LatencyCollector:
 
     def get_summary(self) -> Dict[str, Any]:
         """
-        Get human-readable summary by reusing get_stats() and get_stats_by_satellite().
+        Get human-readable summary with optimized single-pass computation.
 
         Returns:
             Dict with high-level metrics summary
@@ -298,9 +298,47 @@ class LatencyCollector:
         if not self.measurements:
             return {"total_measurements": 0, "metrics": {}}
 
-        # Reuse existing methods to avoid code duplication
-        stats = self.get_stats()
-        stats_by_satellite = self.get_stats_by_satellite()
+        # Single-pass computation for both stats and stats_by_satellite
+        by_type = defaultdict(list)
+        by_satellite = defaultdict(lambda: defaultdict(list))
+
+        for m in self.measurements:
+            by_type[m.metric_type].append(m.duration_ms)
+            by_satellite[m.satellite_id][m.metric_type].append(m.duration_ms)
+
+        # Calculate stats by type
+        stats = {}
+        for metric_type, latencies in by_type.items():
+            if not latencies:
+                continue
+            sorted_latencies = sorted(latencies)
+            count = len(sorted_latencies)
+            stats[metric_type] = {
+                "count": count,
+                "mean_ms": sum(latencies) / count,
+                "p50_ms": sorted_latencies[count // 2],
+                "p95_ms": sorted_latencies[int(count * 0.95)],
+                "p99_ms": sorted_latencies[int(count * 0.99)],
+                "max_ms": max(latencies),
+                "min_ms": min(latencies),
+            }
+
+        # Calculate stats by satellite
+        stats_by_satellite = {}
+        for sat_id, metrics in by_satellite.items():
+            stats_by_satellite[sat_id] = {}
+            for metric_type, latencies in metrics.items():
+                if not latencies:
+                    continue
+                sorted_latencies = sorted(latencies)
+                count = len(sorted_latencies)
+                stats_by_satellite[sat_id][metric_type] = {
+                    "count": count,
+                    "mean_ms": sum(latencies) / count,
+                    "p50_ms": sorted_latencies[count // 2],
+                    "p95_ms": sorted_latencies[int(count * 0.95)],
+                    "max_ms": max(latencies),
+                }
 
         return {
             "total_measurements": len(self.measurements),
@@ -308,6 +346,7 @@ class LatencyCollector:
             "stats": stats,
             "stats_by_satellite": stats_by_satellite,
         }
+
 
     def reset(self) -> None:
         """Clear all measurements."""

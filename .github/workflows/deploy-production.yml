@@ -1,0 +1,23 @@
+name: Deploy to Production
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Build Docker Image
+        run: docker build -t astraguard:prod .
+
+      - name: Deploy to Production
+        run: |
+          echo "Deploying to Production Environment..."
+          # Placeholder for deployment script
+          # kubectl apply -f infra/k8s/production/
