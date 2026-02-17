@@ -233,8 +233,138 @@ MTTR_SECONDS = Histogram(
 )
 
 # ============================================================================
+# Threat Detection Metrics
+# ============================================================================
+
+THREAT_DETECTIONS_TOTAL = Counter(
+    'astraguard_threat_detections_total',
+    'Total threat detections by severity and category',
+    ['severity', 'category'],
+    registry=REGISTRY
+)
+
+THREAT_DETECTION_LATENCY = Histogram(
+    'astraguard_threat_detection_latency_seconds',
+    'Threat detection processing latency',
+    buckets=(0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0),
+    registry=REGISTRY
+)
+
+THREAT_FALSE_POSITIVES_TOTAL = Counter(
+    'astraguard_threat_false_positives_total',
+    'Total false positive detections',
+    ['category'],
+    registry=REGISTRY
+)
+
+THREAT_HUNTS_TOTAL = Counter(
+    'astraguard_threat_hunts_total',
+    'Total threat hunts executed',
+    ['hunt_type', 'status'],
+    registry=REGISTRY
+)
+
+THREAT_HUNT_FINDINGS = Counter(
+    'astraguard_threat_hunt_findings_total',
+    'Total findings from threat hunts',
+    ['hunt_type', 'severity'],
+    registry=REGISTRY
+)
+
+IOC_MATCHES_TOTAL = Counter(
+    'astraguard_ioc_matches_total',
+    'Total IoC matches detected',
+    ['ioc_type', 'severity'],
+    registry=REGISTRY
+)
+
+IOC_DATABASE_SIZE = Gauge(
+    'astraguard_ioc_database_size',
+    'Number of active IoCs in database',
+    ['ioc_type'],
+    registry=REGISTRY
+)
+
+AUTOMATED_RESPONSES_TOTAL = Counter(
+    'astraguard_automated_responses_total',
+    'Total automated responses triggered',
+    ['response_type', 'severity'],
+    registry=REGISTRY
+)
+
+AUTOMATED_RESPONSE_LATENCY = Histogram(
+    'astraguard_automated_response_latency_seconds',
+    'Automated response execution latency',
+    buckets=(0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0),
+    registry=REGISTRY
+)
+
+MITIGATION_ACTIONS_TOTAL = Counter(
+    'astraguard_mitigation_actions_total',
+    'Total mitigation actions executed',
+    ['action_type', 'status'],
+    registry=REGISTRY
+)
+
+MITIGATION_EFFECTIVENESS = Gauge(
+    'astraguard_mitigation_effectiveness',
+    'Effectiveness score of mitigation actions (0-1)',
+    ['action_type'],
+    registry=REGISTRY
+)
+
+FORENSICS_EVENTS_TOTAL = Counter(
+    'astraguard_forensics_events_total',
+    'Total forensics events logged',
+    ['event_type', 'severity'],
+    registry=REGISTRY
+)
+
+EVIDENCE_COLLECTED_TOTAL = Counter(
+    'astraguard_evidence_collected_total',
+    'Total evidence items collected',
+    ['evidence_type'],
+    registry=REGISTRY
+)
+
+TIMELINE_RECONSTRUCTIONS_TOTAL = Counter(
+    'astraguard_timeline_reconstructions_total',
+    'Total timeline reconstructions performed',
+    registry=REGISTRY
+)
+
+THREAT_INTELLIGENCE_FEEDS = Gauge(
+    'astraguard_threat_intelligence_feeds',
+    'Number of active threat intelligence feeds',
+    ['feed_type'],
+    registry=REGISTRY
+)
+
+THREAT_INTELLIGENCE_UPDATES = Counter(
+    'astraguard_threat_intelligence_updates_total',
+    'Total threat intelligence feed updates',
+    ['feed_type', 'status'],
+    registry=REGISTRY
+)
+
+BEHAVIORAL_PROFILES = Gauge(
+    'astraguard_behavioral_profiles',
+    'Number of active behavioral profiles',
+    ['entity_type'],
+    registry=REGISTRY
+)
+
+BEHAVIORAL_ANOMALIES = Counter(
+    'astraguard_behavioral_anomalies_total',
+    'Total behavioral anomalies detected',
+    ['entity_type', 'severity'],
+    registry=REGISTRY
+)
+
+# ============================================================================
 # Helper Functions
 # ============================================================================
+
 
 def track_circuit_breaker_metrics(circuit_breaker):
     """

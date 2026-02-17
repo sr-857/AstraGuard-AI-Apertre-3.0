@@ -578,3 +578,191 @@ class FeedbackPendingResponse(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.now, description="Response timestamp")
     
     model_config = ConfigDict(json_encoders={datetime: lambda v: v.isoformat()})
+
+
+# ============================================================================
+# Threat Detection Models
+# ============================================================================
+
+class ThreatSeverityEnum(str, Enum):
+    """Threat severity levels."""
+    CRITICAL = "critical"
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+    INFO = "info"
+
+
+class ThreatCategoryEnum(str, Enum):
+    """Threat categories."""
+    MALWARE = "malware"
+    INTRUSION = "intrusion"
+    DATA_EXFILTRATION = "data_exfiltration"
+    LATERAL_MOVEMENT = "lateral_movement"
+    PERSISTENCE = "persistence"
+    PRIVILEGE_ESCALATION = "privilege_escalation"
+    CREDENTIAL_ACCESS = "credential_access"
+    DEFENSE_EVASION = "defense_evasion"
+    COMMAND_AND_CONTROL = "command_and_control"
+    BEHAVIORAL_ANOMALY = "behavioral_anomaly"
+    NETWORK_ANOMALY = "network_anomaly"
+    SYSTEM_ANOMALY = "system_anomaly"
+    UNKNOWN = "unknown"
+
+
+class HuntTypeEnum(str, Enum):
+    """Types of threat hunts."""
+    HYPOTHESIS_DRIVEN = "hypothesis_driven"
+    INDICATOR_DRIVEN = "indicator_driven"
+    ENTITY_DRIVEN = "entity_driven"
+    TTP_DRIVEN = "ttp_driven"
+    ANOMALY_DRIVEN = "anomaly_driven"
+
+
+class IoCTypeEnum(str, Enum):
+    """Types of Indicators of Compromise."""
+    IP_ADDRESS = "ip_address"
+    DOMAIN = "domain"
+    URL = "url"
+    FILE_HASH = "file_hash"
+    FILE_PATH = "file_path"
+    EMAIL_ADDRESS = "email_address"
+    PROCESS_NAME = "process_name"
+    REGISTRY_KEY = "registry_key"
+    MUTEX = "mutex"
+    USER_AGENT = "user_agent"
+
+
+class DetectionRequestModel(BaseModel):
+    """Request model for threat detection submission."""
+    data: Dict[str, Any] = Field(..., description="Data to analyze for threats")
+    source: str = Field("api", description="Source of the detection request")
+    entity_id: Optional[str] = Field(None, description="Entity identifier")
+    entity_type: Optional[str] = Field(None, description="Entity type")
+    priority: int = Field(5, ge=1, le=10, description="Priority level (1-10, lower is higher)")
+    metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata")
+
+
+class DetectionResponseModel(BaseModel):
+    """Response model for detection submission."""
+    submission_id: str = Field(..., description="Unique submission identifier")
+    status: str = Field(..., description="Submission status")
+    message: str = Field(..., description="Status message")
+    estimated_processing_time_ms: int = Field(100, description="Estimated processing time")
+
+
+class ThreatDetectionModel(BaseModel):
+    """Model for a threat detection result."""
+    detection_id: str = Field(..., description="Unique detection identifier")
+    threat_type: str = Field(..., description="Type of threat detected")
+    category: ThreatCategoryEnum = Field(..., description="Threat category")
+    severity: ThreatSeverityEnum = Field(..., description="Threat severity")
+    confidence: float = Field(..., ge=0, le=1, description="Detection confidence (0-1)")
+    description: str = Field(..., description="Threat description")
+    affected_entities: List[str] = Field(default_factory=list, description="Affected entity IDs")
+    indicators: List[Dict[str, Any]] = Field(default_factory=list, description="Detected indicators")
+    recommended_actions: List[str] = Field(default_factory=list, description="Recommended response actions")
+    timestamp: datetime = Field(default_factory=datetime.now, description="Detection timestamp")
+    
+    model_config = ConfigDict(json_encoders={datetime: lambda v: v.isoformat()})
+
+
+class DetectionResultModel(BaseModel):
+    """Complete detection result with all analysis."""
+    detection_id: str = Field(..., description="Unique detection identifier")
+    timestamp: datetime = Field(..., description="Detection timestamp")
+    detections: List[ThreatDetectionModel] = Field(default_factory=list, description="Detected threats")
+    behavioral_analysis: Optional[Dict[str, Any]] = Field(None, description="Behavioral analysis results")
+    ioc_matches: List[Dict[str, Any]] = Field(default_factory=list, description="IoC matches found")
+    response_triggered: bool = Field(False, description="Whether automated response was triggered")
+    response_actions: List[str] = Field(default_factory=list, description="Executed response actions")
+    forensics_event_id: Optional[str] = Field(None, description="Associated forensics event ID")
+    processing_time_ms: float = Field(..., description="Processing time in milliseconds")
+    
+    model_config = ConfigDict(json_encoders={datetime: lambda v: v.isoformat()})
+
+
+class HuntRequestModel(BaseModel):
+    """Request model for creating a threat hunt."""
+    name: str = Field(..., min_length=1, max_length=100, description="Hunt name")
+    description: str = Field(..., min_length=1, max_length=500, description="Hunt description")
+    hunt_type: HuntTypeEnum = Field(..., description="Type of threat hunt")
+    query_params: Dict[str, Any] = Field(default_factory=dict, description="Hunt query parameters")
+    scope: Optional[Dict[str, Any]] = Field(None, description="Hunt scope (entities, time range, etc.)")
+
+
+class HuntResponseModel(BaseModel):
+    """Response model for hunt creation."""
+    hunt_id: str = Field(..., description="Unique hunt identifier")
+    status: str = Field(..., description="Hunt status")
+    message: str = Field(..., description="Status message")
+    created_at: datetime = Field(default_factory=datetime.now, description="Creation timestamp")
+    
+    model_config = ConfigDict(json_encoders={datetime: lambda v: v.isoformat()})
+
+
+class HuntResultModel(BaseModel):
+    """Model for hunt execution results."""
+    hunt_id: str = Field(..., description="Hunt identifier")
+    status: str = Field(..., description="Execution status")
+    result_count: int = Field(0, description="Number of findings")
+    results: List[Dict[str, Any]] = Field(default_factory=list, description="Hunt findings")
+    completed_at: Optional[datetime] = Field(None, description="Completion timestamp")
+    
+    model_config = ConfigDict(json_encoders={datetime: lambda v: v.isoformat()})
+
+
+class IoCSubmitRequestModel(BaseModel):
+    """Request model for submitting an IoC."""
+    ioc_type: IoCTypeEnum = Field(..., description="Type of IoC")
+    value: str = Field(..., min_length=1, max_length=500, description="IoC value")
+    severity: ThreatSeverityEnum = Field(ThreatSeverityEnum.MEDIUM, description="IoC severity")
+    description: Optional[str] = Field(None, max_length=500, description="IoC description")
+    source: Optional[str] = Field(None, description="Source of the IoC")
+    metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata")
+
+
+class IoCResponseModel(BaseModel):
+    """Response model for IoC operations."""
+    ioc_id: str = Field(..., description="IoC identifier")
+    status: str = Field(..., description="Operation status")
+    message: str = Field(..., description="Status message")
+
+
+class TimelineCreateRequestModel(BaseModel):
+    """Request model for creating an incident timeline."""
+    incident_id: str = Field(..., description="Incident identifier")
+    title: str = Field(..., description="Timeline title")
+    description: str = Field(..., description="Timeline description")
+    entity_id: Optional[str] = Field(None, description="Entity to trace")
+    time_range_hours: int = Field(24, ge=1, le=168, description="Time range in hours")
+
+
+class TimelineResponseModel(BaseModel):
+    """Response model for timeline operations."""
+    incident_id: str = Field(..., description="Incident identifier")
+    entry_count: int = Field(0, description="Number of timeline entries")
+    duration_seconds: Optional[float] = Field(None, description="Timeline duration")
+    timeline: Dict[str, Any] = Field(..., description="Timeline data")
+
+
+class ThreatStatisticsResponse(BaseModel):
+    """Response model for threat detection statistics."""
+    detection_engine: Dict[str, Any] = Field(..., description="Detection engine statistics")
+    threat_hunter: Dict[str, Any] = Field(..., description="Threat hunter statistics")
+    ioc_manager: Dict[str, Any] = Field(..., description="IoC manager statistics")
+    forensics: Dict[str, Any] = Field(..., description="Forensics statistics")
+    timestamp: datetime = Field(default_factory=datetime.now, description="Response timestamp")
+    
+    model_config = ConfigDict(json_encoders={datetime: lambda v: v.isoformat()})
+
+
+class ThreatHealthResponse(BaseModel):
+    """Health check response for threat detection."""
+    status: str = Field(..., description="Health status")
+    mode: str = Field(..., description="Detection mode")
+    queue_size: int = Field(0, description="Detection queue size")
+    active_workers: int = Field(0, description="Number of active workers")
+    timestamp: datetime = Field(default_factory=datetime.now, description="Response timestamp")
+    
+    model_config = ConfigDict(json_encoders={datetime: lambda v: v.isoformat()})
