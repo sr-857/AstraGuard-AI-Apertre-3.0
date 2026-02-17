@@ -55,13 +55,11 @@ class FallbackMode(str, Enum):
 FALLBACK_MODE_GAUGE = Gauge(
     "astraguard_fallback_mode",
     "Current fallback mode (0=primary, 1=heuristic, 2=safe)",
-    registry=REGISTRY,
 )
 
 HEALTH_CHECK_DURATION = Gauge(
     "astraguard_health_check_duration_seconds",
     "Time to complete health check",
-    registry=REGISTRY,
 )
 
 # ============================================================================

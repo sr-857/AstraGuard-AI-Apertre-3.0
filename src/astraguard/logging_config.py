@@ -110,21 +110,9 @@ def setup_json_logging(
         else:
             # JSON formatter for standard logging
             formatter = jsonlogger.JsonFormatter(
-                fmt='%(timestamp)s %(level)s %(name)s %(message)s',
-                timestamp=True
-            )
-            
-        stream_handler.setFormatter(formatter)
-        root_logger.addHandler(stream_handler)
-
-        # Add global context
-        try:
-            app_version = get_secret("app_version", "1.0.0")
-        except (KeyError, ValueError, OSError, IOError) as e:
-            app_version = "1.0.0"
-            print(
-                f"Warning: Failed to retrieve app_version secret ({type(e).__name__}): {e}. Using default '1.0.0'.",
-                file=sys.stderr
+                fmt='%(timestamp)s %(levelname)s %(name)s %(message)s',
+                timestamp=True,
+                rename_fields={"levelname": "level"}
             )
             
         stream_handler.setFormatter(formatter)

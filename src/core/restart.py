@@ -45,7 +45,10 @@ class RestartManager:
             # sys.argv is the list of command line arguments passed to the script
             # We need to re-execute the same command
             python = sys.executable
-            os.execv(python, [python] + sys.argv)
+            # Bandit B606: Start process with no shell.
+            # This is intended behavior for a self-restart mechanism using execv.
+            # We are re-executing the same interpreter and arguments.
+            os.execv(python, [python] + sys.argv) # nosec B606
         except Exception as e:
             logger.critical(f"Failed to restart process: {e}", exc_info=True)
             sys.exit(1)

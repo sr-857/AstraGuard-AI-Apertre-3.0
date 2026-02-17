@@ -1,6 +1,5 @@
 fastapi
 uvicorn
-starlette
 httpx
 pytest
 pytest-asyncio

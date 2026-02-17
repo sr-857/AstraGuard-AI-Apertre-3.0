@@ -13,8 +13,8 @@ categories:
     labels:
       - 'chore'
       - 'documentation'
-exclude-labels:
-  - 'skip-changelog'
+      - 'maintenance'
+change-template: '- $TITLE @$AUTHOR (#$NUMBER)'
 version-resolver:
   major:
     labels:
@@ -27,6 +27,5 @@ version-resolver:
       - 'patch'
   default: patch
 template: |
-  ## Changes
-
+  ## What's Changed
   $CHANGES

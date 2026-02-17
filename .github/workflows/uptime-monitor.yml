@@ -1,0 +1,17 @@
+name: Uptime Monitor
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check health endpoint
+        run: |
+          # Replace with your actual domain or configure PRODUCTION_URL variable
+          URL="${{ vars.PRODUCTION_URL || 'https://your-domain.com' }}"
+          curl --fail "$URL/health"

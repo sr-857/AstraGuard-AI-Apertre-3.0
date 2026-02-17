@@ -1,23 +1,21 @@
-import streamlit as st
-import pandas as pd
-import numpy as np
-import time
-import sys
 import os
-from datetime import datetime, timedelta
-from collections import deque
+import sys
+import time
+from datetime import datetime
+
+import numpy as np
+import pandas as pd
+import streamlit as st
 
 # Add parent directory to path to import modules
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
-from state_machine.state_engine import StateMachine, MissionPhase
-from state_machine.mission_policy import PolicyManager
-from state_machine.mission_phase_policy_engine import MissionPhasePolicyEngine
-
-# Import centralized secrets management
-from core.secrets import get_secret
-from config.mission_phase_policy_loader import MissionPhasePolicyLoader
 from anomaly_agent.phase_aware_handler import PhaseAwareAnomalyHandler
+from config.mission_phase_policy_loader import MissionPhasePolicyLoader
+from core.secrets import get_secret
+from state_machine.mission_phase_policy_engine import MissionPhasePolicyEngine
+from state_machine.mission_policy import PolicyManager
+from state_machine.state_engine import MissionPhase, StateMachine
 
 # Page configuration
 st.set_page_config(
@@ -87,7 +85,7 @@ policy_manager = PolicyManager()
 if "telemetry_active" not in st.session_state:
     st.session_state.telemetry_active = False
 if "df" not in st.session_state:
-    st.session_state.df = pd.DataFrame(columns=["voltage","temp","gyro","wheel","timestamp"])
+    st.session_state.df = pd.DataFrame(columns=["voltage", "temp", "gyro", "wheel", "timestamp"])
 if "logs" not in st.session_state:
     st.session_state.logs = []
 if "decision_logs" not in st.session_state:
@@ -97,7 +95,7 @@ if "mission_phase" not in st.session_state:
 if "simulation_mode" not in st.session_state:
     st.session_state.simulation_mode = get_secret("simulation_mode")
 if "anomaly_history" not in st.session_state:
-    st.session_state.anomaly_history = deque(maxlen=100)
+    st.session_state.anomaly_history = []
 if "anomaly_trend_data" not in st.session_state:
     st.session_state.anomaly_trend_data = pd.DataFrame(columns=["timestamp", "anomaly_count", "avg_severity"])
 if "prediction_score" not in st.session_state:
@@ -121,10 +119,10 @@ with col_btn2:
 
 # Reset button
 if st.sidebar.button("🔄 Reset Data", use_container_width=True):
-    st.session_state.df = pd.DataFrame(columns=["voltage","temp","gyro","wheel","timestamp"])
+    st.session_state.df = pd.DataFrame(columns=["voltage", "temp", "gyro", "wheel", "timestamp"])
     st.session_state.logs = []
     st.session_state.decision_logs = []
-    st.session_state.anomaly_history = deque(maxlen=100)
+    st.session_state.anomaly_history = []
     st.session_state.total_anomalies = 0
     st.session_state.total_samples = 0
     st.session_state.session_start_time = datetime.now()
@@ -146,14 +144,14 @@ st.sidebar.info(phase_description)
 if st.session_state.simulation_mode:
     st.sidebar.markdown("---")
     st.sidebar.warning("⚠️ **SIMULATION MODE** - Phase control enabled")
-    
+
     phase_options = [p.value for p in MissionPhase]
     new_phase_value = st.sidebar.selectbox(
-        "Simulate Phase Transition", 
+        "Simulate Phase Transition",
         phase_options,
         index=phase_options.index(st.session_state.mission_phase)
     )
-    
+
     if new_phase_value != st.session_state.mission_phase:
         try:
             new_phase = MissionPhase(new_phase_value)
@@ -162,7 +160,7 @@ if st.session_state.simulation_mode:
                 st.session_state.mission_phase = new_phase.value
                 st.sidebar.success(f"✓ Transitioned to {new_phase.value}")
             else:
-                if st.sidebar.button(f"Force transition to {new_phase_value}?"):
+                if st.sidebar.button(f"Force transition to {new_phase.value}?"):
                     state_machine.force_safe_mode() if new_phase == MissionPhase.SAFE_MODE else state_machine.set_phase(new_phase)
                     st.session_state.mission_phase = new_phase.value
                     st.sidebar.success(f"✓ Forced transition to {new_phase.value}")
@@ -209,11 +207,13 @@ if start_btn:
 if stop_btn:
     st.session_state.telemetry_active = False
 
+
 # Detection and Analysis Functions
 def detect_anomaly(row):
     """Detect anomalies with phase-aware thresholds."""
     multiplier = policy_manager.get_threshold_multiplier(st.session_state.mission_phase)
     return row["voltage"] > (4.2 * multiplier) or row["temp"] > (75 * multiplier)
+
 
 def classify_anomaly_type(row):
     """Classify the type of fault based on telemetry."""
@@ -226,6 +226,7 @@ def classify_anomaly_type(row):
     else:
         return "unknown_fault"
 
+
 def calculate_severity_score(row):
     """Calculate a normalized severity score from 0-1."""
     score = 0.0
@@ -236,6 +237,7 @@ def calculate_severity_score(row):
     if abs(row.get("gyro", 0.0)) > 0.1:
         score += 0.3
     return min(1.0, score / 0.7 * np.random.uniform(0.8, 1.0))
+
 
 def analyze_anomaly_trends(anomaly_history, window_size=30):
     """Analyze recent anomaly patterns and generate trend metrics."""
@@ -249,18 +251,18 @@ def analyze_anomaly_trends(anomaly_history, window_size=30):
             "anomaly_count": 0,
             "total_samples": len(anomaly_history)
         }
-    
+
     recent = list(anomaly_history)[-window_size:]
-    
+
     # Calculate anomaly frequency (per 10 samples)
     frequency = (sum(1 for a in recent if a['is_anomaly']) / len(recent)) * 10
-    
+
     # Analyze severity trend
     anomaly_severities = [a['severity'] for a in recent if a['is_anomaly']]
     if len(anomaly_severities) >= 3:
         recent_avg = np.mean(anomaly_severities[-5:]) if len(anomaly_severities) >= 5 else np.mean(anomaly_severities)
         older_avg = np.mean(anomaly_severities[:-5]) if len(anomaly_severities) > 5 else recent_avg
-        
+
         if recent_avg > older_avg * 1.2:
             severity_trend = "increasing"
         elif recent_avg < older_avg * 0.8:
@@ -269,11 +271,11 @@ def analyze_anomaly_trends(anomaly_history, window_size=30):
             severity_trend = "stable"
     else:
         severity_trend = "stable"
-    
+
     # Calculate prediction score
     recent_anomalies = [a for a in recent[-10:] if a['is_anomaly']]
     prediction_score = min(1.0, len(recent_anomalies) / 5 * (1 + frequency / 10))
-    
+
     # Determine overall trend
     if frequency > 5 and severity_trend == "increasing":
         trend = "critical_increase"
@@ -287,7 +289,7 @@ def analyze_anomaly_trends(anomaly_history, window_size=30):
     else:
         trend = "stable"
         risk_level = "low"
-    
+
     return {
         "trend": trend,
         "frequency": frequency,
@@ -297,6 +299,7 @@ def analyze_anomaly_trends(anomaly_history, window_size=30):
         "anomaly_count": len(recent_anomalies),
         "total_samples": len(recent)
     }
+
 
 def get_trend_color(trend):
     """Return color for trend visualization."""
@@ -309,6 +312,7 @@ def get_trend_color(trend):
         "insufficient_data": "#6b7280"
     }
     return colors.get(trend, "#6b7280")
+
 
 def memory_search(row):
     """Simulate memory search for similar past events."""
@@ -324,6 +328,7 @@ def memory_search(row):
             "timestamp": time.strftime("%H:%M:%S")
         })
     return results
+
 
 # Main Header
 st.markdown('<div class="main-header">🛰️ AstraGuard Mission Control</div>', unsafe_allow_html=True)
@@ -368,7 +373,7 @@ if st.session_state.telemetry_active:
     anomaly = detect_anomaly(new_row)
     if anomaly:
         st.session_state.total_anomalies += 1
-    
+
     mem = memory_search(new_row)
 
     # Log event
@@ -390,16 +395,16 @@ if st.session_state.telemetry_active:
     if anomaly:
         anomaly_type = classify_anomaly_type(new_row)
         severity_score = calculate_severity_score(new_row)
-        
+
         policy_decision = phase_aware_handler.handle_anomaly(
             anomaly_type=anomaly_type,
             severity_score=severity_score,
             confidence=0.87,
             anomaly_metadata={"subsystem": "POWER_THERMAL"}
         )
-        
+
         st.session_state.decision_logs.append(policy_decision)
-        
+
         # Update mission phase if escalation occurred
         current_phase = state_machine.get_current_phase()
         st.session_state.mission_phase = current_phase.value
@@ -413,7 +418,7 @@ if st.session_state.telemetry_active:
 
     with col_main:
         st.subheader("📡 Live Telemetry Stream")
-        
+
         # Show last 50 data points for better visualization
         display_df = st.session_state.df.tail(50)
         if len(display_df) > 0:
@@ -424,7 +429,7 @@ if st.session_state.telemetry_active:
 
     with col_status:
         st.subheader("🎯 Anomaly Radar")
-        
+
         if anomaly and policy_decision:
             if policy_decision['should_escalate_to_safe_mode']:
                 st.markdown('<div class="alert-critical">🚨 <strong>CRITICAL ANOMALY</strong><br>Escalating to SAFE_MODE!</div>', unsafe_allow_html=True)
@@ -432,11 +437,11 @@ if st.session_state.telemetry_active:
             else:
                 st.markdown('<div class="alert-warning">⚠️ <strong>Anomaly Detected</strong></div>', unsafe_allow_html=True)
                 st.metric("Severity Score", f"{policy_decision['severity_score']:.2f}")
-            
+
             st.write(f"**Type:** {policy_decision['anomaly_type']}")
             st.write(f"**Confidence:** {policy_decision['detection_confidence']:.1%}")
             st.write(f"**Recurrence:** {policy_decision['recurrence_info']['count']}×")
-            
+
             if policy_decision['recurrence_info']['count'] > 3:
                 st.warning("⚠️ High recurrence detected")
         else:
@@ -447,16 +452,16 @@ if st.session_state.telemetry_active:
     if show_trends:
         st.markdown("---")
         st.subheader("📈 Anomaly Trend Analysis")
-        
+
         trend_metrics_col1, trend_metrics_col2, trend_metrics_col3, trend_metrics_col4 = st.columns(4)
-        
+
         with trend_metrics_col1:
             st.metric(
-                "Frequency", 
+                "Frequency",
                 f"{trend_analysis['frequency']:.1f}/10",
                 delta=f"{trend_analysis['anomaly_count']} in window"
             )
-        
+
         with trend_metrics_col2:
             risk_emoji = {"low": "🟢", "medium": "🟡", "high": "🟠", "critical": "🔴"}
             st.metric(
@@ -464,7 +469,7 @@ if st.session_state.telemetry_active:
                 f"{risk_emoji.get(trend_analysis['risk_level'], '⚪')} {trend_analysis['risk_level'].upper()}",
                 delta=trend_analysis['severity_trend']
             )
-        
+
         with trend_metrics_col3:
             if show_predictions:
                 st.metric(
@@ -474,35 +479,35 @@ if st.session_state.telemetry_active:
                 )
             else:
                 st.metric("Prediction", "Disabled")
-        
+
         with trend_metrics_col4:
             st.metric(
                 "Analysis Window",
                 f"{trend_analysis['total_samples']} samples",
                 delta=f"{trend_window} max"
             )
-        
+
         # Trend visualization
         trend_chart_data = pd.DataFrame([
             {
-                "sample": i, 
-                "anomaly": 1 if a['is_anomaly'] else 0, 
+                "sample": i,
+                "anomaly": 1 if a['is_anomaly'] else 0,
                 "severity": a['severity'] * 100
-            } 
+            }
             for i, a in enumerate(list(st.session_state.anomaly_history)[-trend_window:])
         ])
-        
+
         if len(trend_chart_data) > 0:
             st.line_chart(trend_chart_data.set_index("sample")[["anomaly", "severity"]])
-            
+
             # Trend insights
             trend_color = get_trend_color(trend_analysis['trend'])
             insight_text = f"System showing <strong>{trend_analysis['trend'].replace('_', ' ')}</strong> pattern. "
             insight_text += f"Severity trend is <strong>{trend_analysis['severity_trend']}</strong> over last {trend_window} samples."
-            
+
             if trend_analysis['risk_level'] in ['high', 'critical']:
                 insight_text += " <strong>⚠️ Immediate attention recommended.</strong>"
-            
+
             st.markdown(f"""
             <div style="padding: 1rem; background: {trend_color}22; border-left: 4px solid {trend_color}; border-radius: 4px; margin-top: 1rem;">
                 <strong>Trend Insight:</strong> {insight_text}
@@ -511,7 +516,7 @@ if st.session_state.telemetry_active:
 
     # Memory Matches and Reasoning
     col_memory, col_reasoning = st.columns(2)
-    
+
     with col_memory:
         st.subheader("🧠 Memory Matches")
         if mem:
@@ -531,7 +536,7 @@ if st.session_state.telemetry_active:
         if anomaly and policy_decision:
             reasoning_text = policy_decision['reasoning']
             st.info(f"🧠 {reasoning_text}")
-            
+
             with st.expander("📋 Policy Decision Details"):
                 pd_info = policy_decision['policy_decision']
                 st.write(f"**Mission Phase:** {pd_info['mission_phase']}")
@@ -540,7 +545,7 @@ if st.session_state.telemetry_active:
                 st.write(f"**Response Allowed:** {'✅ Yes' if pd_info['is_allowed'] else '❌ No'}")
                 st.write(f"**Escalation Level:** {pd_info['escalation_level']}")
                 if pd_info['allowed_actions']:
-                    st.write(f"**Allowed Actions:**")
+                    st.write("**Allowed Actions:**")
                     for action in pd_info['allowed_actions']:
                         st.write(f"  • {action}")
         else:
@@ -549,13 +554,13 @@ if st.session_state.telemetry_active:
     # Response & Recovery
     st.markdown("---")
     st.subheader("🛠️ Response & Recovery")
-    
+
     if anomaly and policy_decision:
         response_col1, response_col2 = st.columns([2, 1])
-        
+
         with response_col1:
             st.write(f"**Recommended Action:** `{policy_decision['recommended_action']}`")
-            
+
             if policy_decision['should_escalate_to_safe_mode']:
                 st.error("🚨 **CRITICAL:** Escalating to SAFE_MODE for critical anomaly")
             else:
@@ -566,7 +571,7 @@ if st.session_state.telemetry_active:
                         st.write(f"  ✓ {action}")
                 else:
                     st.warning(f"⚠️ No automated actions available in {st.session_state.mission_phase}")
-        
+
         with response_col2:
             st.metric("Action Priority", "HIGH" if policy_decision['should_escalate_to_safe_mode'] else "MEDIUM")
             st.metric("Response Time", f"{np.random.randint(50, 200)}ms")
@@ -576,12 +581,12 @@ if st.session_state.telemetry_active:
     # Logs Section
     st.markdown("---")
     log_col1, log_col2 = st.columns(2)
-    
+
     with log_col1:
         st.subheader("📜 Event Log Stream")
         log_text = "\n".join(st.session_state.logs[-15:])
         st.code(log_text, language="log")
-    
+
     with log_col2:
         st.subheader("📊 Decision Log")
         if st.session_state.decision_logs:
@@ -629,11 +634,11 @@ if st.session_state.telemetry_active:
 else:
     # Offline state
     st.info("📡 **Telemetry is currently offline.** Click the '▶️ Start' button in the sidebar to begin monitoring.")
-    
+
     # Show system readiness
     st.markdown("---")
     st.subheader("🔧 System Readiness")
-    
+
     ready_col1, ready_col2, ready_col3 = st.columns(3)
     with ready_col1:
         st.metric("State Machine", "✅ Ready")
@@ -641,12 +646,12 @@ else:
         st.metric("Policy Engine", "✅ Ready")
     with ready_col3:
         st.metric("Phase Handler", "✅ Ready")
-    
+
     # Show last session stats if available
     if st.session_state.total_samples > 0:
         st.markdown("---")
         st.subheader("📊 Last Session Statistics")
-        
+
         stat_col1, stat_col2, stat_col3, stat_col4 = st.columns(4)
         with stat_col1:
             st.metric("Total Samples", st.session_state.total_samples)
@@ -657,7 +662,7 @@ else:
             st.metric("Anomaly Rate", f"{rate:.1f}%")
         with stat_col4:
             st.metric("Last Phase", st.session_state.mission_phase)
-    
+
     # Footer for offline state
     st.markdown("---")
     year = datetime.now().year

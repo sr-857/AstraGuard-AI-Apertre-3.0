@@ -1,0 +1,62 @@
+[
+  {
+    "fault_id": "DECISION_1771314543788_beabb13c",
+    "timestamp": "2026-02-17T07:49:03.788548",
+    "anomaly_type": "thermal_fault",
+    "recovery_action": "ALERT_ONLY",
+    "label": null,
+    "operator_notes": null,
+    "mission_phase": "LAUNCH",
+    "confidence_score": 0.85
+  },
+  {
+    "fault_id": "DECISION_1771314543797_03368438",
+    "timestamp": "2026-02-17T07:49:03.797695",
+    "anomaly_type": "thermal_fault",
+    "recovery_action": "LOG_EVENT",
+    "label": null,
+    "operator_notes": null,
+    "mission_phase": "NOMINAL_OPS",
+    "confidence_score": 0.85
+  },
+  {
+    "fault_id": "DECISION_1771314543800_d40c89ec",
+    "timestamp": "2026-02-17T07:49:03.800262",
+    "anomaly_type": "power_fault",
+    "recovery_action": "ENTER_SAFE_MODE",
+    "label": null,
+    "operator_notes": null,
+    "mission_phase": "LAUNCH",
+    "confidence_score": 0.99
+  },
+  {
+    "fault_id": "DECISION_1771314543803_438d7e4c",
+    "timestamp": "2026-02-17T07:49:03.803002",
+    "anomaly_type": "power_fault",
+    "recovery_action": "ENTER_SAFE_MODE",
+    "label": null,
+    "operator_notes": null,
+    "mission_phase": "DEPLOYMENT",
+    "confidence_score": 0.99
+  },
+  {
+    "fault_id": "DECISION_1771314543805_9bffa306",
+    "timestamp": "2026-02-17T07:49:03.805567",
+    "anomaly_type": "power_fault",
+    "recovery_action": "ENTER_SAFE_MODE",
+    "label": null,
+    "operator_notes": null,
+    "mission_phase": "NOMINAL_OPS",
+    "confidence_score": 0.99
+  },
+  {
+    "fault_id": "DECISION_1771314543808_e4977b1f",
+    "timestamp": "2026-02-17T07:49:03.808255",
+    "anomaly_type": "power_fault",
+    "recovery_action": "LOG_ONLY",
+    "label": null,
+    "operator_notes": null,
+    "mission_phase": "SAFE_MODE",
+    "confidence_score": 0.99
+  }
+]

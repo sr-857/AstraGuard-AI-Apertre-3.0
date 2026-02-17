@@ -1,0 +1,19 @@
+TASK: RESOURCE PLANNING
+
+Based on current system state and mission phase:
+{system_state}
+
+Plan resource allocation to maximize longevity and mission success.
+Consider power consumption, thermal limits, and communication bandwidth.
+
+Constraints:
+- Do not exceed thermal limits.
+- Prioritize critical subsystems in CRITICAL phase.
+- Minimize communication overhead.
+
+Required Output:
+- Proposed resource distribution strategy (observation).
+- Justification based on mission phase (reasoning).
+- Key trade-offs considered (key_factors).
+- Implementation action (action).
+- Confidence in plan viability (confidence).
