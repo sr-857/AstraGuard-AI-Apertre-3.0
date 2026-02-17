@@ -1,0 +1,9 @@
+REASONING INSTRUCTIONS:
+- Analyze the situation carefully before acting.
+- Consider both immediate and secondary effects of your actions.
+- Factor in potential distribution shifts (Drift Detection) and memory retrieval results.
+- If mission phase is CRITICAL (e.g., ORBIT_INSERTION), prioritize safety over optimization.
+- Document key factors influencing your decision.
+
+RESPONSE FORMAT:
+{schema_description}

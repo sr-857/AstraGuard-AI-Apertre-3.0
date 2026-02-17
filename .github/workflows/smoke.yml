@@ -1,0 +1,40 @@
+name: Smoke Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.11
+
+      - name: Install dependencies
+        run: |
+          pip install -r src/config/requirements.txt
+          pip install pytest pytest-asyncio httpx
+
+      - name: Run Smoke Tests
+        run: pytest -m smoke
+
+      - name: Build container
+        run: docker build -t app -f infra/docker/Dockerfile .
+
+      - name: Run container
+        run: docker run -d -p 8000:8000 app
+
+      - name: Wait for container to start
+        run: sleep 10
+
+      - name: Curl health
+        run: curl --fail http://localhost:8000/health/live

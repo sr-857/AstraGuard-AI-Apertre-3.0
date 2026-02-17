@@ -12,7 +12,6 @@ import time
 import logging
 import asyncio
 from typing import Optional, Dict, Any, Generator, AsyncGenerator, cast
-from prometheus_client.metrics_core import MetricWrapperBase
 import socket
 import errno
 
@@ -121,7 +120,7 @@ def _safe_create_metric(
             pass
 
     try:
-        metric = metric_class(*args, **kwargs)
+        metric = metric_class(name, *args, **kwargs)
         _metric_cache[name] = metric  # Cache the metric
         return metric
     except ValueError as e:
@@ -365,6 +364,28 @@ try:
     )
 except ValueError:
     MEMORY_ENGINE_SIZE = None
+
+# ============================================================================
+# I/O METRICS
+# ============================================================================
+
+try:
+    IO_LATENCY: Optional[Summary] = Summary(
+        'astra_io_latency_ms',
+        'I/O operation latency',
+        ['operation_type', 'storage_type']
+    )
+except ValueError:
+    IO_LATENCY = None
+
+try:
+    IO_BATCH_SIZE: Optional[Summary] = Summary(
+        'astra_io_batch_size',
+        'Batch size for I/O operations',
+        ['operation_type', 'storage_type']
+    )
+except ValueError:
+    IO_BATCH_SIZE = None
 
 # ============================================================================
 # ERROR METRICS

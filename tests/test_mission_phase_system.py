@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """Quick test script for mission-phase aware fault response system."""
 
+import asyncio
+import pytest
+
 from state_machine.state_engine import StateMachine, MissionPhase
 from state_machine.mission_phase_policy_engine import MissionPhasePolicyEngine
 from config.mission_phase_policy_loader import MissionPhasePolicyLoader
 from anomaly_agent.phase_aware_handler import PhaseAwareAnomalyHandler
 
-def test_basic_functionality():
+@pytest.mark.asyncio
+async def test_basic_functionality():
     """Test basic functionality of all components."""
     print("=" * 70)
     print("Testing Mission-Phase Aware Fault Response System")
@@ -50,7 +54,7 @@ def test_basic_functionality():
     sm_launch.force_safe_mode()  # Start from a state where we can reach LAUNCH
     sm_launch.current_phase = MissionPhase.LAUNCH  # Directly set for testing
     handler_launch = PhaseAwareAnomalyHandler(sm_launch, loader)
-    decision_launch = handler_launch.handle_anomaly(
+    decision_launch = await handler_launch.handle_anomaly(
         anomaly_type='thermal_fault',
         severity_score=0.65,
         confidence=0.85
@@ -62,7 +66,7 @@ def test_basic_functionality():
     print("    Testing in NOMINAL_OPS phase...")
     sm_nominal = StateMachine()
     handler_nominal = PhaseAwareAnomalyHandler(sm_nominal, loader)
-    decision_nominal = handler_nominal.handle_anomaly(
+    decision_nominal = await handler_nominal.handle_anomaly(
         anomaly_type='thermal_fault',
         severity_score=0.65,
         confidence=0.85
@@ -85,7 +89,7 @@ def test_basic_functionality():
         sm_test = StateMachine()
         sm_test.current_phase = target_phase  # Directly set for testing
         handler_test = PhaseAwareAnomalyHandler(sm_test, loader)
-        decision = handler_test.handle_anomaly('power_fault', 0.95, 0.99)
+        decision = await handler_test.handle_anomaly('power_fault', 0.95, 0.99)
         print(f"    {display_name} -> {decision['recommended_action']:20} (Escalate: {decision['should_escalate_to_safe_mode']})")
     
     # Test 6: Phase transitions
@@ -114,5 +118,5 @@ def test_basic_functionality():
     print("=" * 70)
 
 if __name__ == '__main__':
-    test_basic_functionality()
+    asyncio.run(test_basic_functionality())
 

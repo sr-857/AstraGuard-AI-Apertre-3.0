@@ -450,6 +450,7 @@ class TLSMiddleware:
     
     def __init__(
         self,
+        app,
         enforce_tls: bool = True,
         redirect_to_https: bool = False,
         hsts_max_age: int = 31536000,
@@ -459,11 +460,13 @@ class TLSMiddleware:
         Initialize TLS middleware.
         
         Args:
+            app: ASGI application
             enforce_tls: Whether to enforce TLS (reject HTTP)
             redirect_to_https: Whether to redirect HTTP to HTTPS
             hsts_max_age: HSTS max-age in seconds
             service_name: Service name for configuration
         """
+        self.app = app
         self.enforce_tls = enforce_tls
         self.redirect_to_https = redirect_to_https
         self.hsts_max_age = hsts_max_age

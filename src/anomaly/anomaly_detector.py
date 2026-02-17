@@ -1,4 +1,5 @@
 import random
+import secrets
 import os
 import pickle
 import logging
@@ -446,7 +447,9 @@ def _detect_anomaly_heuristic(data: Dict[str, Any]) -> Tuple[bool, float]:
         return True, 0.6
 
     # Add small random noise for simulation realism
-    score += random.uniform(0, 0.1)
+    # Bandit B311: Standard random is not secure. Use secrets.SystemRandom.
+    sys_random = random.SystemRandom()
+    score += sys_random.uniform(0, 0.1)
 
     # Conservative threshold: be more sensitive to potential issues
     is_anomalous: bool = score > 0.5  # Lowered from 0.6 for more sensitivity
