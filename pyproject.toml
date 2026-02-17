@@ -135,4 +135,7 @@ markers = [
     "benchmark: mark test as a benchmark",
     "chaos: mark test for chaos engineering",
     "slow: mark test as slow-running (requires extended timeout)",
+    "api: mark test as an API test",
+    "integration: mark test as an integration test",
+    "contract: mark test as an API contract test",
 ]
