@@ -7,8 +7,6 @@ from datetime import datetime
 from src.api.service import app, require_admin
 from src.core.auth import User, UserRole
 
-client = TestClient(app)
-
 # Mock user for authentication
 @pytest.fixture
 def admin_user():
@@ -25,8 +23,10 @@ def admin_user():
 def mock_diagnostics():
     with patch("src.api.service.SystemDiagnostics") as mock_cls:
         mock_instance = MagicMock()
+        # Ensure return_value behaves as an object, not an iterator unless specified
         mock_cls.return_value = mock_instance
-        # Setup return value for run_full_diagnostics
+
+        # Explicitly configure run_full_diagnostics to return a dict, not a mock that could be iterated
         mock_instance.run_full_diagnostics.return_value = {
             "timestamp": datetime.now().isoformat(),
             "system_info": {"os": "TestOS"},
@@ -42,7 +42,8 @@ def test_diagnostics_endpoint_success(mock_diagnostics, admin_user):
     app.dependency_overrides[require_admin] = lambda: admin_user
     
     try:
-        response = client.get("/api/v1/system/diagnostics")
+        with TestClient(app) as client:
+            response = client.get("/api/v1/system/diagnostics")
         
         # Verify response
         assert response.status_code == 200
@@ -59,5 +60,6 @@ def test_diagnostics_endpoint_success(mock_diagnostics, admin_user):
 
 def test_diagnostics_endpoint_unauthorized():
     # No auth override, should fail
-    response = client.get("/api/v1/system/diagnostics")
-    assert response.status_code in [401, 403]
+    with TestClient(app) as client:
+        response = client.get("/api/v1/system/diagnostics")
+        assert response.status_code in [401, 403]

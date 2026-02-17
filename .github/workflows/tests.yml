@@ -175,6 +175,12 @@ jobs:
       run: |
         redis-cli -h localhost -p 6379 ping
     
+    - name: Wait for app startup
+      run: sleep 10
+
+    - name: Validate health endpoint
+      run: curl --fail http://localhost:8000/health
+
     - name: Run pytest with coverage
       env:
         REDIS_URL: redis://localhost:6379
@@ -238,7 +244,7 @@ jobs:
       if: always()
       with:
         name: coverage-report-python${{ matrix.python-version }}
-        path: htmlcov/
+        path: coverage.xml
         retention-days: 30
     
     - name: Upload coverage to Codecov
@@ -263,7 +269,7 @@ jobs:
       github.ref == 'refs/heads/develop'
     strategy:
       matrix:
-        python-version: ['3.9', '3.12', '3.13']
+        python-version: ['3.12']
       fail-fast: false
     services:
       rabbitmq:

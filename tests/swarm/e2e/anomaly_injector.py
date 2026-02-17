@@ -17,7 +17,10 @@ import time
 from dataclasses import dataclass
 from enum import Enum
 from typing import Dict, List, Optional, Any, TYPE_CHECKING
-import docker
+try:
+    import docker
+except ImportError:
+    docker = None
 from datetime import datetime
 
 if TYPE_CHECKING:

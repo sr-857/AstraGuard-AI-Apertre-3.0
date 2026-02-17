@@ -1,0 +1,16 @@
+apiVersion: v2
+name: astraguard
+description: A Helm chart for AstraGuard AI Security System
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+maintainers:
+  - name: AstraGuard Team
+    email: security@astraguard.ai
+keywords:
+  - security
+  - kubernetes
+  - ai
+  - network-policy
+sources:
+  - https://github.com/sr-857/AstraGuard-AI

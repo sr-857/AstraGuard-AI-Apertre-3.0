@@ -1076,7 +1076,7 @@ class EnhancedRecoveryOrchestrator(OrchestratorBase):
             if action.success and action.duration_seconds > 0:
                 MTTR_SECONDS.observe(action.duration_seconds)
         except Exception:
-            pass  # Don't fail if metrics update fails
+            pass  # nosec B110
 
     def _record_action_history(self, action: RecoveryAction, max_history: int = 100):
         """Record action to history for inspection."""

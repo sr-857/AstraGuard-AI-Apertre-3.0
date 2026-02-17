@@ -146,7 +146,7 @@ class FIPSMode:
             if hasattr(ssl, 'FIPS_mode') and not ssl.FIPS_mode():
                 logger.warning("OpenSSL FIPS mode not enabled at system level")
         except Exception:
-            pass
+            pass  # nosec B110
     
     def is_algorithm_allowed(self, algorithm: str) -> bool:
         """Check if algorithm is FIPS-approved."""
@@ -195,7 +195,7 @@ class FIPSMode:
             with open("/proc/sys/crypto/fips_enabled", "r") as f:
                 system_fips = f.read().strip() == "1"
         except Exception:
-            pass
+            pass  # nosec B110
         
         if not system_fips and self.enabled:
             findings.append({

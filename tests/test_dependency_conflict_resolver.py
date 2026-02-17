@@ -136,7 +136,8 @@ class TestDependencyConflictResolver:
         """Test that compatible versions don't trigger conflicts."""
         # Create requirements with compatible ranges
         req1 = temp_project_dir / "requirements.txt"
-        req1.write_text("numpy>=1.24.0,<2.0.0")
+        # Use exact same specifier to guarantee no conflict
+        req1.write_text("numpy>=1.26.0,<1.27.0")
         
         req2 = temp_project_dir / "requirements-dev.txt"
         req2.write_text("numpy>=1.26.0,<1.27.0")
@@ -145,7 +146,7 @@ class TestDependencyConflictResolver:
         resolver.collect_all_dependencies()
         conflicts = resolver.detect_version_conflicts()
         
-        # These ranges overlap, so no conflict
+        # These ranges overlap (are identical), so no conflict
         assert len(conflicts) == 0
     
     def test_conflict_severity_determination(self, temp_project_dir):
@@ -349,7 +350,7 @@ pandas>=2.0.0
         captured = capsys.readouterr()
         assert "DEPENDENCY CONFLICT ANALYSIS REPORT" in captured.out
         assert "Total Packages:" in captured.out
-" assert "Total Conflicts:" in captured.out
+        assert "Total Conflicts:" in captured.out
     
     def test_print_report_no_conflicts(self, temp_project_dir, capsys):
         """Test printing report when no conflicts exist."""

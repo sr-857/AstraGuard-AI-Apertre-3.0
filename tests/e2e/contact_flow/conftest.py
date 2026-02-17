@@ -140,13 +140,19 @@ def e2e_test_app(temp_database: Path, tmp_path: Path) -> FastAPI:
     app.include_router(contact_router)
     
     # Override admin dependency to bypass auth and simulating a logged-in admin
-    app.dependency_overrides[get_admin_user] = lambda: MagicMock(username="admin", role="admin")
+    mock_admin = MagicMock()
+    mock_admin.username = "admin"
+    mock_admin.role = "admin"
+    # Fix: Ensure mock_admin is not used in ForwardRef context or provide typing if needed.
+    # The error "Forward reference must be an expression -- got <MagicMock...>" suggests pydantic or typing issue.
+    # For now, let's keep it simple.
+    app.dependency_overrides[get_admin_user] = lambda: mock_admin
     
     return app
 
 
 @pytest.fixture
-def e2e_client(e2e_test_app: FastAPI, tmp_path: Path, monkeypatch) -> Generator[TestClient, None, None]:
+def e2e_client(e2e_test_app, tmp_path: Path, monkeypatch):
     """Create test client with isolated database and reset rate limiter."""
     # Create isolated data directory
     data_dir = tmp_path / "data"

@@ -19,9 +19,10 @@ from typing import Dict, Optional
 import aiohttp
 
 try:
-    from prometheus_client import Counter, Histogram, Gauge
+    from prometheus_client import Counter, Histogram, Gauge, REGISTRY
 except ImportError:
     # Mock metrics for testing
+    REGISTRY = None
     class Counter:
         def __init__(self, *args, **kwargs):
             self.labels = lambda **kw: self
@@ -43,19 +44,39 @@ except ImportError:
         def set(self, value):
             pass
 
+# Helper to avoid duplication
+def create_or_get(cls, name, doc, labels=()):
+    try:
+        return cls(name, doc, labels)
+    except ValueError:
+        # Already registered
+        pass
+
+    # Try to find it in registry if available
+    if REGISTRY:
+        for c in REGISTRY._collector_to_names:
+            if name in REGISTRY._collector_to_names[c]:
+                return c
+
+    # Fallback if not found or no registry access
+    return cls(name, doc, labels)
+
 
 logger = logging.getLogger(__name__)
 
 # Prometheus metrics
-CHAOS_INJECTIONS = Counter(
+CHAOS_INJECTIONS = create_or_get(
+    Counter,
     "astra_chaos_injections_total", "Total chaos experiments injected", ["fault_type"]
 )
-CHAOS_RECOVERY_TIME = Histogram(
+CHAOS_RECOVERY_TIME = create_or_get(
+    Histogram,
     "astra_chaos_recovery_seconds",
     "Time to recover from chaos injection",
     ["fault_type"],
 )
-CHAOS_ACTIVE = Gauge(
+CHAOS_ACTIVE = create_or_get(
+    Gauge,
     "astra_chaos_active", "Currently active chaos injection", ["fault_type"]
 )
 

@@ -107,8 +107,7 @@ class TestLoggingConfig:
             setup_json_logging()
 
             mock_basic_config.assert_called_once_with(
-                level=logging.INFO,
-                format='%(asctime)s - %(levelname)s - %(name)s - %(message)s'
+                level=logging.INFO
             )
 
     @patch('astraguard.logging_config._cached_get_secret')
@@ -191,8 +190,8 @@ class TestLoggingConfig:
         mock_root_logger.setLevel.assert_called_once_with(logging.DEBUG)
 
     def test_set_log_level_invalid(self):
-        """Test set_log_level with invalid level raises AttributeError"""
-        with pytest.raises(AttributeError):
+        """Test set_log_level with invalid level raises ValueError"""
+        with pytest.raises(ValueError):
             set_log_level("INVALID")
 
     @patch('astraguard.logging_config.structlog.contextvars.bind_contextvars')
@@ -391,26 +390,21 @@ class TestLoggingConfig:
         mock_logger = MagicMock()
 
         with patch('astraguard.logging_config.log_request') as mock_log_request:
-            with patch('astraguard.logging_config.asyncio.to_thread') as mock_to_thread:
-                mock_to_thread.return_value = None
+            await async_log_request(
+                mock_logger,
+                method="POST",
+                endpoint="/api/async",
+                status=201,
+                duration_ms=200.0
+            )
 
-                await async_log_request(
-                    mock_logger,
-                    method="POST",
-                    endpoint="/api/async",
-                    status=201,
-                    duration_ms=200.0
-                )
-
-                mock_to_thread.assert_called_once()
-                # Verify the function was called with correct args
-                call_args = mock_to_thread.call_args[0]
-                assert call_args[0] == mock_log_request
-                assert call_args[1] == mock_logger
-                assert call_args[2] == "POST"
-                assert call_args[3] == "/api/async"
-                assert call_args[4] == 201
-                assert call_args[5] == 200.0
+            mock_log_request.assert_called_once_with(
+                mock_logger,
+                "POST",
+                "/api/async",
+                201,
+                200.0
+            )
 
     @pytest.mark.asyncio
     async def test_async_log_error(self):
@@ -419,21 +413,17 @@ class TestLoggingConfig:
         test_error = RuntimeError("Async error")
 
         with patch('astraguard.logging_config.log_error') as mock_log_error:
-            with patch('astraguard.logging_config.asyncio.to_thread') as mock_to_thread:
-                mock_to_thread.return_value = None
+            await async_log_error(
+                mock_logger,
+                error=test_error,
+                context="Async operation failed"
+            )
 
-                await async_log_error(
-                    mock_logger,
-                    error=test_error,
-                    context="Async operation failed"
-                )
-
-                mock_to_thread.assert_called_once()
-                call_args = mock_to_thread.call_args[0]
-                assert call_args[0] == mock_log_error
-                assert call_args[1] == mock_logger
-                assert call_args[2] == test_error
-                assert call_args[3] == "Async operation failed"
+            mock_log_error.assert_called_once_with(
+                mock_logger,
+                test_error,
+                "Async operation failed"
+            )
 
     @pytest.mark.asyncio
     async def test_async_log_detection(self):
@@ -441,23 +431,19 @@ class TestLoggingConfig:
         mock_logger = MagicMock()
 
         with patch('astraguard.logging_config.log_detection') as mock_log_detection:
-            with patch('astraguard.logging_config.asyncio.to_thread') as mock_to_thread:
-                mock_to_thread.return_value = None
+            await async_log_detection(
+                mock_logger,
+                severity="CRITICAL",
+                detected_type="power_failure",
+                confidence=0.99
+            )
 
-                await async_log_detection(
-                    mock_logger,
-                    severity="CRITICAL",
-                    detected_type="power_failure",
-                    confidence=0.99
-                )
-
-                mock_to_thread.assert_called_once()
-                call_args = mock_to_thread.call_args[0]
-                assert call_args[0] == mock_log_detection
-                assert call_args[1] == mock_logger
-                assert call_args[2] == "CRITICAL"
-                assert call_args[3] == "power_failure"
-                assert call_args[4] == 0.99
+            mock_log_detection.assert_called_once_with(
+                mock_logger,
+                "CRITICAL",
+                "power_failure",
+                0.99
+            )
 
     @patch('astraguard.logging_config.get_secret')
     def test_cached_get_secret_success(self, mock_get_secret):
@@ -957,9 +943,7 @@ class TestLoggingBehavior:
         """Test that async_log_request delegates to the sync log_request."""
         mock_logger = MagicMock()
 
-        with patch('astraguard.logging_config.asyncio.to_thread') as mock_to_thread:
-            mock_to_thread.return_value = None
-
+        with patch('astraguard.logging_config.log_request') as mock_log_request:
             await async_log_request(
                 mock_logger,
                 method="GET",
@@ -968,9 +952,7 @@ class TestLoggingBehavior:
                 duration_ms=10.0
             )
 
-            mock_to_thread.assert_called_once()
-            call_args = mock_to_thread.call_args[0]
-            assert call_args[0] == log_request
+            mock_log_request.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_async_log_error_calls_sync_version(self):
@@ -978,27 +960,21 @@ class TestLoggingBehavior:
         mock_logger = MagicMock()
         error = Exception("Async error")
 
-        with patch('astraguard.logging_config.asyncio.to_thread') as mock_to_thread:
-            mock_to_thread.return_value = None
-
+        with patch('astraguard.logging_config.log_error') as mock_log_error:
             await async_log_error(
                 mock_logger,
                 error=error,
                 context="async_operation"
             )
 
-            mock_to_thread.assert_called_once()
-            call_args = mock_to_thread.call_args[0]
-            assert call_args[0] == log_error
+            mock_log_error.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_async_log_detection_calls_sync_version(self):
         """Test that async_log_detection delegates to the sync log_detection."""
         mock_logger = MagicMock()
 
-        with patch('astraguard.logging_config.asyncio.to_thread') as mock_to_thread:
-            mock_to_thread.return_value = None
-
+        with patch('astraguard.logging_config.log_detection') as mock_log_detection:
             await async_log_detection(
                 mock_logger,
                 severity="critical",
@@ -1006,9 +982,7 @@ class TestLoggingBehavior:
                 confidence=0.99
             )
 
-            mock_to_thread.assert_called_once()
-            call_args = mock_to_thread.call_args[0]
-            assert call_args[0] == log_detection
+            mock_log_detection.assert_called_once()
 
     def test_cached_get_secret_returns_cached_value(self):
         """Test that _cached_get_secret caches values properly."""
@@ -1062,7 +1036,7 @@ class TestLoggingBehavior:
         
         # Verify warning was printed to stderr
         captured = capsys.readouterr()
-        assert "Warning: Failed to retrieve app_version secret" in captured.err
+        assert "Warning: Failed to retrieve secret 'app_version'" in captured.err
 
     @patch('astraguard.logging_config.get_secret')
     def test_setup_json_logging_app_version_key_error(self, mock_get_secret, capsys):

@@ -20,7 +20,10 @@ import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
 from enum import Enum
-import docker
+try:
+    import docker
+except ImportError:
+    docker = None
 
 if TYPE_CHECKING:
     from docker.client import DockerClient

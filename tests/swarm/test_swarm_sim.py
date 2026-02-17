@@ -19,7 +19,10 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Any
-import docker
+try:
+    import docker
+except ImportError:
+    docker = None
 import subprocess
 import httpx
 import json

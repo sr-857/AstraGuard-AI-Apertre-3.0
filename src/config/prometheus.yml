@@ -17,47 +17,12 @@ alerting:
 
 scrape_configs:
   # AstraGuard API Server
-  - job_name: 'astra-guard'
-    metrics_path: '/metrics'
+  - job_name: "apertre"
+    metrics_path: "/metrics"
     static_configs:
-      - targets: ['astra-guard:9090']
-    relabel_configs:
-      - source_labels: [__scheme__, __address__, __metrics_path__]
-        target_label: __param_target
-      - source_labels: [__param_target]
-        target_label: instance
-      - target_label: __address__
-        replacement: astra-guard:9090
+      - targets: ["astra-guard:8000"]
     scrape_interval: 15s
     scrape_timeout: 10s
-
-  # Application Metrics (HTTP, Business Logic, ML)
-  - job_name: 'astra-guard-app-metrics'
-    metrics_path: '/metrics'
-    static_configs:
-      - targets: ['astra-guard:9090']
-    metric_relabel_configs:
-      - source_labels: [__name__]
-        regex: 'astra_(http|anomaly|detection|accuracy)_.*'
-        action: keep
-    relabel_configs:
-      - source_labels: [__address__]
-        target_label: instance
-        replacement: 'astra-guard-app'
-
-  # Reliability Metrics (#14-19)
-  - job_name: 'astra-guard-reliability'
-    metrics_path: '/metrics'
-    static_configs:
-      - targets: ['astra-guard:9090']
-    metric_relabel_configs:
-      - source_labels: [__name__]
-        regex: 'astra_(circuit|retry|chaos|recovery|health)_.*'
-        action: keep
-    relabel_configs:
-      - source_labels: [__address__]
-        target_label: instance
-        replacement: 'astra-guard-reliability'
 
   # Redis
   - job_name: 'redis'

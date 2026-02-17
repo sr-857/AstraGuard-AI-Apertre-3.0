@@ -2,7 +2,10 @@
 
 import pytest
 import asyncio
-import docker
+try:
+    import docker
+except ImportError:
+    docker = None
 from pathlib import Path
 
 

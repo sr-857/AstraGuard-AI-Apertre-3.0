@@ -6,7 +6,8 @@ Implements GDPR rights: access, erasure, portability.
 
 import logging
 import json
-from typing import Dict, List
+from typing import Dict, List, Optional
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 

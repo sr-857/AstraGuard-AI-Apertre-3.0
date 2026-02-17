@@ -1,0 +1,46 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-to-backend
+  namespace: astraguard
+  labels:
+    app.kubernetes.io/managed-by: manual
+    security.astraguard.io/policy: allow-monitoring
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: astra-guard
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - protocol: TCP
+          port: 9090
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-to-redis
+  namespace: astraguard
+  labels:
+    app.kubernetes.io/managed-by: manual
+    security.astraguard.io/policy: allow-monitoring
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: redis
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - protocol: TCP
+          port: 9121

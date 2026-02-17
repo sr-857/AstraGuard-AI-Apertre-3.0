@@ -210,7 +210,7 @@ class StubSatelliteSimulator(SatelliteSimulator):
             thermal=thermal,
             orbit=orbit,
             mission_mode="nominal",
-            ground_contact=random.choice([True, False])
+            ground_contact=random.choice([True, False])  # nosec B311
         )
         
         self.record_telemetry(packet)

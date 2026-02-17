@@ -1,11 +1,12 @@
 """Production operator feedback review dashboard."""
 
-import streamlit as st
 import json
-import pandas as pd  # type: ignore[import-untyped]
-from pathlib import Path
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from pathlib import Path
+from typing import Any
+
+import pandas as pd  # type: ignore[import-untyped]
+import streamlit as st
 
 st.set_page_config(page_title="AstraGuard Feedback", layout="wide")
 
@@ -14,7 +15,7 @@ class FeedbackDashboard:
     """Interactive feedback review and learning metrics dashboard."""
 
     @staticmethod
-    def _load_pending_json() -> List[Dict[str, Any]]:
+    def _load_pending_json() -> list[dict[str, Any]]:
         """Load pending feedback events."""
         pending_path = Path("feedback_pending.json")
         if not pending_path.exists():
@@ -22,11 +23,11 @@ class FeedbackDashboard:
         try:
             content = json.loads(pending_path.read_text())
             return content if isinstance(content, list) else []
-        except (json.JSONDecodeError, IOError):
+        except (json.JSONDecodeError, OSError):
             return []
 
     @staticmethod
-    def _load_processed_json() -> List[Dict[str, Any]]:
+    def _load_processed_json() -> list[dict[str, Any]]:
         """Load processed feedback events."""
         processed_path = Path("feedback_processed.json")
         if not processed_path.exists():
@@ -34,11 +35,11 @@ class FeedbackDashboard:
         try:
             content = json.loads(processed_path.read_text())
             return content if isinstance(content, list) else []
-        except (json.JSONDecodeError, IOError):
+        except (json.JSONDecodeError, OSError):
             return []
 
     @staticmethod
-    def _save_processed(events: List[Dict[str, Any]]) -> None:
+    def _save_processed(events: list[dict[str, Any]]) -> None:
         """Save processed events and clean pending."""
         Path("feedback_processed.json").write_text(json.dumps(events, indent=2))
         Path("feedback_pending.json").unlink(missing_ok=True)
@@ -113,14 +114,6 @@ class FeedbackDashboard:
         """Live learning metrics dashboard."""
         st.header("📊 Learning Metrics & Trends")
 
-        try:
-            from security_engine.adaptive_memory import FeedbackPinner
-        except ImportError:
-            st.error("❌ Memory module not available")
-            return
-
-        memory = FeedbackPinner()
-
         # Metrics row
         col1, col2, col3, col4 = st.columns(4)
 
@@ -159,8 +152,8 @@ class FeedbackDashboard:
                 {"timestamp": pd.date_range("2024-01-01", periods=10), "success_rate": [0.5] * 10}
             )
             st.line_chart(demo_data.set_index("timestamp")["success_rate"])
-        except Exception as e:
-            st.info(f"📈 Trend data not yet available.")
+        except Exception:
+            st.info("📈 Trend data not yet available.")
 
         st.divider()
 
@@ -169,7 +162,7 @@ class FeedbackDashboard:
         try:
             processed = FeedbackDashboard._load_processed_json()
             if processed:
-                action_stats: Dict[str, Dict[str, int]] = {}
+                action_stats: dict[str, dict[str, int]] = {}
                 for event in processed:
                     action = event.get("recovery_action", "unknown")
                     label = event.get("label", "")

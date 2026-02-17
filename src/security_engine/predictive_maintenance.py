@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from enum import Enum
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-import pickle
+import pickle  # nosec B403
 import os
 
 # ML imports

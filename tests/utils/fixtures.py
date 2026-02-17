@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 
 
 @pytest.fixture
-def mock_api_client() -> TestClient:
+def create_mock_api_client() -> TestClient:
     """
     Create a basic FastAPI TestClient with minimal setup.
     

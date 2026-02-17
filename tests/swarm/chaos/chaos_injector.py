@@ -13,7 +13,10 @@ import asyncio
 import subprocess
 import time
 from typing import List, Dict, Any, Optional, TYPE_CHECKING
-import docker
+try:
+    import docker
+except ImportError:
+    docker = None
 
 if TYPE_CHECKING:
     from docker.client import DockerClient

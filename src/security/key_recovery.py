@@ -23,8 +23,8 @@ from enum import Enum, auto
 
 # Try to import PyCryptodome for SSSS
 try:
-    from Crypto.Protocol.SecretSharing import Shamir
-    from Crypto.Util.number import long_to_bytes, bytes_to_long
+    from Crypto.Protocol.SecretSharing import Shamir  # nosec B413
+    from Crypto.Util.number import long_to_bytes, bytes_to_long  # nosec B413
     HAS_CRYPTO = True
 except ImportError:
     HAS_CRYPTO = False

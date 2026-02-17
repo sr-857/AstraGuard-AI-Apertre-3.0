@@ -1,0 +1,23 @@
+{{- if .Values.redis.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "astraguard.fullname" . }}-redis
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: database
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    helm.sh/chart: {{ include "astraguard.chart" . }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.redis.service.port }}
+      targetPort: 6379
+      protocol: TCP
+      name: redis
+  selector:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: database
+{{- end }}

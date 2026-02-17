@@ -18,7 +18,10 @@ from datetime import datetime, timedelta
 from typing import List, Optional, Callable, Dict, Any, TYPE_CHECKING
 from enum import Enum
 import subprocess
-import docker
+try:
+    import docker
+except ImportError:
+    docker = None
 
 if TYPE_CHECKING:
     from docker.client import DockerClient

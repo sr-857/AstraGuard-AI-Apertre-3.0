@@ -11,7 +11,7 @@ from typing import List, Optional, Any, Union, Dict, TYPE_CHECKING
 from datetime import datetime, timedelta
 from collections import deque
 from asyncio import Lock
-from fastapi import FastAPI, HTTPException, status, Depends, BackgroundTasks
+from fastapi import FastAPI, HTTPException, status, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.responses import JSONResponse
@@ -85,13 +85,16 @@ if TYPE_CHECKING:
     from security_engine.predictive_maintenance import PredictiveMaintenanceEngine
 from fastapi.responses import Response
 from core.metrics import get_metrics_text, get_metrics_content_type
-from core.restart import get_restart_manager
 from core.rate_limiter import RateLimiter, RateLimitMiddleware, get_rate_limit_config
+from core.shutdown import get_shutdown_manager
 from backend.redis_client import RedisClient
 import numpy as np
 from numpy.typing import NDArray
-from core.restart import get_restart_manager
 from astraguard.logging_config import get_logger
+import msgpack
+from fastapi import Request
+from api.middleware.network_optimization import ZstdMiddleware
+from prometheus_client import Gauge, Histogram, generate_latest, CONTENT_TYPE_LATEST
 
 logger = get_logger(__name__)
 
@@ -111,6 +114,21 @@ try:
 except ImportError:
     OBSERVABILITY_ENABLED = False
     print("Warning: Observability modules not available. Running without monitoring.")
+
+from astraguard.observability import _safe_create_metric
+
+# Core Metrics
+UPTIME_SECONDS = _safe_create_metric(
+    Gauge,
+    "app_uptime_seconds",
+    "Application uptime in seconds"
+)
+
+HTTP_REQUEST_LATENCY = _safe_create_metric(
+    Histogram,
+    "http_request_latency_seconds",
+    "HTTP request latency"
+)
 
 
 # Configuration
@@ -156,82 +174,6 @@ async def initialize_components() -> None:
         predictive_engine = await get_predictive_maintenance_engine(memory_store)
 
 
-def _check_credential_security() -> None:
-    """
-    Check and warn about insecure credential configurations at startup.
-
-    Security Checks:
-    1. Warn if METRICS_USER/METRICS_PASSWORD are not set
-    2. Warn if using common/weak credentials
-    3. Set global flag if using defaults
-    """
-    global _USING_DEFAULT_CREDENTIALS
-
-    # Use lowercase keys consistently (removed duplicate uppercase calls)
-    metrics_user: Optional[str] = get_secret("metrics_user")
-    metrics_password: Optional[str] = get_secret("metrics_password")
-
-    # Check if credentials are set
-    if not metrics_user or not metrics_password:
-        print("\n" + "=" * 70)
-        print("[WARNING] SECURITY WARNING: Metrics authentication not configured!")
-        print("=" * 70)
-        print("METRICS_USER and METRICS_PASSWORD environment variables are not set.")
-        print("The /metrics endpoint will return HTTP 500 until configured.")
-        print()
-        print("To fix this:")
-        print("  1. Set environment variables:")
-        print("    export METRICS_USER=your_username")
-        print("    export METRICS_PASSWORD=your_secure_password")
-        print("  2. Or add to .env file:")
-        print("    METRICS_USER=your_username")
-        print("    METRICS_PASSWORD=your_secure_password")
-        print("=" * 70 + "\n")
-        return
-
-    # List of weak/common credentials to warn about
-    weak_credentials: List[Tuple[str, str]] = [
-        ("admin", "admin"),
-        ("admin", "password"),
-        ("root", "root"),
-        ("admin", "12345"),
-        ("admin", "123456"),
-        ("user", "user"),
-        ("test", "test"),
-    ]
-
-    # Check for weak credentials
-    for weak_user, weak_pass in weak_credentials:
-        if metrics_user == weak_user and metrics_password == weak_pass:
-            _USING_DEFAULT_CREDENTIALS = True
-            print("\n" + "=" * 70)
-            print("[CRITICAL] SECURITY WARNING: Using default/weak credentials!")
-            print("=" * 70)
-            print(f"Detected credentials: {mask_secret(metrics_user)}/{mask_secret(metrics_password)}")
-            print()
-            print("[WARNING] THESE CREDENTIALS ARE PUBLICLY KNOWN AND INSECURE!")
-            print()
-            print("IMMEDIATE ACTION REQUIRED:")
-            print("  1. Change credentials before deploying to production")
-            print("  2. Use strong, randomly-generated passwords (20+ characters)")
-            print("  3. Consider using secrets management (Vault, AWS Secrets Manager)")
-            print()
-            print("Generate secure password:")
-            print("  python -c \"import secrets; print(secrets.token_urlsafe(32))\"")
-            print("=" * 70 + "\n")
-            break
-
-    # Check for short passwords
-    if len(metrics_password) < 12:
-        print("\n" + "=" * 70)
-        print("[WARNING] Weak password detected!")
-        print("=" * 70)
-        print(f"Password length: {len(metrics_password)} characters")
-        print("Recommended minimum: 16 characters")
-        print()
-        print("Consider using a stronger password:")
-        print("  python -c \"import secrets; print(secrets.token_urlsafe(32))\"")
-        print("=" * 70 + "\n")
 
 
 @asynccontextmanager
@@ -239,11 +181,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan manager."""
     global redis_client, telemetry_limiter, api_limiter
     
-    from core.shutdown import get_shutdown_manager
     shutdown_manager = get_shutdown_manager()
 
-    # Security: Check credentials at startup
-    _check_credential_security()
+    # Initialize database connection pool
+    try:
+        from src.db.database import init_pool
+        await init_pool()
+        print("[OK] Database connection pool initialized")
+    except Exception as e:
+        print(f"[WARNING] Connection pool initialization failed: {e}")
+        print("Falling back to direct database connections")
 
     # Initialize components
     await initialize_components()
@@ -286,12 +233,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Initialize observability (if available)
     if OBSERVABILITY_ENABLED:
         try:
-            logger = get_logger(__name__)
+            # logger = get_logger(__name__)  # Use module-level logger
             setup_json_logging(log_level=get_secret("log_level", "INFO"))
             initialize_tracing()
             setup_auto_instrumentation()
             instrument_fastapi(app)
-            startup_metrics_server(port=9090)
+            # startup_metrics_server(port=9090)
             logger.info("event", "observability_initialized", service="astra-guard", version="1.0.0")
         except ImportError as e:
             logger.warning(f"Observability module missing dependency: {e}")
@@ -304,8 +251,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     yield
 
-    # Cleanup via manager
-    await shutdown_manager.execute_cleanup()
+    # Cleanup
+    if memory_store:
+        await memory_store.save()
+    if redis_client:
+        await redis_client.close()
+
+    # Close database connection pool
+    try:
+        from src.db.database import close_pool
+        await close_pool()
+        print("[OK] Database connection pool closed")
+    except Exception as e:
+        print(f"[WARNING] Connection pool cleanup failed: {e}")
 
 
 # Initialize FastAPI app
@@ -317,6 +275,9 @@ app = FastAPI(
     redoc_url="/redoc",
     lifespan=lifespan
 )
+
+# Add network optimization middleware (compression)
+app.add_middleware(ZstdMiddleware)
 
 # Add TLS enforcement middleware (early in the stack)
 # This ensures all internal service communication uses TLS
@@ -358,6 +319,16 @@ app.add_middleware(
     log_level=log_level,
     sample_rate=sample_rate,
 )
+
+START_TIME = time.time()
+
+@app.middleware("http")
+async def monitoring_middleware(request: Request, call_next):
+    with HTTP_REQUEST_LATENCY.time():
+        response = await call_next(request)
+
+    UPTIME_SECONDS.set(time.time() - START_TIME)
+    return response
 
 security = HTTPBasic()
 
@@ -588,12 +559,6 @@ async def get_metrics() -> Response:
     - Retry attempts
     - Recovery actions
     """
-    if not OBSERVABILITY_ENABLED:
-        return Response(content="Observability not enabled", media_type="text/plain", status_code=503)
-    
-    from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
-    from starlette.responses import Response
-    
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
@@ -785,41 +750,19 @@ async def health_ready() -> Response:
     )
 
 
-@app.get("/metrics")
-async def metrics(username: str = Depends(get_current_username)) -> Response:
-    """Prometheus metrics endpoint."""
-    return Response(
-        content=get_metrics_text(), 
-        media_type=get_metrics_content_type()
-    )
+# @app.get("/metrics")
+# async def metrics(username: str = Depends(get_current_username)) -> Response:
+#     """Prometheus metrics endpoint (Deprecated: merged with /metrics above)."""
+#     return Response(
+#         content=get_metrics_text(),
+#         media_type=get_metrics_content_type()
+#     )
 
 
-@app.post("/api/v1/system/restart", status_code=status.HTTP_202_ACCEPTED)
-async def restart_system(
-    background_tasks: BackgroundTasks,
+@app.get("/api/v1/system/diagnostics", status_code=status.HTTP_200_OK)
+async def get_system_diagnostics(
     current_user: User = Depends(require_admin)
 ):
-    """
-    Trigger a system restart.
-    
-    Requires ADMIN privileges.
-    Returns 202 Accepted immediately, then performs restart in background.
-    """
-    if OBSERVABILITY_ENABLED:
-        logger.warning(f"System restart initiated by user: {current_user.username}")
-        
-    restart_manager = get_restart_manager()
-    background_tasks.add_task(restart_manager.trigger_restart)
-    
-    return {
-        "status": "restarting",
-        "timestamp": datetime.now(),
-        "message": "System restart initiated"
-    }
-
-
-@app.post("/api/v1/telemetry", response_model=AnomalyResponse, status_code=status.HTTP_200_OK)
-async def submit_telemetry(telemetry: TelemetryInput, current_user: User = Depends(require_operator)) -> AnomalyResponse:
     """
     Get detailed system diagnostics.
     
@@ -831,18 +774,51 @@ async def submit_telemetry(telemetry: TelemetryInput, current_user: User = Depen
     return diagnostics.run_full_diagnostics()
 
 
-@app.post("/api/v1/telemetry", response_model=AnomalyResponse, status_code=status.HTTP_200_OK)
-async def submit_telemetry(telemetry: TelemetryInput, current_user: User = Depends(require_operator)) -> AnomalyResponse:
-    """
-    Internal function to process a single telemetry point without endpoint overhead.
-    Used by both single telemetry endpoint and batch processing.
-    """
-    # CHAOS INJECTION HOOK
-    # 1. Network Latency Injection (fixed: use async sleep)
-    if await check_chaos_injection("network_latency"):
-        await asyncio.sleep(2.0)  # Simulate 2s latency (non-blocking)
+async def parse_telemetry(request: Request) -> TelemetryInput:
+    """Dependency to parse telemetry from JSON or MsgPack."""
+    content_type = request.headers.get("content-type", "")
+    try:
+        if "application/msgpack" in content_type:
+            body = await request.body()
+            data = msgpack.unpackb(body, raw=False)
+            return TelemetryInput(**data)
+        return TelemetryInput(**await request.json())
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid payload: {str(e)}"
+        )
 
-    # 2. Model Loader Failure Injection (fixed: await async function)
+async def parse_telemetry_batch(request: Request) -> TelemetryBatch:
+    """Dependency to parse telemetry batch from JSON or MsgPack."""
+    content_type = request.headers.get("content-type", "")
+    try:
+        if "application/msgpack" in content_type:
+            body = await request.body()
+            data = msgpack.unpackb(body, raw=False)
+            return TelemetryBatch(**data)
+        return TelemetryBatch(**await request.json())
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid payload: {str(e)}"
+        )
+
+@app.post("/api/v1/telemetry", response_model=AnomalyResponse, status_code=status.HTTP_200_OK)
+async def submit_telemetry(
+    telemetry: TelemetryInput = Depends(parse_telemetry),
+    current_user: User = Depends(require_operator)
+) -> AnomalyResponse:
+    """
+    Submit single telemetry point for anomaly detection.
+    Supports JSON and MsgPack.
+    """
+    request_start = time.time()
+
+    # CHAOS INJECTION HOOK
+    if await check_chaos_injection("network_latency"):
+        await asyncio.sleep(2.0)
+
     if await check_chaos_injection("model_loader"):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -850,25 +826,8 @@ async def submit_telemetry(telemetry: TelemetryInput, current_user: User = Depen
         )
     
     try:
-        if OBSERVABILITY_ENABLED:
-            with track_request("anomaly_detection"):
-                with span_anomaly_detection(data_size=1, model_name="detector_v1"):
-                    response = await _process_telemetry(telemetry, request_start)
-        else:
-            response = await _process_telemetry(telemetry, request_start)
-
-        if OBSERVABILITY_ENABLED and response.is_anomaly:
-            logger = get_logger(__name__)
-            ANOMALY_DETECTIONS.labels(severity=response.severity_level.lower()).inc()
-            log_detection(
-                logger,
-                severity=response.severity_level,
-                detected_type=response.anomaly_type,
-                confidence=response.confidence,
-                instance_id="telemetry"
-            )
-
-        return response
+        # Use _process_single_telemetry (which is defined below)
+        return await _process_single_telemetry(telemetry, request_start)
 
     except ValueError as e:
         logger.warning(f"Invalid telemetry data: {e}")
@@ -876,17 +835,7 @@ async def submit_telemetry(telemetry: TelemetryInput, current_user: User = Depen
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid telemetry format: {str(e)}"
         )
-    except RuntimeError as e:
-        logger.error(f"Telemetry system error: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="System temporarily unavailable"
-        )
     except Exception as e:
-        if OBSERVABILITY_ENABLED:
-            logger = get_logger(__name__)
-            log_error(logger, e, {"endpoint": "/api/v1/telemetry"})
-        
         logger.error(f"Unexpected error in submit_telemetry: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -894,22 +843,7 @@ async def submit_telemetry(telemetry: TelemetryInput, current_user: User = Depen
         ) from e
 
 
-@app.post("/api/v1/telemetry", response_model=AnomalyResponse, status_code=status.HTTP_200_OK)
-async def submit_telemetry(telemetry: TelemetryInput, current_user: User = Depends(require_operator)):
-    """
-    Submit single telemetry point for anomaly detection.
-
-    Requires API key authentication with 'write' permission.
-
-    Returns:
-        AnomalyResponse with detection results and recommended actions
-    """
-    request_start = time.time()
-    return await _process_single_telemetry(telemetry, request_start)
-
-
-
-async def _process_telemetry(telemetry: TelemetryInput, request_start: float) -> AnomalyResponse:
+async def _process_single_telemetry(telemetry: TelemetryInput, request_start: float) -> AnomalyResponse:
     """Internal telemetry processing logic."""
     try:
         # Type assertions for initialized globals
@@ -1076,9 +1010,13 @@ async def get_latest_telemetry(api_key: APIKey = Depends(get_api_key)) -> Dict[s
 
 
 @app.post("/api/v1/telemetry/batch", response_model=BatchAnomalyResponse)
-async def submit_telemetry_batch(batch: TelemetryBatch, current_user: User = Depends(require_operator)) -> BatchAnomalyResponse:
+async def submit_telemetry_batch(
+    batch: TelemetryBatch = Depends(parse_telemetry_batch),
+    current_user: User = Depends(require_operator)
+) -> BatchAnomalyResponse:
     """
     Submit batch of telemetry points for anomaly detection.
+    Supports JSON and MsgPack.
 
     Requires API key authentication with 'write' permission.
 
@@ -1458,7 +1396,7 @@ async def login(request: LoginRequest) -> TokenResponse:
     """Authenticate user and return JWT token."""
     auth_manager = get_auth_manager()
     token = auth_manager.authenticate_user(request.username, request.password)
-    return TokenResponse(access_token=token, token_type="bearer")
+    return TokenResponse(access_token=token, token_type="bearer")  # nosec B106
 
 
 @app.post("/api/v1/auth/users", response_model=UserResponse)

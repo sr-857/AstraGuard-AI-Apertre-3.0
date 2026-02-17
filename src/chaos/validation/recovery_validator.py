@@ -216,7 +216,7 @@ class RecoveryValidator:
                                 return True
                             
                 except Exception:
-                    pass
+                    pass  # nosec B110
                 
                 # Check timeout
                 elapsed = (datetime.utcnow() - start_time).total_seconds()

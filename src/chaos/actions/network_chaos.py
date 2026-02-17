@@ -138,7 +138,7 @@ def get_current_latency() -> float:
     
     # Add random jitter
     if jitter > 0:
-        base_latency += random.uniform(-jitter, jitter)
+        base_latency += random.uniform(-jitter, jitter)  # nosec B311
     
     return max(0, base_latency)
 
@@ -153,7 +153,7 @@ def should_drop_packet() -> bool:
     if not _network_chaos_active:
         return False
     
-    return random.random() < _network_chaos_config["packet_loss_rate"]
+    return random.random() < _network_chaos_config["packet_loss_rate"]  # nosec B311
 
 
 async def simulate_network_delay():

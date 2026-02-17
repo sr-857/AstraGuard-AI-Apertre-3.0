@@ -1,0 +1,8 @@
+AVAILABLE TOOLS:
+{tool_descriptions}
+
+CONSTRAINTS:
+- Use only available tools listed above.
+- Do NOT fabricate APIs or endpoints.
+- Ensure tool arguments strictly follow the defined schema.
+- If no tool is suitable for the task, request clarification or return 'wait'.
