@@ -17,7 +17,9 @@ respx
 numpy
 pandas
 scikit-learn
+scipy>=1.9.0
 python-dotenv
+
 pydantic-settings
 opentelemetry-api
 opentelemetry-sdk

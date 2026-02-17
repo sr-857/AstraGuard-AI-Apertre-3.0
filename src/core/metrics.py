@@ -333,12 +333,39 @@ TIMELINE_RECONSTRUCTIONS_TOTAL = Counter(
     registry=REGISTRY
 )
 
+# ============================================================================
+# Bayesian Optimization Metrics
+# ============================================================================
+
+OPTIMIZATION_ITERATIONS_TOTAL = Counter(
+    'astraguard_optimization_iterations_total',
+    'Total optimization iterations performed',
+    ['target'],
+    registry=REGISTRY
+)
+
+OPTIMIZATION_BEST_VALUE = Gauge(
+    'astraguard_optimization_best_value',
+    'Best objective value found during optimization',
+    ['target'],
+    registry=REGISTRY
+)
+
+OPTIMIZATION_TIME_SECONDS = Histogram(
+    'astraguard_optimization_time_seconds',
+    'Time spent on optimization runs',
+    ['target'],
+    buckets=(1, 5, 10, 30, 60, 120, 300, 600, 1800),
+    registry=REGISTRY
+)
+
 THREAT_INTELLIGENCE_FEEDS = Gauge(
     'astraguard_threat_intelligence_feeds',
     'Number of active threat intelligence feeds',
     ['feed_type'],
     registry=REGISTRY
 )
+
 
 THREAT_INTELLIGENCE_UPDATES = Counter(
     'astraguard_threat_intelligence_updates_total',
