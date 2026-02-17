@@ -1,0 +1,105 @@
+title: Database Failover Test
+description: |
+  Validates system resilience during database failover scenarios.
+  Tests that:
+  1. System detects primary database failure
+  2. Automatic failover to replica occurs
+  3. No data loss during failover
+  4. Service recovers when primary restored
+
+steady-state-hypothesis:
+  title: Database is healthy before chaos
+  probes:
+    - type: probe
+      name: database-health-before
+      tolerance: true
+      provider:
+        type: http
+        url: http://localhost:8000/health/state
+      timeout: 5
+
+method:
+  - type: action
+    name: simulate-primary-db-failure
+    provider:
+      type: python
+      module: chaos.actions.database_chaos
+      func: simulate_db_failure
+      arguments:
+        db_type: primary
+        duration_seconds: 30
+    pauses:
+      after: 5
+
+  - type: probe
+    name: verify-failover-initiated
+    tolerance:
+      type: jsonpath
+      path: $.system.status
+      expect: DEGRADED
+    provider:
+      type: http
+      url: http://localhost:8000/health/state
+    timeout: 10
+
+  - type: probe
+    name: verify-replica-active
+    tolerance: true
+    provider:
+      type: http
+      url: http://localhost:8000/health/state
+    timeout: 10
+
+  - type: action
+    name: restore-primary-db
+    provider:
+      type: python
+      module: chaos.actions.database_chaos
+      func: restore_db
+      arguments:
+        db_type: primary
+    pauses:
+      after: 10
+
+  - type: probe
+    name: verify-primary-recovery
+    tolerance: true
+    provider:
+      type: http
+      url: http://localhost:8000/health/state
+    timeout: 30
+
+  - type: probe
+    name: verify-system-recovery
+    tolerance:
+      type: jsonpath
+      path: $.system.status
+      expect:
+        - HEALTHY
+        - DEGRADED
+    provider:
+      type: http
+      url: http://localhost:8000/health/state
+    timeout: 30
+
+rollbacks:
+  - type: action
+    name: ensure-db-restored
+    provider:
+      type: python
+      module: chaos.actions.database_chaos
+      func: restore_db
+      arguments:
+        db_type: primary
+
+tags:
+  - resilience
+  - database
+  - failover
+  - replication
+
+configuration:
+  slo:
+    max_failover_time: 10
+    max_data_loss_seconds: 0
+    max_recovery_time: 30

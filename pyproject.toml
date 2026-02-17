@@ -15,8 +15,27 @@ authors = [
 keywords = ["satellite", "security", "anomaly-detection", "ai", "telemetry", "monitoring"]
 dependencies = [
     "aiosqlite>=0.17.0",
-    "aiofiles>=23.0.0"
+    "aiofiles>=23.0.0",
+    "chaostoolkit>=1.15.0",
+    "chaostoolkit-lib>=1.40.0",
+    "chaostoolkit-reporting>=0.8.0",
+    "certifi>=2023.0.0",
+    "cryptography>=41.0.0",
+    "schedule>=1.2.0",
 ]
+
+[project.optional-dependencies]
+security = [
+    "PyKCS11>=1.5.10",
+    "pycryptodome>=3.19.0",
+    "boto3>=1.28.0",
+    "azure-identity>=1.14.0",
+    "azure-keyvault-keys>=4.8.0",
+    "google-cloud-kms>=2.19.0",
+]
+
+
+
 
 [project.urls]
 Repository = "https://github.com/purvanshjoshi/AstraGuard-AI"

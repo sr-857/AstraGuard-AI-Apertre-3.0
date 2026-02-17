@@ -1,0 +1,117 @@
+title: Service Unavailability Test
+description: |
+  Validates system resilience when dependent services become unavailable.
+  Tests that:
+  1. System detects service unavailability
+  2. Fallback mechanisms activate
+  3. Cache serves stale data if available
+  4. Service recovers when dependency restored
+
+steady-state-hypothesis:
+  title: All services are available before chaos
+  probes:
+    - type: probe
+      name: services-available-before
+      tolerance: true
+      provider:
+        type: http
+        url: http://localhost:8000/health/ready
+      timeout: 5
+
+method:
+  - type: action
+    name: stop-redis-service
+    provider:
+      type: python
+      module: chaos.actions.service_chaos
+      func: stop_service
+      arguments:
+        service_name: redis
+        duration_seconds: 30
+    pauses:
+      after: 5
+
+  - type: probe
+      name: verify-redis-unavailable
+      tolerance: false
+      provider:
+        type: http
+        url: http://localhost:8000/health/state
+      timeout: 10
+
+  - type: probe
+    name: verify-system-degraded
+    tolerance:
+      type: jsonpath
+      path: $.system.status
+      expect: DEGRADED
+    provider:
+      type: http
+      url: http://localhost:8000/health/state
+    timeout: 10
+
+  - type: probe
+    name: verify-fallback-activated
+    tolerance:
+      type: jsonpath
+      path: $.fallback.mode
+      expect:
+        - HEURISTIC
+        - SAFE
+    provider:
+      type: http
+      url: http://localhost:8000/health/state
+    timeout: 10
+
+  - type: action
+    name: start-redis-service
+    provider:
+      type: python
+      module: chaos.actions.service_chaos
+      func: start_service
+      arguments:
+        service_name: redis
+    pauses:
+      after: 10
+
+  - type: probe
+    name: verify-redis-recovery
+    tolerance: true
+    provider:
+      type: http
+      url: http://localhost:8000/health/ready
+    timeout: 30
+
+  - type: probe
+    name: verify-system-recovery
+    tolerance:
+      type: jsonpath
+      path: $.system.status
+      expect:
+        - HEALTHY
+        - DEGRADED
+    provider:
+      type: http
+      url: http://localhost:8000/health/state
+    timeout: 30
+
+rollbacks:
+  - type: action
+    name: ensure-redis-running
+    provider:
+      type: python
+      module: chaos.actions.service_chaos
+      func: start_service
+      arguments:
+        service_name: redis
+
+tags:
+  - resilience
+  - service
+  - redis
+  - dependency
+
+configuration:
+  slo:
+    max_downtime_seconds: 30
+    max_degradation_duration: 60

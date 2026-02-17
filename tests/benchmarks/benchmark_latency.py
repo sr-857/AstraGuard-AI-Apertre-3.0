@@ -1,7 +1,18 @@
+"""
+NON-PRODUCTION BENCHMARK UTILITY
+
+This script is a development/testing tool for performance benchmarking.
+It is NOT intended for production use and should not be included in
+runtime deployments or CI pipelines.
+
+This benchmark imports production modules directly and assumes local paths.
+"""
+
 import time
 import tempfile
 import os
 from src.astraguard.hil.metrics.latency import LatencyCollector
+
 
 def benchmark_latency():
     """Benchmark LatencyCollector performance before and after optimizations."""
