@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 from collections import deque
 import os
 import glob
+import tempfile
 
 logger = logging.getLogger(__name__)
 
@@ -224,9 +225,10 @@ class EnhancedResourceMonitor:
         
         # Default temp directories
         if temp_dirs is None:
+            # Bandit B108: Use tempfile.gettempdir() instead of hardcoded /tmp
             temp_dirs = [
                 os.path.join(os.path.expanduser("~"), "tmp"),
-                "/tmp" if os.path.exists("/tmp") else None,
+                tempfile.gettempdir(),
                 os.environ.get("TEMP"),
                 os.environ.get("TMP")
             ]

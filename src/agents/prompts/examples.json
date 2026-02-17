@@ -1,0 +1,38 @@
+[
+  {
+    "input": "Telemetry shows high thermal spike on Battery 1.",
+    "output": {
+      "analysis": {
+        "observation": "Battery 1 temperature exceeds nominal range by 5C.",
+        "reasoning": "Likely thermal runaway or sensor fault. Correlate with current draw.",
+        "key_factors": ["Temp > 45C", "Current stable"]
+      },
+      "action": "analyze",
+      "tool_calls": [
+        {
+          "tool_name": "check_thermal_history",
+          "arguments": {"component": "battery_1"}
+        }
+      ],
+      "confidence": 0.85
+    }
+  },
+  {
+    "input": "Execute orbit correction maneuver based on plan.",
+    "output": {
+      "analysis": {
+        "observation": "Orbit correction plan received. Delta-V required: 15 m/s.",
+        "reasoning": "Fuel levels adequate. Thrusters operational. Wait for ground confirmation not required.",
+        "key_factors": ["Fuel > 20%", "Thrusters OK"]
+      },
+      "action": "execute",
+      "tool_calls": [
+        {
+          "tool_name": "fire_thrusters",
+          "arguments": {"duration_ms": 1500, "vector": [0, 1, 0]}
+        }
+      ],
+      "confidence": 0.95
+    }
+  }
+]

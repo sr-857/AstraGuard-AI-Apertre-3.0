@@ -87,9 +87,9 @@ def create_mock_collector(num_measurements: int = 1000) -> LatencyCollector:
     satellites = ["SAT1", "SAT2", "SAT3", "SAT4", "SAT5"]
 
     for i in range(num_measurements):
-        metric = random.choice(metric_types)
-        sat = random.choice(satellites)
-        duration = random.gauss(100, 20)  # Mean=100ms, stdev=20ms
+        metric = random.choice(metric_types)  # nosec B311
+        sat = random.choice(satellites)  # nosec B311
+        duration = random.gauss(100, 20)  # Mean=100ms, stdev=20ms  # nosec B311
 
         if metric == "fault_detection":
             collector.record_fault_detection(sat, float(i) / 10, abs(duration))

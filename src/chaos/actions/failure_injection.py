@@ -109,7 +109,7 @@ def should_fail() -> bool:
             return False
     
     # Random failure based on rate
-    return random.random() < _failure_injection_config["failure_rate"]
+    return random.random() < _failure_injection_config["failure_rate"]  # nosec B311
 
 
 def get_injection_status() -> dict:

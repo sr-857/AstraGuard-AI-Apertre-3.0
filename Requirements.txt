@@ -1,6 +1,5 @@
 fastapi
 uvicorn
-starlette
 httpx
 pytest
 pytest-asyncio
@@ -24,3 +23,4 @@ opentelemetry-sdk
 opentelemetry-instrumentation-fastapi
 aiohttp
 structlog
+pytest-benchmark

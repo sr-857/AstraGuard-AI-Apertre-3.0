@@ -647,7 +647,8 @@ class SecretsManager:
             test_key = f"health_check_{datetime.now().timestamp()}"
             self.store_secret(test_key, "test_value")
             retrieved = self.get_secret(test_key)
-            assert retrieved == "test_value"
+            if retrieved != "test_value":
+                raise ValueError("Retrieved secret mismatch")
             self.delete_secret(test_key)
             results['local_storage'] = True
             results['encryption'] = True

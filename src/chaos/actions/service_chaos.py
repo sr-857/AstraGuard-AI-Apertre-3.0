@@ -50,7 +50,7 @@ async def stop_service(
                 capture_output=True,
                 timeout=5,
                 check=False,
-            )
+            )  # nosec B603, B607
     except Exception as e:
         logger.warning(f"Could not stop {service_name} via command: {e}")
     
@@ -84,7 +84,7 @@ async def start_service(service_name: str) -> bool:
                 capture_output=True,
                 timeout=5,
                 check=False,
-            )
+            )  # nosec B603, B607
     except Exception as e:
         logger.warning(f"Could not start {service_name} via command: {e}")
     

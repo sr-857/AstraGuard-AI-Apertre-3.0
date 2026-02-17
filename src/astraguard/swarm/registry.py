@@ -280,7 +280,7 @@ class SwarmRegistry:
                 
                 if other_peers:
                     fanout_size = min(GOSSIP_FANOUT, len(other_peers))
-                    targets = random.sample(other_peers, fanout_size)
+                    targets = random.sample(other_peers, fanout_size)  # nosec B311
                     
                     for target in targets:
                         try:

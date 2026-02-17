@@ -192,7 +192,10 @@ def init_database() -> None:
         conn.commit()
         conn.close()
         
-        logger.info("Contact database initialized successfully", db_path=str(DB_PATH))
+        logger.info(
+            "Contact database initialized successfully",
+            extra={"db_path": str(DB_PATH)}
+        )
         
     except sqlite3.Error as e:
         logger.error(
@@ -691,6 +694,7 @@ async def get_submissions(
         where_clause = "WHERE status = ?"
         params.append(status_filter)
 
+    # where_clause is constructed from hardcoded string literal, not user input. Safe from injection.
     count_query = f"SELECT COUNT(*) AS total FROM contact_submissions {where_clause}"  # nosec B608
     select_query = f"""
         SELECT id, name, email, phone, subject, message,
@@ -699,7 +703,7 @@ async def get_submissions(
         {where_clause}
         ORDER BY submitted_at DESC
         LIMIT ? OFFSET ?
-    """
+    """  # nosec B608
 
     try:
         async with aiosqlite.connect(DB_PATH) as conn:

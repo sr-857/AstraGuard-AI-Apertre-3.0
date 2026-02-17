@@ -126,6 +126,10 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         correlation_id = self._generate_correlation_id()
         request.state.correlation_id = correlation_id
         
+        # Bind correlation ID to structlog context
+        structlog.contextvars.clear_contextvars()
+        structlog.contextvars.bind_contextvars(correlation_id=correlation_id)
+
         # Record start time
         start_time = time.time()
         

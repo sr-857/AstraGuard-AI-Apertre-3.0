@@ -307,8 +307,8 @@ def run_telemetry() -> None:
         result = subprocess.run(
             [sys.executable, script_path],
             check=True,
-            timeout=300  # 5-minute timeout
-        )
+            timeout=300,  # 5-minute timeout
+        )  # nosec B603
         logger.info("Telemetry stream completed", returncode=result.returncode)
     except subprocess.TimeoutExpired:
         logger.error("Telemetry stream timed out after 5 minutes")
@@ -335,8 +335,8 @@ def run_dashboard() -> None:
         result = subprocess.run(
             ["streamlit", "run", os.path.join("dashboard", "app.py")],
             check=True,
-            timeout=300  # 5-minute timeout
-        )
+            timeout=300,  # 5-minute timeout
+        )  # nosec B603, B607
         logger.info("Dashboard completed", returncode=result.returncode)
     except subprocess.TimeoutExpired:
         logger.error("Dashboard timed out after 5 minutes")
@@ -369,8 +369,8 @@ def run_simulation() -> None:
         result = subprocess.run(
             [sys.executable, script_path],
             check=True,
-            timeout=300  # 5-minute timeout
-        )
+            timeout=300,  # 5-minute timeout
+        )  # nosec B603
         logger.info("Simulation completed", returncode=result.returncode)
     except subprocess.TimeoutExpired:
         logger.error("Simulation timed out after 5 minutes")

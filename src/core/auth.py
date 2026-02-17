@@ -29,6 +29,8 @@ from astraguard.logging_config import get_logger
 from core.audit_logger import get_audit_logger, AuditEventType
 from core.secrets import get_secret
 
+logger = get_logger(__name__)
+
 # Constants
 API_KEY_LENGTH = 32
 JWT_SECRET_KEY_MIN_LENGTH = 32
