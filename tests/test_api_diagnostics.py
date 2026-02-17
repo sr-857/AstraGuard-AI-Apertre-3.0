@@ -7,8 +7,6 @@ from datetime import datetime
 from src.api.service import app, require_admin
 from src.core.auth import User, UserRole
 
-client = TestClient(app)
-
 # Mock user for authentication
 @pytest.fixture
 def admin_user():
@@ -42,16 +40,17 @@ def test_diagnostics_endpoint_success(mock_diagnostics, admin_user):
     app.dependency_overrides[require_admin] = lambda: admin_user
     
     try:
-        response = client.get("/api/v1/system/diagnostics")
-        
-        # Verify response
-        assert response.status_code == 200
-        data = response.json()
-        assert "system_info" in data
-        assert data["system_info"]["os"] == "TestOS"
-        
-        # Verify diagnostics was called
-        mock_diagnostics.run_full_diagnostics.assert_called_once()
+        with TestClient(app) as client:
+            response = client.get("/api/v1/system/diagnostics")
+
+            # Verify response
+            assert response.status_code == 200
+            data = response.json()
+            assert "system_info" in data
+            assert data["system_info"]["os"] == "TestOS"
+
+            # Verify diagnostics was called
+            mock_diagnostics.run_full_diagnostics.assert_called_once()
         
     finally:
         # Clean up overrides
@@ -59,5 +58,6 @@ def test_diagnostics_endpoint_success(mock_diagnostics, admin_user):
 
 def test_diagnostics_endpoint_unauthorized():
     # No auth override, should fail
-    response = client.get("/api/v1/system/diagnostics")
-    assert response.status_code in [401, 403]
+    with TestClient(app) as client:
+        response = client.get("/api/v1/system/diagnostics")
+        assert response.status_code in [401, 403]

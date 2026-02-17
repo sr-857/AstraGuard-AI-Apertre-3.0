@@ -37,10 +37,11 @@ __version__ = "1.0.0"
 
 # Core encryption
 from .encryption import (
-    EncryptionEngine,
+    DataEncryption as EncryptionEngine,
+    DataEncryption,
     EncryptedData,
-    DataEncryptionKey,
-    KeyEncryptionKey,
+    # DataEncryptionKey,
+    # KeyEncryptionKey,
     EncryptionAlgorithm,
     encrypt_data,
     decrypt_data,

@@ -19,7 +19,7 @@ from typing import Dict, Optional
 import aiohttp
 
 try:
-    from prometheus_client import Counter, Histogram, Gauge
+    from prometheus_client import Counter, Histogram, Gauge, REGISTRY
 except ImportError:
     # Mock metrics for testing
     class Counter:
@@ -43,20 +43,60 @@ except ImportError:
         def set(self, value):
             pass
 
+    REGISTRY = None
+
 
 logger = logging.getLogger(__name__)
 
+def _safe_create_metric(metric_class, name, documentation, labelnames=(), **kwargs):
+    """Safely create metric, returning existing one if it exists in registry."""
+    if REGISTRY:
+        # Check if metric already exists in registry
+        # Accessing private attribute _names_to_collectors for efficiency if available
+        if hasattr(REGISTRY, '_names_to_collectors') and name in REGISTRY._names_to_collectors:
+            return REGISTRY._names_to_collectors[name]
+
+        # Fallback search
+        for collector in REGISTRY._collector_to_names:
+            if hasattr(collector, '_name') and collector._name == name:
+                return collector
+
+    # Create new if not found
+    try:
+        return metric_class(name, documentation, labelnames=labelnames, **kwargs)
+    except ValueError as e:
+        if "Duplicated timeseries" in str(e) and REGISTRY:
+             # Retry lookup in case of race condition or previous check miss
+            for collector in REGISTRY._collector_to_names:
+                if hasattr(collector, '_name') and collector._name == name:
+                    return collector
+        raise e
+
 # Prometheus metrics
-CHAOS_INJECTIONS = Counter(
-    "astra_chaos_injections_total", "Total chaos experiments injected", ["fault_type"]
+# Use 'type' instead of 'fault_type' to align with astraguard.observability
+CHAOS_INJECTIONS = _safe_create_metric(
+    Counter,
+    "astra_chaos_injections_total",
+    "Total chaos experiments injected",
+    labelnames=["type", "status"]
 )
-CHAOS_RECOVERY_TIME = Histogram(
-    "astra_chaos_recovery_seconds",
+# Note: observability.py uses astra_chaos_recovery_time_seconds, here used astra_chaos_recovery_seconds
+# To avoid conflict if both are used, we should match name or ensure different names.
+# observability.py uses 'astra_chaos_recovery_time_seconds'.
+# We will use the same name and label if we want to share, or different if we want distinct.
+# Given the previous conflict error on 'astra_chaos_injections_total', we must align that one.
+# For recovery time, let's use the one from observability to be safe: 'astra_chaos_recovery_time_seconds'
+CHAOS_RECOVERY_TIME = _safe_create_metric(
+    Histogram,
+    "astra_chaos_recovery_time_seconds",
     "Time to recover from chaos injection",
-    ["fault_type"],
+    labelnames=["type"],
 )
-CHAOS_ACTIVE = Gauge(
-    "astra_chaos_active", "Currently active chaos injection", ["fault_type"]
+CHAOS_ACTIVE = _safe_create_metric(
+    Gauge,
+    "astra_chaos_active",
+    "Currently active chaos injection",
+    labelnames=["type"]
 )
 
 
@@ -112,8 +152,9 @@ class ChaosEngine:
         # Ensure session is available before proceeding
         await self._ensure_session()
 
-        CHAOS_INJECTIONS.labels(fault_type=fault_type).inc()
-        CHAOS_ACTIVE.labels(fault_type=fault_type).set(1)
+        # Update to match new label 'type' and added 'status'
+        CHAOS_INJECTIONS.labels(type=fault_type, status="injected").inc()
+        CHAOS_ACTIVE.labels(type=fault_type).set(1)
         self.chaos_active = True
 
         try:
@@ -127,7 +168,7 @@ class ChaosEngine:
                 logger.error(f"Unknown fault type: {fault_type}")
                 return False
         finally:
-            CHAOS_ACTIVE.labels(fault_type=fault_type).set(0)
+            CHAOS_ACTIVE.labels(type=fault_type).set(0)
             self.chaos_active = False
 
     async def _inject_model_loader_failure(self, duration_seconds: int) -> bool:
@@ -159,7 +200,7 @@ class ChaosEngine:
                         ]:
                             recovery_time = time.time() - start_time
                             CHAOS_RECOVERY_TIME.labels(
-                                fault_type="model_loader"
+                                type="model_loader"
                             ).observe(recovery_time)
                             logger.info(
                                 f"Model loader recovered in {recovery_time:.2f}s"

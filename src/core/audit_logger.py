@@ -18,12 +18,15 @@ import json
 import hashlib
 import logging
 import logging.handlers
+import queue
+import atexit
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 from enum import Enum
 from pathlib import Path
 import structlog
 from astraguard.logging_config import get_logger
+from core.io_utils import measure_io
 
 
 class AuditEventType(str, Enum):
@@ -103,16 +106,43 @@ class AuditLogger:
             backupCount=backup_count
         )
         self.audit_handler.setFormatter(logging.Formatter('%(message)s'))
+        # Filter to only accept records for 'astra_audit'
+        self.audit_handler.addFilter(logging.Filter('astra_audit'))
 
         # Setup integrity log handler (append-only)
         self.integrity_handler = logging.FileHandler(self.integrity_log_path)
         self.integrity_handler.setFormatter(logging.Formatter('%(message)s'))
+        # Filter to only accept records for 'audit_integrity'
+        self.integrity_handler.addFilter(logging.Filter('audit_integrity'))
 
-        # Create audit logger
+        # Setup Queue for non-blocking I/O
+        self.log_queue = queue.Queue(-1)
+
+        # Setup QueueListener
+        self.listener = logging.handlers.QueueListener(
+            self.log_queue,
+            self.audit_handler,
+            self.integrity_handler,
+            respect_handler_level=True
+        )
+        self.listener.start()
+        atexit.register(self.listener.stop)
+
+        # Setup QueueHandler
+        self.queue_handler = logging.handlers.QueueHandler(self.log_queue)
+
+        # Create audit logger (writes to queue)
         self.audit_logger = logging.getLogger('astra_audit')
         self.audit_logger.setLevel(logging.INFO)
-        self.audit_logger.addHandler(self.audit_handler)
-        self.audit_logger.addHandler(self.integrity_handler)
+        self.audit_logger.addHandler(self.queue_handler)
+        # Ensure it doesn't propagate to root to avoid double logging if root has handlers
+        self.audit_logger.propagate = False
+
+        # Create integrity logger (writes to queue)
+        self.integrity_logger = logging.getLogger('audit_integrity')
+        self.integrity_logger.setLevel(logging.INFO)
+        self.integrity_logger.addHandler(self.queue_handler)
+        self.integrity_logger.propagate = False
 
         # Structlog logger for integration
         self.struct_logger = get_logger('audit')
@@ -219,6 +249,7 @@ class AuditLogger:
 
         return entry
 
+    @measure_io(operation_type="log_write", storage_type="audit_queue")
     def log_event(
         self,
         event_type: AuditEventType,
@@ -261,21 +292,11 @@ class AuditLogger:
         # Create integrity entry
         integrity_entry = f"{current_hash}|{entry_json}"
 
-        # Log to audit file (JSON only)
+        # Log to audit file (JSON only) - Non-blocking via Queue
         self.audit_logger.info(entry_json)
 
-        # Log to integrity file (hash + JSON)
-        self.integrity_handler.emit(
-            logging.LogRecord(
-                name='audit_integrity',
-                level=logging.INFO,
-                pathname='',
-                lineno=0,
-                msg=integrity_entry,
-                args=(),
-                exc_info=None
-            )
-        )
+        # Log to integrity file (hash + JSON) - Non-blocking via Queue
+        self.integrity_logger.info(integrity_entry)
 
         # Update last hash for chain
         self._last_hash = current_hash

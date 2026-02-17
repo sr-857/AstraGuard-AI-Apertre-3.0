@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Dict, Any, Optional
 from datetime import datetime
-import logging
+import structlog
 import threading
 
 # Import error handling
@@ -11,7 +11,7 @@ from core.metrics import MISSION_PHASE
 # Import input validation
 from core.input_validation import MissionPhaseValidator, ValidationError, TelemetryData
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class SystemState(Enum):
@@ -94,13 +94,12 @@ class StateMachine:
             health_monitor.mark_healthy("state_machine")
         except Exception as e:
             logger.warning(
-                f"Failed to register state_machine with health monitor: {e}",
-                extra={
-                    "component": "state_machine",
-                    "error_type": type(e).__name__,
-                    "current_state": self.current_state.value,
-                    "current_phase": self.current_phase.value,
-                },
+                "health_monitor_registration_failed",
+                error=str(e),
+                component="state_machine",
+                error_type=type(e).__name__,
+                current_state=self.current_state.value,
+                current_phase=self.current_phase.value,
                 exc_info=True,
             )
 
@@ -206,7 +205,10 @@ class StateMachine:
                 pass  # Don't fail transition if metrics fail
 
             logger.info(
-                f"Mission phase transitioned: {previous_phase.value} → {phase.value}"
+                "state_transition",
+                previous_phase=previous_phase.value,
+                new_phase=phase.value,
+                message=f"Mission phase transitioned: {previous_phase.value} -> {phase.value}"
             )
             health_monitor.mark_healthy(
                 "state_machine",
@@ -226,15 +228,13 @@ class StateMachine:
             # Extract phase value safely
             phase_value = phase.value if isinstance(phase, MissionPhase) else str(phase)
             logger.error(
-                f"State transition error: {e.message}",
-                extra={
-                    "component": "state_machine",
-                    "error_type": "transition_invalid",
-                    "previous_phase": previous_phase.value,
-                    "requested_phase": phase_value,
-                    "current_state": self.current_state.value,
-                },
-                exc_info=False,
+                "state_transition_failed",
+                error=e.message,
+                component="state_machine",
+                error_type="transition_invalid",
+                previous_phase=previous_phase.value,
+                requested_phase=phase_value,
+                current_state=self.current_state.value,
             )
             health_monitor.mark_degraded(
                 "state_machine",
@@ -246,14 +246,13 @@ class StateMachine:
             # Extract phase value safely
             phase_value = phase.value if isinstance(phase, MissionPhase) else str(phase)
             logger.error(
-                f"Unexpected error in set_phase: {e}",
-                extra={
-                    "component": "state_machine",
-                    "error_type": type(e).__name__,
-                    "previous_phase": previous_phase.value,
-                    "requested_phase": phase_value,
-                    "current_state": self.current_state.value,
-                },
+                "state_transition_error",
+                error=str(e),
+                component="state_machine",
+                error_type=type(e).__name__,
+                previous_phase=previous_phase.value,
+                requested_phase=phase_value,
+                current_state=self.current_state.value,
                 exc_info=True,
             )
             health_monitor.mark_degraded(
@@ -273,7 +272,7 @@ class StateMachine:
         try:
             TelemetryData.validate(telemetry)
         except ValidationError as e:
-            logger.warning(f"Telemetry validation failed in process_fault: {e}")
+            logger.warning("telemetry_validation_failed", error=str(e))
             # Continue processing but log the issue
 
         previous_state = self.current_state.value
@@ -347,7 +346,11 @@ class StateMachine:
         except Exception:
             pass
 
-        logger.warning(f"Forced transition to SAFE_MODE from {previous_phase.value}")
+        logger.warning(
+            "forced_safe_mode_transition",
+            previous_phase=previous_phase.value,
+            new_phase=MissionPhase.SAFE_MODE.value
+        )
 
         return {
             "success": True,

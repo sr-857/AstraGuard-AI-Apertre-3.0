@@ -3,6 +3,7 @@
 import pytest
 import tempfile
 import os
+from typing import Optional
 from datetime import datetime, timedelta
 from src.compliance.data_retention import DataRetentionPolicy, DataType
 from src.compliance.data_deletion import DataDeletion

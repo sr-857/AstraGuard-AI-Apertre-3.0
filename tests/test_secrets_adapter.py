@@ -18,7 +18,7 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock, PropertyMock
 
 # Import modules under test
-from security.secrets_adapter import (
+from src.security.secrets_adapter import (
     SecretsAdapter,
     DevFileAdapter,
     VaultAdapter,
@@ -111,8 +111,8 @@ class TestDevFileAdapter:
 class TestVaultAdapter:
     """Tests for VaultAdapter (mocked)."""
     
-    @patch("security.secrets_adapter.HAS_VAULT", True)
-    @patch("security.secrets_adapter.hvac")
+    @patch("src.security.secrets_adapter.HAS_VAULT", True)
+    @patch("src.security.secrets_adapter.hvac")
     def test_vault_adapter_init(self, mock_hvac):
         """Test VaultAdapter initialization."""
         mock_client = MagicMock()
@@ -127,8 +127,8 @@ class TestVaultAdapter:
         mock_hvac.Client.assert_called_once()
         assert adapter is not None
     
-    @patch("security.secrets_adapter.HAS_VAULT", True)
-    @patch("security.secrets_adapter.hvac")
+    @patch("src.security.secrets_adapter.HAS_VAULT", True)
+    @patch("src.security.secrets_adapter.hvac")
     def test_vault_adapter_get_secret(self, mock_hvac):
         """Test getting a secret from Vault."""
         mock_client = MagicMock()
@@ -146,8 +146,8 @@ class TestVaultAdapter:
         result = adapter.get_secret("my_secret")
         assert result == "vault_secret"
     
-    @patch("security.secrets_adapter.HAS_VAULT", True)
-    @patch("security.secrets_adapter.hvac")
+    @patch("src.security.secrets_adapter.HAS_VAULT", True)
+    @patch("src.security.secrets_adapter.hvac")
     def test_vault_adapter_caching(self, mock_hvac):
         """Test that Vault adapter caches secrets."""
         mock_client = MagicMock()
@@ -172,7 +172,7 @@ class TestVaultAdapter:
         # Should only call Vault once due to caching
         assert mock_client.secrets.kv.v2.read_secret_version.call_count == 1
     
-    @patch("security.secrets_adapter.HAS_VAULT", False)
+    @patch("src.security.secrets_adapter.HAS_VAULT", False)
     def test_vault_adapter_raises_without_hvac(self):
         """Test that VaultAdapter raises ImportError without hvac."""
         with pytest.raises(ImportError, match="hvac package required"):
@@ -182,8 +182,8 @@ class TestVaultAdapter:
 class TestAWSSecretsAdapter:
     """Tests for AWSSecretsAdapter (mocked)."""
     
-    @patch("security.secrets_adapter.HAS_AWS", True)
-    @patch("security.secrets_adapter.boto3")
+    @patch("src.security.secrets_adapter.HAS_AWS", True)
+    @patch("src.security.secrets_adapter.boto3")
     def test_aws_adapter_init(self, mock_boto3):
         """Test AWSSecretsAdapter initialization."""
         mock_session = MagicMock()
@@ -194,8 +194,8 @@ class TestAWSSecretsAdapter:
         mock_boto3.Session.assert_called_once()
         assert adapter is not None
     
-    @patch("security.secrets_adapter.HAS_AWS", True)
-    @patch("security.secrets_adapter.boto3")
+    @patch("src.security.secrets_adapter.HAS_AWS", True)
+    @patch("src.security.secrets_adapter.boto3")
     def test_aws_adapter_get_secret(self, mock_boto3):
         """Test getting a secret from AWS Secrets Manager."""
         mock_client = MagicMock()
@@ -211,7 +211,7 @@ class TestAWSSecretsAdapter:
         
         assert result == "aws_secret"
     
-    @patch("security.secrets_adapter.HAS_AWS", False)
+    @patch("src.security.secrets_adapter.HAS_AWS", False)
     def test_aws_adapter_raises_without_boto3(self):
         """Test that AWSSecretsAdapter raises ImportError without boto3."""
         with pytest.raises(ImportError, match="boto3 package required"):
@@ -224,7 +224,7 @@ class TestGetAdapterFactory:
     def test_get_adapter_default_returns_dev(self):
         """Test that default adapter is DevFileAdapter."""
         # Clear any cached adapter
-        import security.secrets_adapter as sa
+        import src.security.secrets_adapter as sa
         sa._global_adapter = None
         
         with patch.dict(os.environ, {}, clear=False):
@@ -234,7 +234,7 @@ class TestGetAdapterFactory:
     
     def test_get_adapter_respects_env_var(self):
         """Test that SECRETS_ADAPTER env var is respected."""
-        import security.secrets_adapter as sa
+        import src.security.secrets_adapter as sa
         sa._global_adapter = None
         
         with patch.dict(os.environ, {"SECRETS_ADAPTER": "dev"}):

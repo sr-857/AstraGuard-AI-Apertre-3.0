@@ -154,4 +154,5 @@ markers = [
     "benchmark: mark test as a benchmark",
     "chaos: mark test for chaos engineering",
     "slow: mark test as slow-running (requires extended timeout)",
+    "smoke: mark test as a smoke test",
 ]
