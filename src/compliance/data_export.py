@@ -7,7 +7,8 @@ Exports user data in multiple formats.
 import json
 import csv
 import logging
-from typing import Dict, List
+from datetime import datetime
+from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 

@@ -261,7 +261,7 @@ class AsyncConnectionPool:
                 try:
                     await pooled_conn.connection.close()
                 except Exception:
-                    pass
+                    pass  # nosec B110
                 
                 async with self._lock:
                     self._total_connections -= 1
@@ -350,7 +350,7 @@ class AsyncConnectionPool:
                 try:
                     await pooled_conn.connection.close()
                 except Exception:
-                    pass
+                    pass  # nosec B110
                 
                 async with self._lock:
                     self._total_connections -= 1
@@ -360,7 +360,7 @@ class AsyncConnectionPool:
             try:
                 await pooled_conn.connection.close()
             except Exception:
-                pass
+                pass  # nosec B110
             
             async with self._lock:
                 self._total_connections -= 1
@@ -397,7 +397,7 @@ class AsyncConnectionPool:
                 try:
                     await pooled_conn.connection.close()
                 except Exception:
-                    pass
+                    pass  # nosec B110
                 
                 async with self._lock:
                     self._total_connections -= 1
@@ -410,7 +410,7 @@ class AsyncConnectionPool:
                     try:
                         await pooled_conn.connection.close()
                     except Exception:
-                        pass
+                        pass  # nosec B110
                     
                     async with self._lock:
                         self._total_connections -= 1

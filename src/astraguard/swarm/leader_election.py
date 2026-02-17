@@ -232,7 +232,7 @@ class LeaderElection:
             return
         if self.election_start_time:
             election_duration = (datetime.now() - self.election_start_time).total_seconds() * 1000
-            if election_duration > randint(self.ELECTION_TIMEOUT_MIN_MS, self.ELECTION_TIMEOUT_MAX_MS):
+            if election_duration > randint(self.ELECTION_TIMEOUT_MIN_MS, self.ELECTION_TIMEOUT_MAX_MS):  # nosec B311
                 logger.warning(f"{self.config.agent_id.satellite_serial} election timeout, restarting")
                 self.election_start_time = None
                 self.votes_received = set()

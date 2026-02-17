@@ -289,7 +289,7 @@ services:
     # container_name: astra-redis  <-- REMOVED FOR CONCURRENCY FIX
     hostname: redis
     ports:
-      - "6379:6379"
+      - "6380:6379"
     volumes:
       - redis-data:/data
     networks:

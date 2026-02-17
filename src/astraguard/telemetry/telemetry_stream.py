@@ -13,24 +13,24 @@ def generate_telemetry():
         elapsed = current_time - start_time
         
         # Simulate sine wave voltage with noise
-        voltage = 8.0 + 0.5 * math.sin(elapsed * 0.1) + random.uniform(-0.1, 0.1)
+        voltage = 8.0 + 0.5 * math.sin(elapsed * 0.1) + random.uniform(-0.1, 0.1)  # nosec B311
         
         # Simulate current
-        current = 1.2 + 0.2 * math.cos(elapsed * 0.2) + random.uniform(-0.05, 0.05)
+        current = 1.2 + 0.2 * math.cos(elapsed * 0.2) + random.uniform(-0.05, 0.05)  # nosec B311
         
         # Simulate temperature rising slowly
-        temperature = 25.0 + 5.0 * math.sin(elapsed * 0.05) + random.uniform(-0.5, 0.5)
+        temperature = 25.0 + 5.0 * math.sin(elapsed * 0.05) + random.uniform(-0.5, 0.5)  # nosec B311
         
         # Simulate gyro
-        gyro = 0.0 + 0.02 * math.sin(elapsed * 0.5) + random.uniform(-0.01, 0.01)
+        gyro = 0.0 + 0.02 * math.sin(elapsed * 0.5) + random.uniform(-0.01, 0.01)  # nosec B311
         
         # Simulate wheel speed
-        wheel_speed = 5000 + 100 * math.sin(elapsed * 0.1) + random.uniform(-50, 50)
+        wheel_speed = 5000 + 100 * math.sin(elapsed * 0.1) + random.uniform(-50, 50)  # nosec B311
         
         # Inject occasional faults
         fault_injected = False
-        if random.random() < 0.01:  # 1% chance of fault
-            fault_type = random.choice(["voltage_drop", "temp_spike", "gyro_drift"])
+        if random.random() < 0.01:  # 1% chance of fault  # nosec B311
+            fault_type = random.choice(["voltage_drop", "temp_spike", "gyro_drift"])  # nosec B311
             if fault_type == "voltage_drop":
                 voltage = 6.5
             elif fault_type == "temp_spike":

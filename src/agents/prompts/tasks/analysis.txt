@@ -1,0 +1,16 @@
+TASK: ANOMALY ANALYSIS
+
+Directive: {directive}
+
+Analyze the following telemetry data and system metrics:
+{telemetry_data}
+
+Identify potential anomalies, classify severity, and recommend mitigation steps.
+Consider historical context from similar anomalies.
+
+Required Output:
+- Analysis of telemetry trends (observation).
+- Root cause hypothesis (reasoning).
+- Key contributing factors (key_factors).
+- Recommended action (action).
+- Confidence score (confidence).

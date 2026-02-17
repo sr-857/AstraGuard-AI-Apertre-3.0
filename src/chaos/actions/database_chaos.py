@@ -219,7 +219,7 @@ async def simulate_db_query():
     delay_ms = _db_chaos_state["query_delay_ms"]
     if delay_ms > 0:
         # Add some randomness to query delay
-        actual_delay = delay_ms + random.randint(-100, 100)
+        actual_delay = delay_ms + random.randint(-100, 100)  # nosec B311
         await asyncio.sleep(max(0, actual_delay) / 1000.0)
 
 
