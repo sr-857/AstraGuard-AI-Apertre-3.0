@@ -1,0 +1,181 @@
+# AstraGuard Encryption Configuration
+# Advanced Data Encryption and Key Management Settings
+
+encryption:
+  # Master key configuration
+  master_key:
+    source: "env"  # env, file, hsm
+    env_var: "MASTER_KEY_SEED"
+    file_path: ".keys/master.key"
+    rotate_on_startup: false
+  
+  # Encryption engine settings
+  engine:
+    algorithm: "AES-256-GCM"
+    use_hardware_acceleration: true
+    dek_lifetime_minutes: 60
+    cache_size: 1000
+    max_encryption_time_ms: 5.0
+  
+  # Key hierarchy configuration
+  key_hierarchy:
+    storage_path: ".keys"
+    enable_hsm: false
+    kek_lifetime_days: 90
+    dek_lifetime_days: 1
+  
+  # HSM configuration
+  hsm:
+    provider: "mock"  # mock, pkcs11, aws_cloudhsm, azure_dedicated_hsm, google_cloud_hsm
+    pkcs11_lib_path: "/usr/lib/pkcs11/libCryptoki2_64.so"
+    slot: 0
+    pin: "${HSM_PIN}"
+    
+    # AWS CloudHSM specific
+    aws_cloudhsm:
+      cluster_id: "${AWS_CLOUDHSM_CLUSTER_ID}"
+      region: "us-east-1"
+    
+    # Azure Dedicated HSM specific
+    azure_dedicated_hsm:
+      key_vault_url: "${AZURE_KEY_VAULT_URL}"
+      tenant_id: "${AZURE_TENANT_ID}"
+    
+    # Google Cloud HSM specific
+    google_cloud_hsm:
+      project_id: "${GCP_PROJECT_ID}"
+      location: "us-central1"
+      key_ring: "astraguard-keyring"
+
+# Key rotation settings
+key_rotation:
+  enabled: true
+  check_interval_minutes: 60
+  
+  policies:
+    kek:
+      rotation_period_days: 90
+      grace_period_days: 7
+      auto_rotate: true
+      notify_before_days: 14
+      retain_old_keys_days: 30
+    
+    dek:
+      rotation_period_days: 1
+      grace_period_days: 1
+      max_usage_count: 100000
+      auto_rotate: true
+      retain_old_keys_days: 7
+
+# Key recovery settings
+key_recovery:
+  enabled: true
+  default_threshold: 3
+  default_total_shares: 5
+  share_lifetime_days: 365
+  storage_path: ".key_recovery"
+
+# Compliance settings
+compliance:
+  fips_enabled: false
+  fips_level: 2
+  audit_retention_days: 365
+  standards:
+    - "fips_140_2"
+    - "soc2"
+  
+  audit:
+    storage_path: "logs/audit"
+    max_events_per_file: 10000
+    tamper_detection: true
+
+# Field-level encryption settings
+field_encryption:
+  enabled: true
+  auto_detect_sensitive: true
+  
+  sensitive_patterns:
+    - "ssn"
+    - "credit_card"
+    - "email"
+    - "phone"
+    - "password"
+    - "api_key"
+    - "token"
+    - "secret"
+    - "pii"
+  
+  default_mode: "randomized"  # randomized, deterministic, format_preserving
+  
+  fields:
+    - name: "ssn"
+      mode: "deterministic"
+      searchable: true
+    - name: "credit_card"
+      mode: "deterministic"
+      searchable: true
+    - name: "email"
+      mode: "deterministic"
+      searchable: true
+    - name: "password"
+      mode: "randomized"
+      searchable: false
+
+# Zero-knowledge settings
+zero_knowledge:
+  enabled: true
+  client_side_encryption: true
+  server_blind_processing: true
+  
+  key_derivation:
+    algorithm: "PBKDF2"
+    iterations: 100000
+    salt_length: 16
+
+# Middleware settings
+middleware:
+  enabled: true
+  encrypt_request_body: false
+  encrypt_response_body: true
+  field_level_encryption: true
+  
+  exclude_paths:
+    - "/health"
+    - "/metrics"
+    - "/docs"
+    - "/openapi.json"
+    - "/redoc"
+
+# Performance settings
+performance:
+  target_latency_ms: 5.0
+  enable_connection_pooling: true
+  cache_deks: true
+  parallel_operations: true
+  
+# Security policies
+policies:
+  # Minimum key sizes
+  min_aes_key_size: 256
+  min_rsa_key_size: 2048
+  min_ec_curve: "P-256"
+  
+  # Allowed algorithms
+  allowed_algorithms:
+    - "AES-256-GCM"
+    - "AES-192-GCM"
+    - "AES-128-GCM"
+    - "RSA-2048"
+    - "RSA-3072"
+    - "RSA-4096"
+    - "ECDSA-P256"
+    - "ECDSA-P384"
+  
+  # Blocked algorithms (always rejected)
+  blocked_algorithms:
+    - "DES"
+    - "3DES"
+    - "RC4"
+    - "MD5"
+    - "SHA-1"
+    - "RSA-1024"

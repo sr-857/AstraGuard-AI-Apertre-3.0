@@ -7,9 +7,10 @@ Uses core authentication logic for API key management and RBAC.
 
 import os
 import hashlib
-import uuid
-from datetime import datetime
-from typing import Dict, List, Optional, Set, Callable, Awaitable
+import re
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Set, Callable, Awaitable, Tuple
+from functools import lru_cache
 from fastapi import HTTPException, status, Request, Depends
 from fastapi.security import APIKeyHeader
 import logging
@@ -45,14 +46,15 @@ def _mask_api_key(api_key: str) -> str:
 # Global API key manager instance
 _api_key_manager: Optional[APIKeyManager] = None
 
+# API key validation cache (TTL-based)
+_validation_cache: Dict[str, Tuple[APIKey, datetime]] = {}
+_CACHE_TTL_SECONDS = 300  # 5 minutes
 
+@lru_cache(maxsize=1)
 def get_api_key_manager() -> APIKeyManager:
-    """Get the global API key manager instance."""
-    global _api_key_manager
-    if _api_key_manager is None:
-        _api_key_manager = APIKeyManager()
-        logger.info("API key manager initialized")
-    return _api_key_manager
+    """Get the global API key manager instance (cached)."""
+    return APIKeyManager()
+
 
 
 # FastAPI security scheme
@@ -64,10 +66,12 @@ async def get_api_key(
     api_key: Optional[str] = Depends(api_key_header)
 ) -> APIKey:
     """
-    FastAPI dependency for validating API keys.
+    FastAPI dependency for validating API keys with TTL-based caching.
 
     Retrieves the 'X-API-Key' header, validates it against the active key store,
     checks for expiration and rate limits, and returns the key object if valid.
+    
+    Uses a 5-minute TTL cache to avoid redundant validation for repeated requests.
 
     Args:
         request (Request): The incoming FastAPI request.
@@ -116,6 +120,24 @@ async def get_api_key(
     api_key = api_key.strip()
     key_prefix = api_key[:8] if len(api_key) >= 8 else api_key[:4]
 
+    # Check cache first
+    if api_key in _validation_cache:
+        cached_key, cached_time = _validation_cache[api_key]
+        if datetime.now() - cached_time < timedelta(seconds=_CACHE_TTL_SECONDS):
+            # Cache hit - still valid, only check rate limit
+            key_manager = get_api_key_manager()
+            try:
+                key_manager.check_rate_limit(api_key)
+                return cached_key
+            except ValueError as e:
+                # Rate limit exceeded - remove from cache and raise
+                _validation_cache.pop(api_key, None)
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail=str(e)
+                )
+
+    # Cache miss or expired - perform full validation
     key_manager = get_api_key_manager()
     masked_key = _mask_api_key(api_key)
 
@@ -146,35 +168,23 @@ async def get_api_key(
         # Check rate limit
         key_manager.check_rate_limit(api_key)
 
-        # Log successful authentication
-        logger.info(
-            "Authentication successful",
-            extra={
-                "request_id": request_id,
-                "client_ip": client_ip,
-                "path": request_path,
-                "key_name": key.name,
-                "permissions": list(key.permissions),
-                "masked_key": masked_key
-            }
-        )
+        # Cache the validated key
+        _validation_cache[api_key] = (key, datetime.now())
+
         return key
         
     except ValueError as e:
-        # Log authentication failures with debugging context
-        # Pre-calculate values for logging (micro-optimization: ~150-300ns saved)
-        api_key_prefix = api_key[:8] + "..." if len(api_key) > 8 else api_key
-        client_ip = request.client.host if request.client else "unknown"
-        
-        logger.warning(
-            "Authentication failed: Key validation error",
-            extra={
-                "api_key_prefix": api_key_prefix,
-                "client_ip": client_ip,
-                "endpoint": request.url.path
-            }
-        )
-        
+        # Log authentication failures with debugging context (lazy evaluation)
+        if logger.isEnabledFor(logging.WARNING):
+            logger.warning(
+                "Authentication failed: %s",
+                e,
+                extra={
+                    "api_key_prefix": api_key[:8] + "..." if len(api_key) > 8 else api_key,
+                    "client_ip": request.client.host if request.client else "unknown",
+                    "endpoint": request.url.path
+                }
+            )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(e)
@@ -237,77 +247,64 @@ def require_permission(permission: str) -> Callable[[APIKey], Awaitable[APIKey]]
     return permission_checker
 
 
+# Pre-compiled regex for efficient API key pair validation
+_KEY_PAIR_PATTERN = re.compile(r'^\s*([^:]+?)\s*:\s*(.+?)\s*$')
+
 # Initialize API keys from environment variable (optional)
-def initialize_from_env():
-    """Initialize API keys from environment variables."""
-    logger.info("Attempting to initialize API keys from environment")
-    
+def initialize_from_env() -> None:
+    """Initialize API keys from environment variables with optimized parsing."""
     api_keys_env: Optional[str] = get_secret("api_keys")
     
-    if not api_keys_env:
-        logger.info("No API keys found in environment, skipping initialization")
-        return
-    
-    try:
-        # Expected format: name1:key1,name2:key2
-        key_manager = get_api_key_manager()
-        keys_processed = 0
-        keys_skipped = 0
-        
-        for key_pair in api_keys_env.split(","):
-            if ":" not in key_pair:
-                logger.warning(
-                    "Invalid API key format in environment",
-                    extra={"reason": "missing_colon_separator"}
-                )
-                keys_skipped += 1
-                continue
-                
-            name_part, key_value_part = key_pair.split(":", 1)
-            name = name_part.strip()
-            key_value = key_value_part.strip()
+    if api_keys_env:
+        try:
+            # Expected format: name1:key1,name2:key2
+            key_manager = get_api_key_manager()
+            initialized_count = 0
             
-            if not name or not key_value:
-                logger.warning(
-                    "Invalid API key format: empty name or value",
-                    extra={"has_name": bool(name), "has_value": bool(key_value)}
-                )
-                keys_skipped += 1
-                continue
+            # Pre-filter empty entries for efficiency
+            key_pairs = [kp.strip() for kp in api_keys_env.split(",") if kp.strip()]
+            
+            # Batch process all key pairs
+            new_keys = []
+            for key_pair in key_pairs:
+                # Use regex for validation (more efficient than multiple string ops)
+                match = _KEY_PAIR_PATTERN.match(key_pair)
+                if not match:
+                    logger.warning(f"Skipping malformed API key pair: '{key_pair[:20]}...'")
+                    continue
+                
+                name, key_value = match.groups()
+                
+                # Skip entries with empty name or value
+                if not name or not key_value:
+                    logger.warning("Skipping API key pair with empty name or value")
+                    continue
 
-            # Check if key already exists
-            if key_value in key_manager.api_keys:
-                logger.debug(
-                    "API key already exists, skipping",
-                    extra={
-                        "key_name": name,
-                        "masked_key": _mask_api_key(key_value)
-                    }
-                )
-                keys_skipped += 1
-                continue
-                
-            # Create new API key
-            key = APIKey(
-                key=key_value,
-                name=name,
-                created_at=datetime.now(),
-                permissions={"read", "write"},
-                metadata={"source": "environment"}
-            )
-            key_manager.api_keys[key_value] = key
-            key_hash = hashlib.sha256(key_value.encode()).hexdigest()
-            key_manager.key_hashes[key_hash] = key_value
+                # Check if key already exists
+                if key_value not in key_manager.api_keys:
+                    key = APIKey(
+                        key=key_value,
+                        name=name,
+                        created_at=datetime.now(),
+                        permissions={"read", "write"},
+                        metadata={"source": "environment"}
+                    )
+                    new_keys.append((key_value, key))
+                    initialized_count += 1
             
-            logger.info(
-                "API key loaded from environment",
-                extra={
-                    "key_name": name,
-                    "masked_key": _mask_api_key(key_value),
-                    "permissions": list(key.permissions)
-                }
-            )
-            keys_processed += 1
+            # Batch add all new keys
+            for key_value, key in new_keys:
+                key_manager.api_keys[key_value] = key
+                key_hash = hashlib.sha256(key_value.encode()).hexdigest()
+                key_manager.key_hashes[key_hash] = key_value
+
+            # Save once after all keys are added
+            if new_keys:
+                key_manager._save_keys()  # type: ignore[attr-defined]
+                logger.info(
+                    f"Initialized {initialized_count} API keys from environment",
+                    extra={"initialized_count": initialized_count}
+                )
 
         key_manager._save_keys()  # type: ignore[attr-defined]
         

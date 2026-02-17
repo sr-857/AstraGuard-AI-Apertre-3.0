@@ -1,0 +1,49 @@
+name: Lint & Code Quality
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - '**.py'
+      - '.github/workflows/lint.yml'
+      - 'pyproject.toml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - '**.py'
+      - '.github/workflows/lint.yml'
+      - 'pyproject.toml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint & Code Quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff black isort mypy types-redis types-PyYAML types-requests
+
+      - name: Run Ruff (Linting)
+        run: ruff check .
+
+      - name: Run Black (Formatting)
+        run: black --check .
+
+      - name: Run Isort (Import Sorting)
+        run: isort --check-only .
+
+      - name: Run MyPy (Type Checking)
+        run: mypy .
