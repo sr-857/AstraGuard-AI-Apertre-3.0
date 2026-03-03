@@ -11,7 +11,7 @@ from typing import List, Optional, Any, Union, Dict, TYPE_CHECKING
 from datetime import datetime, timedelta
 from collections import deque
 from asyncio import Lock
-from fastapi import FastAPI, HTTPException, status, Depends
+from fastapi import FastAPI, HTTPException, status, Depends, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.responses import JSONResponse
@@ -85,10 +85,12 @@ if TYPE_CHECKING:
     from security_engine.predictive_maintenance import PredictiveMaintenanceEngine
 from fastapi.responses import Response
 from core.metrics import get_metrics_text, get_metrics_content_type
+from core.restart import get_restart_manager
 from core.rate_limiter import RateLimiter, RateLimitMiddleware, get_rate_limit_config
 from backend.redis_client import RedisClient
 import numpy as np
 from numpy.typing import NDArray
+from core.restart import get_restart_manager
 from astraguard.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -245,14 +247,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan manager."""
     global redis_client, telemetry_limiter, api_limiter
     
-    # Initialize database connection pool
-    try:
-        from src.db.database import init_pool
-        await init_pool()
-        print("[OK] Database connection pool initialized")
-    except Exception as e:
-        print(f"[WARNING] Connection pool initialization failed: {e}")
-        print("Falling back to direct database connections")
+    from core.shutdown import get_shutdown_manager
+    shutdown_manager = get_shutdown_manager()
 
     # Security: Check credentials at startup
     _check_credential_security()
@@ -320,34 +316,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     yield
 
-<<<<<<< HEAD
-    # Shutdown APM
-    if APM_AVAILABLE:
-        try:
-            apm_manager = get_apm_manager()
-            apm_manager.shutdown()
-        except Exception as e:
-            logger.warning(f"APM shutdown error: {e}")
-
-    # Cleanup
-    if memory_store:
-        try:
-            await memory_store.save()
-        except Exception as e:
-            logger.error(f"Memory store save failed: {e}")
-
-    if redis_client:
-        try:
-            await redis_client.close()
-        except Exception as e:
-            logger.error(f"Redis client close failed: {e}")
-=======
     # Cleanup
     if memory_store:
         await memory_store.save()
     if redis_client:
         await redis_client.close()
->>>>>>> 8070d714c1cb092e10e1ad177c9d08a5d56721f4
     
     # Close database connection pool
     try:
@@ -356,6 +329,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         print("[OK] Database connection pool closed")
     except Exception as e:
         print(f"[WARNING] Connection pool cleanup failed: {e}")
+ via manager
+    await shutdown_manager.execute_cleanup()
+
 
 
 # Initialize FastAPI app
@@ -861,10 +837,32 @@ async def metrics(username: str = Depends(get_current_username)) -> Response:
     )
 
 
-@app.get("/api/v1/system/diagnostics", status_code=status.HTTP_200_OK)
-async def get_system_diagnostics(
+@app.post("/api/v1/system/restart", status_code=status.HTTP_202_ACCEPTED)
+async def restart_system(
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(require_admin)
 ):
+    """
+    Trigger a system restart.
+    
+    Requires ADMIN privileges.
+    Returns 202 Accepted immediately, then performs restart in background.
+    """
+    if OBSERVABILITY_ENABLED:
+        logger.warning(f"System restart initiated by user: {current_user.username}")
+        
+    restart_manager = get_restart_manager()
+    background_tasks.add_task(restart_manager.trigger_restart)
+    
+    return {
+        "status": "restarting",
+        "timestamp": datetime.now(),
+        "message": "System restart initiated"
+    }
+
+
+@app.post("/api/v1/telemetry", response_model=AnomalyResponse, status_code=status.HTTP_200_OK)
+async def submit_telemetry(telemetry: TelemetryInput, current_user: User = Depends(require_operator)) -> AnomalyResponse:
     """
     Get detailed system diagnostics.
     

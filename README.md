@@ -23,7 +23,8 @@
     <a href="docs/TECHNICAL.md"><strong>📚 Documentation</strong></a> •
     <a href="docs/TECHNICAL_REPORT.md"><strong>📄 Technical Report</strong></a> •
     <a href="src/research/"><strong>🧪 Research Lab</strong></a> •
-    <a href="docs/changelogs/CHANGES.md"><strong>📝 Changelog</strong></a>
+    <a href="docs/changelogs/CHANGES.md"><strong>📝 Changelog</strong></a> •
+    <a href="docs/COMMUNITY_DISCUSSION_GUIDELINES.md"><strong>💬 Community Guidelines</strong></a>
   </p>
 
   <p align="center">

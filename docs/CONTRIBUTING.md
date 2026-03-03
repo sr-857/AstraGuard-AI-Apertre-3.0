@@ -159,6 +159,19 @@ To ensure your contribution is eligible for Apertre-3.0 scoring, your pull reque
 
 - [Apertre-3.0 Official Website](https://code.elitecoders.xyz/)
 - [AstraGuard-AI Issues](https://github.com/sr-857/AstraGuard-AI/issues)
+- [AstraGuard-AI Discussions](https://github.com/sr-857/AstraGuard-AI/discussions)
+- [Community Discussion Guidelines](./COMMUNITY_DISCUSSION_GUIDELINES.md)
+- [Code of Conduct](./CODE_OF_CONDUCT.md)
+- [PR Review Guidelines](./PR_REVIEW_GUIDELINES.md)
 - [Project Documentation](../docs/)
+
+### Questions About Contributing?
+
+**Before you contribute, check out:**
+- 📖 [Community Discussion Guidelines](./COMMUNITY_DISCUSSION_GUIDELINES.md) — How to ask questions and participate in the community
+- 🤝 [Code of Conduct](./CODE_OF_CONDUCT.md) — Our community values
+- ✅ [PR Review Guidelines](./PR_REVIEW_GUIDELINES.md) — What reviewers look for
+
+Not sure where to start? Post your questions in [GitHub Discussions](https://github.com/sr-857/AstraGuard-AI/discussions) in the **Questions** category!
 
 Good luck with your contributions! We're excited to see what you build. 🚀

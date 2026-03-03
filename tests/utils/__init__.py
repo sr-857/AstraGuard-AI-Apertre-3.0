@@ -6,7 +6,7 @@ Reusable testing utilities, fixtures, and mock servers for AstraGuard tests.
 
 from .mock_server import MockAPIServer, MockHTTPServer
 from .fixtures import (
-    create_mock_api_client,
+    mock_api_client,
     mock_telemetry_data,
     mock_auth_context,
     mock_health_monitor,
@@ -20,7 +20,7 @@ from .generators import (
 __all__ = [
     'MockAPIServer',
     'MockHTTPServer',
-    'create_mock_api_client',
+    'mock_api_client',
     'mock_telemetry_data',
     'mock_auth_context',
     'mock_health_monitor',
