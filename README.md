@@ -21,7 +21,7 @@
 
   <p align="center">
     <a href="docs/TECHNICAL.md"><strong>📚 Documentation</strong></a> •
-    <a href="docs/TECHNICAL_REPORT.md"><strong>📄 Technical Report</strong></a> •
+    <a href="docs/reports/FINAL_SUMMARY.md"><strong>📄 Technical Report</strong></a> •
     <a href="src/research/"><strong>🧪 Research Lab</strong></a> •
     <a href="docs/changelogs/CHANGES.md"><strong>📝 Changelog</strong></a> •
     <a href="docs/COMMUNITY_DISCUSSION_GUIDELINES.md"><strong>💬 Community Guidelines</strong></a>
@@ -40,6 +40,16 @@
 </div>
 
 ---
+
+## 📌 Table of Contents
+
+- [About](#-about-the-project)
+- [Key features](#-key-features)
+- [Getting started](#-getting-started)
+- [Documentation](#-documentation)
+- [Contributing](#-contributing)
+- [Community & support](#-community--support)
+- [License](#-license)
 
 ## 🌟 Hall of Fame
 
@@ -95,180 +105,14 @@ AstraGuard AI is designed for:
 
 ---
 
-## 🏗️ System Architecture
+## 🏗️ System Architecture (overview)
 
-<div align="center">
+AstraGuard AI is built as an event-driven pipeline: telemetry ingestion → anomaly detection/classification → mission-phase policy evaluation → response orchestration → observability/dashboard.
 
-![AstraGuard Architecture](https://img.shields.io/badge/Architecture-Autonomous%20AI-00ff88?style=for-the-badge&logo=satellite&logoColor=white)
-![Status](https://img.shields.io/badge/Status-Production%20Ready-00d4ff?style=for-the-badge)
-![AI Powered](https://img.shields.io/badge/AI-Powered%20Reasoning-ff00ff?style=for-the-badge&logo=brain&logoColor=white)
-
-</div>
-
-### 📊 Architecture Overview
-
-AstraGuard AI implements a sophisticated, event-driven architecture for real-time satellite telemetry monitoring and autonomous anomaly recovery. The system leverages vector embeddings, adaptive memory, and AI-powered reasoning to provide intelligent, self-healing capabilities.
-
-```mermaid
-graph TB
-    subgraph Input["🛰️ Data Ingestion Layer"]
-        A[Telemetry Stream<br/>Pathway Real-time Processing]
-    end
-    
-    subgraph Processing["⚙️ Processing Layer"]
-        B[Embedding Encoder<br/>Vector Transformation]
-        C[Adaptive Memory Store<br/>Context-Aware Storage]
-    end
-    
-    subgraph Intelligence["🧠 Intelligence Layer"]
-        D[Anomaly Reasoning Agent<br/>AI-Powered Analysis]
-    end
-    
-    subgraph Action["⚡ Action Layer"]
-        E[Response Orchestrator<br/>Action Coordinator]
-        F[System Recovery<br/>Self-Healing Mechanisms]
-    end
-    
-    subgraph Monitoring["📊 Observability"]
-        G[Dashboard<br/>Real-time Visualization]
-    end
-    
-    A -->|Live Data Feed| B
-    B -->|Vector Embeddings| C
-    C -->|Historical Context| D
-    B -->|Current Event Data| D
-    D -->|Recovery Decision| E
-    E -->|Automated Actions| F
-    F -->|Performance Feedback| C
-    
-    D -.->|Reasoning Trace| G
-    C -.->|Memory State| G
-    E -.->|Action Status| G
-    
-    style A fill:#10b981,stroke:#059669,stroke-width:4px,color:#fff
-    style B fill:#3b82f6,stroke:#2563eb,stroke-width:3px,color:#fff
-    style C fill:#8b5cf6,stroke:#7c3aed,stroke-width:3px,color:#fff
-    style D fill:#f59e0b,stroke:#d97706,stroke-width:4px,color:#fff
-    style E fill:#ef4444,stroke:#dc2626,stroke-width:3px,color:#fff
-    style F fill:#06b6d4,stroke:#0891b2,stroke-width:3px,color:#fff
-    style G fill:#ec4899,stroke:#db2777,stroke-width:3px,color:#fff
-```
-
-### 🔧 Core Components
-
-#### 🛰️ **Telemetry Stream (Pathway)**
-
-**Purpose**: Real-time data ingestion and stream processing
-
-**Key Features**:
-- Continuous satellite telemetry monitoring
-- High-throughput data streaming (1000+ events/sec)
-- Protocol support: MQTT, WebSocket, gRPC
-- Fault-tolerant message queuing
-
-**Technologies**:
-- Pathway for real-time streaming
-- Apache Kafka for message brokering
-- Protocol Buffers for serialization
-
-```python
-# Example: Telemetry ingestion
-stream = pathway.io.kafka.read(
-    topic="satellite-telemetry",
-    schema=TelemetrySchema,
-    autocommit_duration_ms=1000
-)
-```
-
-#### 📊 **Embedding Encoder**
-
-**Purpose**: Transform raw telemetry into semantic vector representations
-
-**Key Features**:
-- Multi-modal embedding (numerical, categorical, temporal)
-- Dimensionality: 768-dimensional vectors
-- Context-aware encoding with attention mechanisms
-- Real-time transformation (<10ms latency)
-
-**Technologies**:
-- Sentence Transformers
-- Custom trained embeddings on satellite data
-- FAISS for vector indexing
-
-```python
-# Vector transformation
-embeddings = encoder.encode(
-    telemetry_data,
-    normalize=True,
-    batch_size=32
-)
-
-# Index for similarity search
-index.add(embeddings)
-```
-
-### Dual-Engine Design
-
-#### 1. 🛡️ Core Security Engine (The Muscle)
-
-**Technology**: Python 3.9+  
-**Purpose**: Executes concrete security operations
-
-**Capabilities**:
-- **Packet Manipulation**: Uses Scapy for deep packet inspection and crafting
-- **Network Scanning**: Integrates with Nmap for port scanning and service detection
-- **Payload Delivery**: Automated injection and testing of security payloads
-- **Traffic Interception**: Proxy integration with Burp Suite for man-in-the-middle analysis
-- **Protocol Analysis**: Deep inspection of network protocols and data streams
-
-**Design Philosophy**:
-- Stateless and robust
-- Fail-safe by default
-- Does exactly what it's told—no surprises
-- Comprehensive logging for audit trails
-
-#### 2. 🧠 AI Intelligence Layer (The Brain)
-
-**Technology**: Python (LangChain/Ollama) + Node.js  
-**Purpose**: Analyzes context and makes intelligent decisions
-
-**Capabilities**:
-
-**A. Attack Surface Analysis**
-- Reads scan data from the Security Engine
-- Identifies "interesting" targets based on service versions, port configurations, and legacy protocols
-- Prioritizes targets by exploitability
-
-**B. Smart Payload Generation**
-- Crafts payloads specific to the target technology stack
-- Adapts to application framework (Django, Flask, Express, etc.)
-- Considers defense mechanisms detected during reconnaissance
-
-**C. Risk Assessment**
-- Scores vulnerabilities based on real-world exploitability
-- Considers attack complexity, available exploits, and mission objectives
-
-**D. Contextual Decision Making**
-- Uses historical anomaly patterns from Adaptive Memory Store
-- Adjusts responses based on mission phase
-- Learns from previous incidents to improve detection
-
-**Privacy Guarantee**:
-- **100% Local Processing**: All AI models run via Ollama on your machine
-- **No Cloud Calls**: Sensitive scan data never leaves your infrastructure
-- **Offline Capable**: Works without internet connection
-- **Audit Trail**: All AI decisions are logged with reasoning traces
-
-### Data Flow
-
-1. **Telemetry Ingestion**: Satellite telemetry streams into the system via Pathway
-2. **Encoding**: Data is embedded into vector representations for semantic analysis
-3. **Memory Storage**: Historical context is stored in the Adaptive Memory Store
-4. **Anomaly Detection**: AI agent analyzes current data against historical patterns
-5. **Policy Evaluation**: Mission phase policies determine appropriate response
-6. **Action Orchestration**: Response orchestrator executes recovery actions
-7. **Feedback Loop**: Action results feed back into memory for continuous learning
-8. **Dashboard Update**: Real-time updates pushed to monitoring interface
+**Read more:**
+- **Architecture & components**: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+- **Mission-phase policies**: [`docs/MISSION_POLICIES.md`](docs/MISSION_POLICIES.md)
+- **API reference**: [`docs/API_REFERENCE.md`](docs/API_REFERENCE.md)
 
 ---
 
@@ -288,78 +132,73 @@ index.add(embeddings)
 | **🔍 Explainable Anomaly Insights** | Per-anomaly explanations including feature importances, SHAP values, and confidence scores | React + visualization |
 | **📈 Health Monitoring** | Component-level degradation tracking with automated failover | Centralized error handling |
 
-### 🚀 Mission-Phase Aware Fault Response
+---
 
-AstraGuard AI understands that **CubeSat operations have different constraints at different stages**. The same anomaly might trigger different responses depending on the current mission phase.
+## 🚀 Getting Started
 
-#### Phase Definitions & Policies
+Want the fastest path to a working local stack? Follow the startup guide: **[`docs/guides/STARTUP_GUIDE.md`](docs/guides/STARTUP_GUIDE.md)**.
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     MISSION PHASES                          │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  LAUNCH                                                     │
-│  ├─ Duration: T-0 to orbit insertion                        │
-│  ├─ Priority: System survival                               │
-│  ├─ Constraint: Minimal actions to avoid destabilization    │
-│  └─ Response: LOG_ONLY (no active interventions)            │
-│                                                             │
-│  DEPLOYMENT                                                 │
-│  ├─ Duration: Orbit insertion to systems checkout           │
-│  ├─ Priority: Safe deployment of components                 │
-│  ├─ Constraint: Limited responses, avoid disruption         │
-│  └─ Response: STABILIZE (conservative recovery)             │
-│                                                             │
-│  NOMINAL_OPS                                                │
-│  ├─ Duration: Normal operational phase                      │
-│  ├─ Priority: Performance optimization                      │
-│  ├─ Constraint: None (full autonomy)                        │
-│  └─ Response: FULL_RECOVERY (all actions available)         │
-│                                                             │
-│  PAYLOAD_OPS                                                │
-│  ├─ Duration: Active science/mission operations             │
-│  ├─ Priority: Science data collection                       │
-│  ├─ Constraint: Careful with power/attitude changes         │
-│  └─ Response: PAYLOAD_SAFE (mission-aware recovery)         │
-│                                                             │
-│  SAFE_MODE                                                  │
-│  ├─ Duration: Critical failure or emergency                 │
-│  ├─ Priority: System survival only                          │
-│  ├─ Constraint: Minimal subsystem activation                │
-│  └─ Response: SURVIVAL_ONLY (log + essential recovery)      │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
+### Prerequisites
+
+| Software | Minimum Version | Purpose |
+|----------|----------------|---------|
+| **Python** | 3.9 | Core runtime |
+| **Node.js** | 16.0 | Frontend & tooling |
+| **Git** | 2.30 | Version control |
+| **Docker** | 20.0 (optional) | Containerization |
+
+### Installation Steps
+
+#### Step 1: Clone the Repository
+
+```bash
+git clone https://github.com/sr-857/AstraGuard-AI-Apertre-3.0.git
+cd AstraGuard-AI-Apertre-3.0
 ```
 
-### 🛡️ Centralized Error Handling & Graceful Degradation
+#### Step 2: Set Up Python Environment
 
-AstraGuard AI is designed to **never crash**. The system includes a comprehensive error handling layer that ensures resilience under all failure conditions.
+```bash
+# Create virtual environment
+python -m venv venv
 
-#### Design Principles
+# Activate virtual environment
+source venv/bin/activate  # Linux/macOS
+venv\Scripts\activate     # Windows
 
-1. **Fail Gracefully**: Component failures trigger fallback behavior instead of system crashes
-2. **Centralized Handling**: All errors flow through a single error handling pipeline
-3. **Structured Logging**: Errors include full context (component, phase, telemetry state)
-4. **Health Tracking**: Real-time component health exposed to monitoring dashboard
-5. **Smart Fallbacks**: Each component has a defined degraded operating mode
+# Install dependencies
+pip install -r requirements.txt
+```
 
-### 🌐 REST API for External Integration
+#### Step 3: Install Node.js Dependencies
 
-AstraGuard AI provides a **production-ready FastAPI server** for programmatic access and integration with external systems.
+```bash
+# Install frontend dependencies (Next.js app)
+npm run frontend:install
+```
 
-#### API Features
+#### Step 4: Configure Environment
 
-✅ **Input Validation**: Pydantic models with comprehensive data validation  
-✅ **OpenAPI Documentation**: Interactive Swagger UI at `/docs`  
-✅ **CORS Support**: Ready for web frontend integration  
-✅ **Batch Processing**: Submit 1-1000 telemetry points in a single request  
-✅ **Rate Limiting**: Configurable limits to prevent abuse  
-✅ **Authentication**: API key support for production deployments  
-✅ **Versioning**: `/api/v1/` prefix for future compatibility  
-✅ **100% Test Coverage**: 23/23 tests passing  
+```bash
+cp .env.example .env
+# Edit .env with your configuration
+```
+
+#### Step 5: Start the Application
+
+```bash
+# Start API server
+python scripts/entrypoints/run_api.py
+
+# Start frontend (in another terminal)
+npm run frontend
+```
 
 ---
+
+## 🌐 API Documentation
+
+The full API overview and examples live in **[`docs/API_REFERENCE.md`](docs/API_REFERENCE.md)**.
 
 ## 🎯 Project Goals (Apertre-3.0)
 
@@ -430,89 +269,6 @@ AstraGuard-AI/
 
 ---
 
-## 🚀 Getting Started
-
-### Prerequisites
-
-| Software | Minimum Version | Purpose |
-|----------|----------------|---------|
-| **Python** | 3.9 | Core runtime |
-| **Node.js** | 16.0 | Frontend & tooling |
-| **Git** | 2.30 | Version control |
-| **Docker** | 20.0 (optional) | Containerization |
-
-### Installation Steps
-
-#### Step 1: Clone the Repository
-
-```bash
-git clone https://github.com/sr-857/AstraGuard-AI.git
-cd AstraGuard-AI
-```
-
-#### Step 2: Set Up Python Environment
-
-```bash
-# Create virtual environment
-python -m venv venv
-
-# Activate virtual environment
-source venv/bin/activate  # Linux/macOS
-venv\Scripts\activate     # Windows
-
-# Install dependencies
-pip install -r requirements.txt
-```
-
-#### Step 3: Install Node.js Dependencies
-
-```bash
-cd dashboard
-npm install
-cd ..
-```
-
-#### Step 4: Configure Environment
-
-```bash
-cp .env.example .env
-# Edit .env with your configuration
-```
-
-#### Step 5: Start the Application
-
-```bash
-# Start API server
-python cli.py api
-
-# Start dashboard (in another terminal)
-python cli.py dashboard
-```
-
----
-
-## 🌐 API Documentation
-
-### Quick Start Example
-
-```python
-import requests
-
-BASE_URL = "http://localhost:8000/api/v1"
-
-# Submit telemetry
-response = requests.post(f"{BASE_URL}/telemetry", json={
-    "timestamp": "2026-01-04T12:00:00Z",
-    "voltage": 7.2,
-    "temperature": 35.5,
-    "gyro": 0.08,
-    "mission_phase": "NOMINAL_OPS"
-})
-
-result = response.json()
-print(result)
-```
-
 ---
 
 ## 👥 Contributing
@@ -554,7 +310,7 @@ Start with a **Good First Issue** - perfect for newcomers!
 ## 📚 Documentation
 
 ### Core Documentation
-- **[Getting Started](docs/GETTING_STARTED.md)** - Setup and installation guide
+- **[Getting Started](docs/guides/STARTUP_GUIDE.md)** - Setup and installation guide
 - **[Technical Documentation](docs/TECHNICAL.md)** - Architecture and design
 - **[API Reference](docs/API_REFERENCE.md)** - API endpoints and usage
 - **[Architecture](docs/ARCHITECTURE.md)** - System architecture overview
