@@ -1,7 +1,7 @@
 # Issue #516 - Compression Utilities Implementation
 
 **Status:** ✅ Completed  
-**Issue:** [#516 Create compression utilities](https://github.com/...)  
+**Issue:** [#516 Create compression utilities](https://github.com/sr-857/AstraGuard-AI-Apertre-3.0/issues/516)  
 **Category:** backend, utils  
 **Priority:** medium  
 **Assigned to:** Yashaswini-V21
