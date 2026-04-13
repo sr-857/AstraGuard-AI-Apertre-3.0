@@ -14,7 +14,7 @@ authors = [
 ]
 keywords = ["satellite", "security", "anomaly-detection", "ai", "telemetry", "monitoring"]
 dependencies = [
-    "aiosqlite>=0.17.0",
+    "aiosqlite>=0.22.1",
     "aiofiles>=23.0.0",
     "chaostoolkit>=1.15.0",
     "chaostoolkit-lib>=1.40.0",
