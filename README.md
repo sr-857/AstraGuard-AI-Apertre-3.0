@@ -5,7 +5,7 @@
   
   ### AI-Powered Satellite Security & Anomaly Detection System
   
-  **Apertre-3.0 Featured Project**
+  **Apertre 3.0 Featured Project**
 
   [![Apertre-3.0](https://img.shields.io/badge/Apertre-3.0-blueviolet?style=for-the-badge)](https://code.elitecoders.xyz/profile/subhajitroy857+1)
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
