@@ -64,7 +64,7 @@
     "react-hook-form": "^7.71.0",
     "react-native": "^0.84.0",
     "react-resizable-panels": "^4.3.3",
-    "recharts": "^3.6.0",
+    "recharts": "^3.9.2",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.4.1",
     "tailwindcss-animate": "^1.0.7",
