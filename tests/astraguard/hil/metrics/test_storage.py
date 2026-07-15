@@ -52,6 +52,7 @@ def test_metrics_storage_initialization(tmp_path: Path):
     results_dir = tmp_path / "results"
 
     # Initialize the storage class
+    storage = MetricsStorage(run_id=run_id, results_dir=str(results_dir))
 
     # Check if the specific run directory was created
     expected_path = results_dir / run_id
@@ -130,6 +131,7 @@ def test_compare_runs_success(tmp_path: Path):
 
     # Setup Run 2
     run2_id = "run-2"
+    storage2 = MetricsStorage(run_id=run2_id, results_dir=str(results_dir))
 
     summary2_path = results_dir / run2_id / "latency_summary.json"
     summary2_path.write_text(json.dumps({
