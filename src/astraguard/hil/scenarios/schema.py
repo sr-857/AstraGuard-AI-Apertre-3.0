@@ -174,7 +174,32 @@ def load_scenario(file_path: str) -> Scenario:
         yaml.YAMLError: If YAML is invalid
         ValueError: If scenario validation fails
     """
-    with open(file_path, "r") as f:
+    from pathlib import Path
+    
+    path = Path(file_path)
+    
+    # Try multiple path resolutions
+    if not path.exists():
+        # Try relative to src directory
+        src_path = Path("src") / file_path
+        if src_path.exists():
+            path = src_path
+        else:
+            # Try relative to project root (assuming we're in src/astraguard/hil/scenarios)
+            root_path = Path(__file__).parent.parent.parent.parent / file_path
+            if root_path.exists():
+                path = root_path
+            else:
+                # Try without 'astraguard' prefix if it's in the path
+                if file_path.startswith("astraguard/"):
+                    alt_path = Path("src") / file_path
+                    if alt_path.exists():
+                        path = alt_path
+    
+    if not path.exists():
+        raise FileNotFoundError(f"Scenario file not found: {file_path} (tried multiple locations)")
+    
+    with open(path, "r") as f:
         data = yaml.safe_load(f)
     
     if data is None:

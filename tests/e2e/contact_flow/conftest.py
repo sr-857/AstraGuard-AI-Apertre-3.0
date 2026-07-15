@@ -28,6 +28,7 @@ from api.contact import (
     init_database,
     InMemoryRateLimiter,
     _in_memory_limiter,
+    get_admin_user,
 )
 
 
@@ -137,6 +138,9 @@ def e2e_test_app(temp_database: Path, tmp_path: Path) -> FastAPI:
     """Create FastAPI test app with isolated database."""
     app = FastAPI(title="AstraGuard Contact API (E2E Test)")
     app.include_router(contact_router)
+    
+    # Override admin dependency to bypass auth and simulating a logged-in admin
+    app.dependency_overrides[get_admin_user] = lambda: MagicMock(username="admin", role="admin")
     
     return app
 

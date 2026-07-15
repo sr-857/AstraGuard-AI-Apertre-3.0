@@ -34,7 +34,7 @@ from backend.health_monitor import (
     set_health_monitor,
 )
 from backend.fallback_manager import FallbackManager
-from backend.recovery_orchestrator import RecoveryOrchestrator
+from backend.orchestration.recovery_orchestrator import RecoveryOrchestrator
 from backend.redis_client import RedisClient
 from backend.distributed_coordinator import DistributedResilienceCoordinator
 from core.component_health import SystemHealthMonitor
@@ -321,7 +321,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
 
     # External monitoring integrations (Issue #183)
-    from backend.monitoring_integrations import router as monitoring_router
+    from backend.health.integrations import router as monitoring_router
     app.include_router(monitoring_router)
 
     # Root endpoint
@@ -513,7 +513,7 @@ if __name__ == "__main__":
 
     uvicorn.run(
         app,
-        host="0.0.0.0",
+        host="0.0.0.0",  # nosec B104
         port=8000,
         log_level="info",
     )

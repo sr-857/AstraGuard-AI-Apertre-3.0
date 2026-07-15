@@ -148,13 +148,20 @@ class APIKey:
 
 class APIKeyManager:
     """
-    Manages API keys for authentication and authorization.
+    Manages the lifecycle and validation of API keys for the AstraGuard platform.
+
+    This manager is responsible for:
+    - Loading and saving keys from persistent storage.
+    - Creating new keys with specific permissions and expiration policies.
+    - Validating keys against stored hashes.
+    - Enforcing rate limits per key.
+    - Rotating and revoking keys for security hygiene.
 
     Features:
-    - Multiple API keys with different permissions
-    - Key expiration
-    - Rate limiting
-    - Key rotation support
+    - Multiple active keys per user.
+    - SHA-256 hashing for secure storage (verification only).
+    - Rate limiting with in-memory sliding window.
+    - Environment variable initialization for stateless deployments.
     """
 
     def __init__(self, keys_file: str = "config/api_keys.json"):
@@ -692,6 +699,44 @@ class UserResponse(BaseModel):
     created_at: datetime
     last_login: Optional[datetime]
     is_active: bool
+
+
+class APIKeyCreateRequest(BaseModel):
+    """Request to create a new API key."""
+    name: str = Field(..., min_length=1, max_length=100)
+    permissions: Set[str] = Field(default_factory=lambda: {"read", "write"})
+
+
+class APIKeyResponse(BaseModel):
+    """API key information response."""
+    id: str
+    name: str
+    permissions: Set[str]
+    created_at: datetime
+    expires_at: Optional[datetime]
+    last_used: Optional[datetime]
+
+
+class APIKeyCreateResponse(BaseModel):
+    """Response after creating an API key."""
+    id: str
+    name: str
+    key: str
+    permissions: Set[str]
+    created_at: datetime
+    expires_at: Optional[datetime]
+
+
+class LoginRequest(BaseModel):
+    """User login request."""
+    username: str = Field(..., min_length=1)
+    password: str = Field(..., min_length=1)
+
+
+class TokenResponse(BaseModel):
+    """JWT token response."""
+    access_token: str
+    token_type: str = "bearer"
 
     def check_rate_limit(self, api_key: str) -> None:
         """

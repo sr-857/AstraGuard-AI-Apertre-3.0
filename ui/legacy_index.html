@@ -1,0 +1,2122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AstraGuard - Enterprise Security Intelligence Platform</title>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    :root {
+      --bg-primary: #0a0e1a;
+      --bg-secondary: #14182b;
+      --bg-tertiary: #1a1f3a;
+      --text-primary: #ffffff;
+      --text-secondary: #b8b8d1;
+      --text-tertiary: #8b8ba7;
+      --border: rgba(255, 255, 255, 0.1);
+      --border-hover: rgba(255, 255, 255, 0.2);
+      --accent: #3b82f6;
+      --accent-hover: #2563eb;
+      --accent-light: rgba(59, 130, 246, 0.1);
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --glass-bg: rgba(255, 255, 255, 0.05);
+      --glass-border: rgba(255, 255, 255, 0.1);
+      --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+      --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+      --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+      --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.4);
+    }
+    
+    body {
+      font-family: 'Sora', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #0a0e1a;
+      color: var(--text-primary);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      position: relative;
+      overflow-x: hidden;
+    }
+    
+    /* 3D ANIMATED BACKGROUND */
+    .bg-canvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 0;
+      background: 
+        radial-gradient(ellipse at 20% 30%, rgba(59, 130, 246, 0.15) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 70%, rgba(139, 92, 246, 0.15) 0%, transparent 50%),
+        radial-gradient(ellipse at 50% 50%, rgba(16, 185, 129, 0.1) 0%, transparent 50%),
+        linear-gradient(180deg, #0a0e1a 0%, #1a1f3a 100%);
+      animation: bgShift 20s ease-in-out infinite;
+    }
+    
+    @keyframes bgShift {
+      0%, 100% {
+        background-position: 0% 0%, 100% 100%, 50% 50%;
+      }
+      50% {
+        background-position: 100% 100%, 0% 0%, 50% 50%;
+      }
+    }
+    
+    .bg-canvas::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: 
+        repeating-linear-gradient(
+          0deg,
+          transparent,
+          transparent 2px,
+          rgba(59, 130, 246, 0.03) 2px,
+          rgba(59, 130, 246, 0.03) 4px
+        ),
+        repeating-linear-gradient(
+          90deg,
+          transparent,
+          transparent 2px,
+          rgba(59, 130, 246, 0.03) 2px,
+          rgba(59, 130, 246, 0.03) 4px
+        );
+      background-size: 100px 100px;
+      animation: gridMove 30s linear infinite;
+      transform: perspective(500px) rotateX(60deg);
+      opacity: 0.5;
+    }
+    
+    @keyframes gridMove {
+      0% {
+        transform: perspective(500px) rotateX(60deg) translateY(0);
+      }
+      100% {
+        transform: perspective(500px) rotateX(60deg) translateY(100px);
+      }
+    }
+    
+    .bg-canvas::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: radial-gradient(circle at 50% 50%, transparent 0%, rgba(10, 14, 26, 0.8) 100%);
+      pointer-events: none;
+    }
+    
+    /* Floating orbs */
+    .orb {
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(80px);
+      opacity: 0.4;
+      animation: float 20s ease-in-out infinite;
+      z-index: 0;
+      pointer-events: none;
+    }
+    
+    .orb1 {
+      width: 400px;
+      height: 400px;
+      background: radial-gradient(circle, rgba(59, 130, 246, 0.4) 0%, transparent 70%);
+      top: 10%;
+      left: 10%;
+      animation-delay: 0s;
+    }
+    
+    .orb2 {
+      width: 350px;
+      height: 350px;
+      background: radial-gradient(circle, rgba(139, 92, 246, 0.4) 0%, transparent 70%);
+      top: 50%;
+      right: 10%;
+      animation-delay: 5s;
+    }
+    
+    .orb3 {
+      width: 300px;
+      height: 300px;
+      background: radial-gradient(circle, rgba(16, 185, 129, 0.3) 0%, transparent 70%);
+      bottom: 10%;
+      left: 50%;
+      animation-delay: 10s;
+    }
+    
+    @keyframes float {
+      0%, 100% {
+        transform: translate(0, 0) scale(1);
+      }
+      33% {
+        transform: translate(50px, -50px) scale(1.1);
+      }
+      66% {
+        transform: translate(-50px, 50px) scale(0.9);
+      }
+    }
+    
+    .content-wrapper {
+      position: relative;
+      z-index: 1;
+    }
+    
+    /* TYPOGRAPHY */
+    h1, h2, h3, h4, h5, h6 {
+      font-weight: 700;
+      letter-spacing: -0.025em;
+      line-height: 1.2;
+    }
+    
+    .mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+    
+    /* NAVIGATION */
+    nav {
+      position: fixed;
+      top: 0;
+      width: 100%;
+      background: rgba(10, 14, 26, 0.7);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--glass-border);
+      z-index: 1000;
+      padding: 0;
+      box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
+    }
+    
+    .nav-content {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .logo {
+      font-weight: 700;
+      font-size: 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      color: var(--text-primary);
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    
+    .logo:hover {
+      opacity: 0.8;
+    }
+    
+    .logo-icon {
+      width: 36px;
+      height: 36px;
+      background: var(--accent);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+    }
+    
+    .nav-links {
+      display: flex;
+      gap: 2rem;
+      list-style: none;
+      align-items: center;
+    }
+    
+    .nav-links a {
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-weight: 500;
+      font-size: 0.9375rem;
+      transition: color 0.2s;
+      cursor: pointer;
+    }
+    
+    .nav-links a:hover {
+      color: var(--text-primary);
+    }
+    
+    .btn {
+      padding: 0.625rem 1.25rem;
+      border-radius: 12px;
+      font-weight: 600;
+      font-size: 0.9375rem;
+      border: none;
+      cursor: pointer;
+      transition: all 0.3s;
+      text-decoration: none;
+      display: inline-block;
+    }
+    
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), #8b5cf6);
+      color: white;
+      box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    
+    .btn-primary:hover {
+      box-shadow: 0 6px 20px rgba(59, 130, 246, 0.6);
+      transform: translateY(-2px);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+    
+    .btn-secondary {
+      background: var(--glass-bg);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      color: var(--text-primary);
+      border: 1px solid var(--glass-border);
+    }
+    
+    .btn-secondary:hover {
+      border-color: var(--border-hover);
+      background: rgba(255, 255, 255, 0.08);
+    }
+    
+    /* CONTAINER */
+    .container {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 0 2rem;
+    }
+    
+    section {
+      padding: 4rem 0 2rem 0;
+      display: none;
+    }
+    
+    section.active {
+      display: block;
+      animation: fadeIn 0.4s ease-out;
+    }
+    
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    
+    /* HERO SECTION */
+    .hero {
+      padding-top: 6rem;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4rem;
+      align-items: center;
+      margin-bottom: 3rem;
+    }
+    
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      background: var(--glass-bg);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      color: var(--accent);
+      border-radius: 24px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      margin-bottom: 1.5rem;
+      border: 1px solid var(--glass-border);
+    }
+    
+    .hero h1 {
+      font-size: 3.75rem;
+      margin-bottom: 1.5rem;
+      color: var(--text-primary);
+      line-height: 1.1;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      text-rendering: optimizeLegibility;
+      -webkit-font-smoothing: antialiased;
+    }
+    
+    .hero .accent {
+      background: linear-gradient(135deg, #00d9ff, #00ffc8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      font-weight: 800;
+      filter: drop-shadow(0 0 20px rgba(0, 217, 255, 0.3));
+      display: inline-block;
+    }
+    
+    .hero p {
+      font-size: 1.25rem;
+      color: var(--text-secondary);
+      margin-bottom: 2rem;
+      line-height: 1.7;
+    }
+    
+    .cta-group {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 3rem;
+    }
+    
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 2rem;
+    }
+    
+    .stat-card {
+      text-align: left;
+      background: var(--glass-bg);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      padding: 1.5rem;
+      border-radius: 12px;
+      border: 1px solid var(--glass-border);
+      transition: all 0.3s;
+    }
+    
+    .stat-card:hover {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: var(--border-hover);
+      transform: translateY(-2px);
+    }
+    
+    .stat-value {
+      font-size: 2.5rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 0.25rem;
+    }
+    
+    .stat-label {
+      font-size: 0.875rem;
+      color: var(--text-tertiary);
+      font-weight: 500;
+    }
+    
+    /* TERMINAL */
+    .terminal {
+      background: var(--glass-bg);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+      border: 1px solid var(--glass-border);
+    }
+    
+    .terminal-header {
+      background: rgba(0, 0, 0, 0.8);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      padding: 0.875rem 1rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--glass-border);
+    }
+    
+    .terminal-dots {
+      display: flex;
+      gap: 0.5rem;
+    }
+    
+    .dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+    
+    .dot.red { background: #ff5f56; }
+    .dot.yellow { background: #ffbd2e; }
+    .dot.green { background: #27c93f; }
+    
+    .terminal-status {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      background: #27c93f;
+      border-radius: 50%;
+      animation: pulse 2s ease-in-out infinite;
+    }
+    
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+    
+    .terminal-body {
+      padding: 1.5rem;
+      height: 460px;
+      overflow-y: auto;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8125rem;
+      line-height: 1.6;
+      color: #e5e5e5;
+      background: rgba(0, 0, 0, 0.9);
+    }
+    
+    .terminal-body::-webkit-scrollbar {
+      width: 6px;
+    }
+    
+    .terminal-body::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.2);
+    }
+    
+    .terminal-body::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 3px;
+    }
+    
+    .terminal-body::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
+    
+    .log-line {
+      margin-bottom: 0.375rem;
+      animation: slideIn 0.2s ease-out;
+    }
+    
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateX(-10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+    
+    .log-time { color: #666; }
+    .log-level { font-weight: 600; margin: 0 0.5rem; }
+    .log-level.info { color: #60a5fa; }
+    .log-level.warn { color: #fb923c; }
+    .log-level.error { color: #f87171; }
+    .log-level.success { color: #4ade80; }
+    
+    .terminal-footer {
+      background: rgba(0, 0, 0, 0.8);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      padding: 0.875rem 1rem;
+      border-top: 1px solid var(--glass-border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .terminal-footer .mono {
+      font-size: 0.75rem;
+      color: #888;
+    }
+    
+    .terminal-footer .threat-count {
+      color: #f87171;
+      font-weight: 600;
+    }
+    
+    .control-group {
+      display: flex;
+      gap: 0.5rem;
+    }
+    
+    .control-btn {
+      background: rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: var(--text-secondary);
+      padding: 0.375rem 0.75rem;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.75rem;
+      font-family: 'JetBrains Mono', monospace;
+      transition: all 0.3s;
+    }
+    
+    .control-btn:hover {
+      border-color: rgba(255, 255, 255, 0.2);
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-primary);
+    }
+    
+    /* FEATURES */
+    .section-header {
+      text-align: center;
+      max-width: 800px;
+      margin: 0 auto 4rem;
+    }
+    
+    .section-header h2 {
+      font-size: 2.5rem;
+      margin-bottom: 1rem;
+      color: var(--text-primary);
+    }
+    
+    .section-header p {
+      font-size: 1.125rem;
+      color: var(--text-secondary);
+      line-height: 1.7;
+    }
+    
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 2rem;
+      margin-bottom: 2rem;
+    }
+    
+    .feature-card {
+      background: var(--glass-bg);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      padding: 2.5rem;
+      border-radius: 16px;
+      border: 1px solid var(--glass-border);
+      transition: all 0.3s;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    }
+    
+    .feature-card:hover {
+      border-color: var(--border-hover);
+      box-shadow: 0 8px 30px rgba(59, 130, 246, 0.2);
+      transform: translateY(-4px);
+      background: rgba(255, 255, 255, 0.08);
+    }
+    
+    .feature-icon {
+      width: 48px;
+      height: 48px;
+      background: rgba(59, 130, 246, 0.1);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      color: var(--accent);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      margin-bottom: 1.5rem;
+      border: 1px solid rgba(59, 130, 246, 0.2);
+    }
+    
+    .feature-card h3 {
+      font-size: 1.25rem;
+      margin-bottom: 0.75rem;
+      color: var(--text-primary);
+    }
+    
+    .feature-card p {
+      color: var(--text-secondary);
+      line-height: 1.7;
+      font-size: 0.9375rem;
+    }
+    
+    /* MEMORY SECTION */
+    .memory-viz {
+      background: var(--glass-bg);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-radius: 16px;
+      padding: 3rem;
+      border: 1px solid var(--glass-border);
+      margin-bottom: 3rem;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    }
+    
+    .memory-viz h3 {
+      text-align: center;
+      font-size: 1.5rem;
+      margin-bottom: 2.5rem;
+      color: var(--text-primary);
+    }
+    
+    .memory-graph {
+      position: relative;
+      height: 500px;
+      width: 100%;
+      background: 
+        radial-gradient(circle at 50% 50%, rgba(59, 130, 246, 0.05) 0%, rgba(0, 0, 0, 0.2) 100%),
+        linear-gradient(90deg, rgba(59, 130, 246, 0.03) 1px, transparent 1px),
+        linear-gradient(0deg, rgba(59, 130, 246, 0.03) 1px, transparent 1px);
+      background-size: 100% 100%, 40px 40px, 40px 40px;
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border-radius: 12px;
+      border: 1px solid var(--glass-border);
+      overflow: hidden;
+      animation: graphPulse 8s ease-in-out infinite;
+    }
+    
+    @keyframes graphPulse {
+      0%, 100% {
+        background-size: 100% 100%, 40px 40px, 40px 40px;
+      }
+      50% {
+        background-size: 100% 100%, 42px 42px, 42px 42px;
+      }
+    }
+    
+    .memory-graph::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: radial-gradient(circle, rgba(59, 130, 246, 0.1) 0%, transparent 50%);
+      animation: rotate 20s linear infinite;
+      pointer-events: none;
+    }
+    
+    @keyframes rotate {
+      from {
+        transform: rotate(0deg);
+      }
+      to {
+        transform: rotate(360deg);
+      }
+    }
+    
+    .memory-node {
+      position: absolute;
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      color: white;
+      cursor: pointer;
+      transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 
+        0 0 20px rgba(59, 130, 246, 0.4),
+        0 0 40px rgba(59, 130, 246, 0.2),
+        inset 0 0 20px rgba(255, 255, 255, 0.1);
+      font-size: 0.875rem;
+      z-index: 10;
+      animation: nodeFloat 4s ease-in-out infinite;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+    }
+    
+    @keyframes nodeFloat {
+      0%, 100% { 
+        transform: translate(-50%, -50%) translateY(0px);
+      }
+      50% { 
+        transform: translate(-50%, -50%) translateY(-8px);
+      }
+    }
+    
+    .memory-node:hover {
+      transform: translate(-50%, -50%) scale(1.2);
+      box-shadow: 
+        0 0 30px rgba(59, 130, 246, 0.6),
+        0 0 60px rgba(59, 130, 246, 0.4),
+        0 0 90px rgba(59, 130, 246, 0.2),
+        inset 0 0 30px rgba(255, 255, 255, 0.2);
+      z-index: 20;
+      animation: none;
+    }
+    
+    .memory-node.large {
+      width: 110px;
+      height: 110px;
+      font-size: 1rem;
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6, #ec4899);
+      animation-duration: 5s;
+    }
+    
+    .memory-node.medium {
+      width: 85px;
+      height: 85px;
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+      animation-duration: 4.5s;
+      animation-delay: 0.5s;
+    }
+    
+    .memory-node.small {
+      width: 65px;
+      height: 65px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      font-size: 0.75rem;
+      animation-duration: 4s;
+      animation-delay: 1s;
+    }
+    
+    .memory-connection {
+      position: absolute;
+      height: 2px;
+      background: linear-gradient(90deg, 
+        rgba(59, 130, 246, 0.6), 
+        rgba(139, 92, 246, 0.6),
+        rgba(59, 130, 246, 0.6)
+      );
+      transform-origin: left center;
+      z-index: 1;
+      box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+      animation: connectionPulse 3s ease-in-out infinite;
+    }
+    
+    @keyframes connectionPulse {
+      0%, 100% { 
+        opacity: 0.4;
+        box-shadow: 0 0 10px rgba(59, 130, 246, 0.3);
+      }
+      50% { 
+        opacity: 0.8;
+        box-shadow: 0 0 20px rgba(59, 130, 246, 0.6);
+      }
+    }
+    
+    .memory-connection::before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 0;
+      width: 6px;
+      height: 6px;
+      background: radial-gradient(circle, rgba(59, 130, 246, 1) 0%, rgba(59, 130, 246, 0) 70%);
+      border-radius: 50%;
+      transform: translateY(-50%);
+      animation: particleFlow 2s linear infinite;
+    }
+    
+    @keyframes particleFlow {
+      0% {
+        left: 0%;
+        opacity: 0;
+      }
+      10% {
+        opacity: 1;
+      }
+      90% {
+        opacity: 1;
+      }
+      100% {
+        left: 100%;
+        opacity: 0;
+      }
+    }
+    
+    .memory-connection:nth-child(2n)::before {
+      animation-delay: 0.5s;
+    }
+    
+    .memory-connection:nth-child(3n)::before {
+      animation-delay: 1s;
+    }
+    
+    .memory-connection:nth-child(4n)::before {
+      animation-delay: 1.5s;
+    }
+    
+    .memory-stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 2rem;
+    }
+    
+    .memory-stat {
+      background: var(--glass-bg);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      padding: 2rem;
+      border-radius: 16px;
+      border: 1px solid var(--glass-border);
+      text-align: center;
+      transition: all 0.3s;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    }
+    
+    .memory-stat:hover {
+      border-color: var(--border-hover);
+      transform: translateY(-4px);
+      background: rgba(255, 255, 255, 0.08);
+      box-shadow: 0 8px 30px rgba(59, 130, 246, 0.2);
+    }
+    
+    .memory-stat-icon {
+      font-size: 2rem;
+      margin-bottom: 1rem;
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .memory-stat-icon svg {
+      color: var(--accent);
+    }
+    
+    .memory-stat-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 0.5rem;
+    }
+    
+    .memory-stat-label {
+      color: var(--text-tertiary);
+      font-size: 0.875rem;
+      font-weight: 500;
+    }
+    
+    /* ARCHITECTURE */
+    .arch-flow {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1.5rem;
+      margin-bottom: 4rem;
+      position: relative;
+    }
+    
+    .arch-card {
+      background: var(--glass-bg);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      padding: 2rem;
+      border-radius: 16px;
+      border: 1px solid var(--glass-border);
+      transition: all 0.3s;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    }
+    
+    .arch-card:hover {
+      border-color: var(--accent);
+      box-shadow: 0 8px 30px rgba(59, 130, 246, 0.3);
+      transform: translateY(-4px);
+      background: rgba(255, 255, 255, 0.08);
+    }
+    
+    .arch-icon {
+      font-size: 2.5rem;
+      text-align: center;
+      margin-bottom: 1.25rem;
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .arch-icon svg {
+      color: var(--accent);
+    }
+    
+    .arch-card h3 {
+      text-align: center;
+      font-size: 1.125rem;
+      margin-bottom: 1.25rem;
+      color: var(--text-primary);
+    }
+    
+    .arch-card ul {
+      list-style: none;
+      padding: 0;
+    }
+    
+    .arch-card li {
+      color: var(--text-secondary);
+      font-size: 0.875rem;
+      margin-bottom: 0.5rem;
+      padding-left: 1.25rem;
+      position: relative;
+    }
+    
+    .arch-card li::before {
+      content: '→';
+      position: absolute;
+      left: 0;
+      color: var(--accent);
+    }
+    
+    .tech-stack {
+      background: var(--glass-bg);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-radius: 16px;
+      padding: 3rem;
+      border: 1px solid var(--glass-border);
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    }
+    
+    .tech-stack h3 {
+      text-align: center;
+      font-size: 1.75rem;
+      margin-bottom: 3rem;
+      color: var(--text-primary);
+    }
+    
+    .tech-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 3rem;
+    }
+    
+    .tech-category h4 {
+      color: var(--accent);
+      font-size: 1rem;
+      margin-bottom: 1.25rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    
+    .tech-category ul {
+      list-style: none;
+    }
+    
+    .tech-category li {
+      color: var(--text-secondary);
+      margin-bottom: 0.75rem;
+      font-size: 0.9375rem;
+    }
+    
+    /* USE CASES */
+    .use-cases-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 2rem;
+      margin-bottom: 3rem;
+    }
+    
+    .use-case-card {
+      background: var(--glass-bg);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      padding: 2.5rem;
+      border-radius: 16px;
+      border: 1px solid var(--glass-border);
+      transition: all 0.3s;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    }
+    
+    .use-case-card:hover {
+      border-color: var(--border-hover);
+      box-shadow: 0 8px 30px rgba(59, 130, 246, 0.2);
+      transform: translateY(-4px);
+      background: rgba(255, 255, 255, 0.08);
+    }
+    
+    .use-case-icon {
+      font-size: 3rem;
+      margin-bottom: 1.5rem;
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+    }
+    
+    .use-case-icon svg {
+      color: var(--accent);
+    }
+    
+    .use-case-card h3 {
+      font-size: 1.5rem;
+      margin-bottom: 1rem;
+      color: var(--text-primary);
+    }
+    
+    .use-case-card p {
+      color: var(--text-secondary);
+      margin-bottom: 1.5rem;
+      line-height: 1.7;
+    }
+    
+    .use-case-features {
+      list-style: none;
+    }
+    
+    .use-case-features li {
+      color: var(--text-secondary);
+      margin-bottom: 0.625rem;
+      padding-left: 1.5rem;
+      position: relative;
+      font-size: 0.9375rem;
+    }
+    
+    .use-case-features li::before {
+      content: '✓';
+      position: absolute;
+      left: 0;
+      color: var(--success);
+      font-weight: 700;
+    }
+    
+    .case-study {
+      background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(139, 92, 246, 0.2));
+      backdrop-filter: blur(30px);
+      -webkit-backdrop-filter: blur(30px);
+      padding: 4rem;
+      border-radius: 16px;
+      color: white;
+      text-align: center;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    }
+    
+    .case-study h3 {
+      font-size: 2rem;
+      margin-bottom: 1rem;
+    }
+    
+    .case-study p {
+      font-size: 1.125rem;
+      margin-bottom: 3rem;
+      opacity: 0.95;
+      max-width: 700px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    
+    .case-study-stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 3rem;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    
+    .case-study-stat-value {
+      font-size: 3rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+    
+    .case-study-stat-label {
+      opacity: 0.9;
+      font-size: 0.9375rem;
+    }
+    
+    /* TEAM */
+    .team-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 2rem;
+      margin-bottom: 3rem;
+    }
+    
+    .team-card {
+      background: var(--glass-bg);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      padding: 3rem 2rem;
+      border-radius: 16px;
+      border: 1px solid var(--glass-border);
+      text-align: center;
+      transition: all 0.3s;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    }
+    
+    .team-card:hover {
+      border-color: var(--border-hover);
+      box-shadow: 0 8px 30px rgba(59, 130, 246, 0.2);
+      transform: translateY(-4px);
+      background: rgba(255, 255, 255, 0.08);
+    }
+    
+    .team-avatar {
+      width: 80px;
+      height: 80px;
+      background: rgba(59, 130, 246, 0.1);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 2px solid var(--glass-border);
+      border-radius: 50%;
+      margin: 0 auto 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--accent);
+    }
+    
+    .team-card h3 {
+      font-size: 1.125rem;
+      margin-bottom: 0.5rem;
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+    
+    .team-role {
+      color: var(--text-secondary);
+      font-weight: 500;
+      font-size: 0.9375rem;
+    }
+    
+    .github-cta {
+      text-align: center;
+      padding: 3rem;
+      background: var(--glass-bg);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-radius: 16px;
+      border: 1px solid var(--glass-border);
+      margin-bottom: 3rem;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    }
+    
+    .github-cta a {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    
+    .mission {
+      background: var(--glass-bg);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-radius: 16px;
+      padding: 3rem;
+      border: 1px solid var(--glass-border);
+      text-align: center;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    }
+    
+    .mission h3 {
+      font-size: 1.75rem;
+      margin-bottom: 1.25rem;
+      color: var(--text-primary);
+    }
+    
+    .mission p {
+      font-size: 1.0625rem;
+      color: var(--text-secondary);
+      line-height: 1.8;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    
+    /* FAQ */
+    .faq-container {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    
+    .faq-item {
+      background: var(--glass-bg);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--glass-border);
+      border-radius: 16px;
+      margin-bottom: 1rem;
+      overflow: hidden;
+      transition: all 0.3s;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    }
+    
+    .faq-item:hover {
+      border-color: var(--border-hover);
+      background: rgba(255, 255, 255, 0.08);
+    }
+    
+    .faq-question {
+      width: 100%;
+      background: none;
+      border: none;
+      color: var(--text-primary);
+      padding: 1.5rem;
+      text-align: left;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 1rem;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+    
+    .faq-question:hover {
+      color: var(--accent);
+    }
+    
+    .faq-icon {
+      font-size: 1.25rem;
+      transition: transform 0.2s;
+      color: var(--text-tertiary);
+    }
+    
+    .faq-item.active .faq-icon {
+      transform: rotate(45deg);
+      color: var(--accent);
+    }
+    
+    .faq-answer {
+      max-height: 0;
+      overflow: hidden;
+      transition: all 0.3s ease-out;
+      color: var(--text-secondary);
+      line-height: 1.7;
+      font-size: 0.9375rem;
+    }
+    
+    .faq-item.active .faq-answer {
+      max-height: 500px;
+      padding: 0 1.5rem 1.5rem;
+    }
+    
+    /* RESPONSIVE */
+    @media (max-width: 1024px) {
+      .hero {
+        grid-template-columns: 1fr;
+        gap: 3rem;
+      }
+      
+      .features-grid,
+      .arch-flow,
+      .tech-grid,
+      .team-grid {
+        grid-template-columns: 1fr;
+      }
+      
+      .use-cases-grid {
+        grid-template-columns: 1fr;
+      }
+      
+      .memory-stats {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      
+      .case-study-stats {
+        grid-template-columns: 1fr;
+        gap: 2rem;
+      }
+      
+      .nav-links {
+        display: none;
+      }
+      
+      .hero h1 {
+        font-size: 2.5rem;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <!-- 3D BACKGROUND -->
+  <div class="bg-canvas"></div>
+  <div class="orb orb1"></div>
+  <div class="orb orb2"></div>
+  <div class="orb orb3"></div>
+  
+  <div class="content-wrapper">
+    <!-- NAVIGATION -->
+  <nav>
+    <div class="nav-content">
+      <div class="logo" onclick="switchTab('dashboard')">
+        <div class="logo-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z" stroke="white" stroke-width="2"/>
+            <path d="M12 8V12L14.5 14.5" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M8 12L10 14L12 12" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <span>AstraGuard</span>
+      </div>
+      
+      <ul class="nav-links">
+        <li><a onclick="switchTab('dashboard')">Home</a></li>
+        <li><a onclick="switchTab('memory')">Memory</a></li>
+        <li><a onclick="switchTab('architecture')">Architecture</a></li>
+        <li><a onclick="switchTab('usecases')">Use Cases</a></li>
+        <li><a onclick="switchTab('team')">Team</a></li>
+      </ul>
+      
+      <button class="btn btn-primary" onclick="window.open('https://astraguardsite.vercel.app/enter-ai', '_blank')">
+        Launch Dashboard
+      </button>
+    </div>
+  </nav>
+
+  <!-- DASHBOARD -->
+  <section id="dashboard" class="active">
+    <div class="container">
+      <div class="hero">
+        <div>
+          <div class="hero-badge">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M13 2L3 14H12L11 22L21 10H12L13 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"/>
+            </svg>
+            <span>Enterprise Security Platform</span>
+          </div>
+          
+          <h1>
+            Autonomous Security<br>
+            <span class="accent">with Adaptive Memory</span>
+          </h1>
+          
+          <p>
+            AstraGuard learns from every incident, building an intelligent memory system
+            that automatically responds to threats by recalling proven solutions.
+          </p>
+          
+          <div class="cta-group">
+            <button class="btn btn-primary" onclick="window.open('https://astraguardsite.vercel.app/enter-ai', '_blank')">
+              Start Live Demo
+            </button>
+            <button class="btn btn-secondary" onclick="switchTab('architecture')">
+              View Architecture
+            </button>
+          </div>
+          
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-value" id="detectionRate">99.8%</div>
+              <div class="stat-label">Threat Detection Rate</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="responseTime">&lt;2s</div>
+              <div class="stat-label">Average Response Time</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="threatsBlocked">10,247</div>
+              <div class="stat-label">Threats Blocked</div>
+            </div>
+          </div>
+        </div>
+        
+        <div>
+          <div class="terminal">
+            <div class="terminal-header">
+              <div class="terminal-dots">
+                <div class="dot red"></div>
+                <div class="dot yellow"></div>
+                <div class="dot green"></div>
+              </div>
+              <div class="terminal-status">
+                <div class="status-dot"></div>
+                <span>Live Monitoring</span>
+              </div>
+            </div>
+            
+            <div class="terminal-body" id="terminalBody">
+              <div class="log-line mono">
+                <span style="color: #4ade80;">$ </span>
+                <span>AstraGuard Security Monitor v2.0</span>
+              </div>
+              <div class="log-line mono" style="color: #404040;">
+                ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+              </div>
+            </div>
+            
+            <div class="terminal-footer">
+              <div class="mono">
+                Threats detected: <span class="threat-count" id="threatCount">0</span>
+              </div>
+              <div class="control-group">
+                <button class="control-btn" onclick="pauseMonitoring()" id="pauseBtn">PAUSE</button>
+                <button class="control-btn" onclick="clearTerminal()">CLEAR</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M13 2L3 14H12L11 22L21 10H12L13 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <h3>Real-time Detection</h3>
+          <p>Detect unusual patterns and anomalies as they emerge from live data streams with sub-second latency and machine learning precision.</p>
+        </div>
+        
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M9.5 2C8.67157 2 8 2.67157 8 3.5V4.5C8 5.32843 8.67157 6 9.5 6C10.3284 6 11 5.32843 11 4.5V3.5C11 2.67157 10.3284 2 9.5 2Z" fill="currentColor"/>
+              <path d="M14.5 2C13.6716 2 13 2.67157 13 3.5V4.5C13 5.32843 13.6716 6 14.5 6C15.3284 6 16 5.32843 16 4.5V3.5C16 2.67157 15.3284 2 14.5 2Z" fill="currentColor"/>
+              <path d="M4 9C4 7.34315 5.34315 6 7 6H17C18.6569 6 20 7.34315 20 9V19C20 20.6569 18.6569 22 17 22H7C5.34315 22 4 20.6569 4 19V9Z" stroke="currentColor" stroke-width="2"/>
+              <path d="M9 12H15M9 16H12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <h3>Adaptive Memory</h3>
+          <p>Self-updating knowledge graph that strengthens with each incident and recalls proven solutions instantly from historical data.</p>
+        </div>
+        
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M4 12C4 7.58172 7.58172 4 12 4C16.4183 4 20 7.58172 20 12C20 16.4183 16.4183 20 12 20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <path d="M4 12L7 9M4 12L7 15M4 12H12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <h3>Auto-Response</h3>
+          <p>Apply learned solutions instantly without manual intervention through intelligent automation loops and orchestration.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- MEMORY -->
+  <section id="memory">
+    <div class="container">
+      <div class="section-header">
+        <h2>Adaptive Memory Engine</h2>
+        <p>AstraGuard's memory system learns from every security incident, creating a continuously evolving knowledge base that powers intelligent threat response.</p>
+      </div>
+      
+      <div class="memory-viz">
+        <h3>Memory Network Visualization</h3>
+        <div class="memory-graph" id="memoryGraph"></div>
+      </div>
+      
+      <div class="memory-stats">
+        <div class="memory-stat">
+          <div class="memory-stat-icon">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M4 7C4 5.89543 4.89543 5 6 5H18C19.1046 5 20 5.89543 20 7V17C20 18.1046 19.1046 19 18 19H6C4.89543 19 4 18.1046 4 17V7Z" stroke="currentColor" stroke-width="2"/>
+              <path d="M8 9H16M8 12H14M8 15H12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <div class="memory-stat-value" id="incidentsStored">10,247</div>
+          <div class="memory-stat-label">Incidents Stored</div>
+        </div>
+        
+        <div class="memory-stat">
+          <div class="memory-stat-icon">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="5" cy="12" r="2" fill="currentColor"/>
+              <circle cx="12" cy="6" r="2" fill="currentColor"/>
+              <circle cx="19" cy="12" r="2" fill="currentColor"/>
+              <circle cx="12" cy="18" r="2" fill="currentColor"/>
+              <path d="M7 12H10M14 6L11 10M14 18L11 14M14 12H17" stroke="currentColor" stroke-width="2"/>
+            </svg>
+          </div>
+          <div class="memory-stat-value" id="patternLinks">25,891</div>
+          <div class="memory-stat-label">Pattern Links</div>
+        </div>
+        
+        <div class="memory-stat">
+          <div class="memory-stat-icon">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>
+              <path d="M9 12L11 14L15 10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <div class="memory-stat-value" id="resolvedCases">8,903</div>
+          <div class="memory-stat-label">Resolved Cases</div>
+        </div>
+        
+        <div class="memory-stat">
+          <div class="memory-stat-icon">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M3 3L21 21M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <path d="M12 7V12L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <div class="memory-stat-value" id="recallAccuracy">94.3%</div>
+          <div class="memory-stat-label">Recall Accuracy</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ARCHITECTURE -->
+  <section id="architecture">
+    <div class="container">
+      <div class="section-header">
+        <h2>System Architecture</h2>
+        <p>A sophisticated multi-layer architecture designed for real-time threat detection, intelligent memory management, and autonomous response automation.</p>
+      </div>
+      
+      <div class="arch-flow">
+        <div class="arch-card">
+          <div class="arch-icon">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M2 17L12 22L22 17M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <h3>Monitoring Layer</h3>
+          <ul>
+            <li>Data stream ingestion</li>
+            <li>Real-time log parsing</li>
+            <li>Anomaly detection</li>
+            <li>Event classification</li>
+          </ul>
+        </div>
+        
+        <div class="arch-card">
+          <div class="arch-icon">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M9.5 2C8.67157 2 8 2.67157 8 3.5V4.5C8 5.32843 8.67157 6 9.5 6C10.3284 6 11 5.32843 11 4.5V3.5C11 2.67157 10.3284 2 9.5 2Z" fill="currentColor"/>
+              <path d="M14.5 2C13.6716 2 13 2.67157 13 3.5V4.5C13 5.32843 13.6716 6 14.5 6C15.3284 6 16 5.32843 16 4.5V3.5C16 2.67157 15.3284 2 14.5 2Z" fill="currentColor"/>
+              <path d="M4 9C4 7.34315 5.34315 6 7 6H17C18.6569 6 20 7.34315 20 9V19C20 20.6569 18.6569 22 17 22H7C5.34315 22 4 20.6569 4 19V9Z" stroke="currentColor" stroke-width="2"/>
+              <path d="M9 12H15M9 16H12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <h3>Memory Engine</h3>
+          <ul>
+            <li>Knowledge graph storage</li>
+            <li>Pattern recognition</li>
+            <li>Solution retrieval</li>
+            <li>Learning algorithms</li>
+          </ul>
+        </div>
+        
+        <div class="arch-card">
+          <div class="arch-icon">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/>
+              <path d="M12 1V3M12 21V23M4.22 4.22L5.64 5.64M18.36 18.36L19.78 19.78M1 12H3M21 12H23M4.22 19.78L5.64 18.36M18.36 5.64L19.78 4.22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <h3>Response Engine</h3>
+          <ul>
+            <li>Automated mitigation</li>
+            <li>Action orchestration</li>
+            <li>Resource management</li>
+            <li>Rollback capability</li>
+          </ul>
+        </div>
+        
+        <div class="arch-card">
+          <div class="arch-icon">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M4 12C4 7.58172 7.58172 4 12 4C16.4183 4 20 7.58172 20 12C20 16.4183 16.4183 20 12 20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <path d="M4 12L7 9M4 12L7 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <h3>Feedback Loop</h3>
+          <ul>
+            <li>Outcome tracking</li>
+            <li>Performance metrics</li>
+            <li>Model retraining</li>
+            <li>System optimization</li>
+          </ul>
+        </div>
+      </div>
+      
+      <div class="tech-stack">
+        <h3>Technology Stack</h3>
+        <div class="tech-grid">
+          <div class="tech-category">
+            <h4>Backend & Processing</h4>
+            <ul>
+              <li>Python / FastAPI</li>
+              <li>Apache Kafka</li>
+              <li>Redis Cache</li>
+              <li>PostgreSQL + VectorDB</li>
+              <li>gRPC Services</li>
+            </ul>
+          </div>
+          
+          <div class="tech-category">
+            <h4>AI & Machine Learning</h4>
+            <ul>
+              <li>TensorFlow / PyTorch</li>
+              <li>scikit-learn</li>
+              <li>Neo4j Graph Database</li>
+              <li>Custom NLP Models</li>
+              <li>Transformer Networks</li>
+            </ul>
+          </div>
+          
+          <div class="tech-category">
+            <h4>Infrastructure</h4>
+            <ul>
+              <li>Kubernetes</li>
+              <li>Docker Containers</li>
+              <li>AWS / GCP</li>
+              <li>Prometheus Monitoring</li>
+              <li>Grafana Dashboards</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- USE CASES -->
+  <section id="usecases">
+    <div class="container">
+      <div class="section-header">
+        <h2>Real-World Use Cases</h2>
+        <p>AstraGuard adapts to various security scenarios across industries, providing intelligent protection where it matters most.</p>
+      </div>
+      
+      <div class="use-cases-grid">
+        <div class="use-case-card">
+          <div class="use-case-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M3 15C3 17.8284 3 19.2426 3.87868 20.1213C4.75736 21 6.17157 21 9 21H15C17.8284 21 19.2426 21 20.1213 20.1213C21 19.2426 21 17.8284 21 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <path d="M12 3V16M12 16L8 12M12 16L16 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <h3>Cloud Security</h3>
+          <p>Monitor AWS, Azure, and GCP infrastructure for misconfigurations, unauthorized access, and suspicious API calls. Automatically remediate security violations.</p>
+          <ul class="use-case-features">
+            <li>IAM policy enforcement</li>
+            <li>S3 bucket protection</li>
+            <li>Network security groups</li>
+            <li>Compliance automation</li>
+          </ul>
+        </div>
+        
+        <div class="use-case-card">
+          <div class="use-case-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="2" y="4" width="20" height="16" rx="2" stroke="currentColor" stroke-width="2"/>
+              <path d="M2 10H22" stroke="currentColor" stroke-width="2"/>
+              <circle cx="6" cy="15" r="1" fill="currentColor"/>
+              <circle cx="10" cy="15" r="1" fill="currentColor"/>
+            </svg>
+          </div>
+          <h3>Fraud Detection</h3>
+          <p>Identify fraudulent transactions in real-time using behavioral analysis and historical pattern matching. Block suspicious activities instantly.</p>
+          <ul class="use-case-features">
+            <li>Transaction anomaly detection</li>
+            <li>Account takeover prevention</li>
+            <li>Payment card testing blocks</li>
+            <li>Behavioral biometrics</li>
+          </ul>
+        </div>
+        
+        <div class="use-case-card">
+          <div class="use-case-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>
+              <path d="M2 12H22M12 2C14.5 4.5 16 8 16 12C16 16 14.5 19.5 12 22M12 2C9.5 4.5 8 8 8 12C8 16 9.5 19.5 12 22" stroke="currentColor" stroke-width="2"/>
+            </svg>
+          </div>
+          <h3>Network Intrusion</h3>
+          <p>Detect and block network-based attacks including DDoS, port scanning, and malware propagation. Learn from attack patterns continuously.</p>
+          <ul class="use-case-features">
+            <li>DDoS mitigation</li>
+            <li>Malware traffic blocking</li>
+            <li>Zero-day threat response</li>
+            <li>Advanced persistent threats</li>
+          </ul>
+        </div>
+        
+        <div class="use-case-card">
+          <div class="use-case-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" stroke-width="2"/>
+              <path d="M3 9H21M9 3V21" stroke="currentColor" stroke-width="2"/>
+            </svg>
+          </div>
+          <h3>Data Protection</h3>
+          <p>Protect sensitive enterprise data from exfiltration, ransomware, and insider threats. Automated response with instant containment.</p>
+          <ul class="use-case-features">
+            <li>Data loss prevention (DLP)</li>
+            <li>Ransomware detection</li>
+            <li>Insider threat monitoring</li>
+            <li>Encryption enforcement</li>
+          </ul>
+        </div>
+      </div>
+      
+      <div class="case-study">
+        <h3>Case Study: FinTech Success</h3>
+        <p>A major payment processor reduced fraud losses by 87% and cut security response time from 45 minutes to under 2 seconds using AstraGuard's adaptive memory system.</p>
+        <div class="case-study-stats">
+          <div>
+            <div class="case-study-stat-value">87%</div>
+            <div class="case-study-stat-label">Fraud Reduction</div>
+          </div>
+          <div>
+            <div class="case-study-stat-value">&lt;2s</div>
+            <div class="case-study-stat-label">Response Time</div>
+          </div>
+          <div>
+            <div class="case-study-stat-value">$12M</div>
+            <div class="case-study-stat-label">Annual Savings</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TEAM -->
+  <section id="team">
+    <div class="container">
+      <div class="section-header">
+        <h2>Meet the Team</h2>
+        <p>A dedicated group of engineers and security experts building the future of autonomous cybersecurity.</p>
+      </div>
+      
+      <div class="team-grid">
+        <div class="team-card">
+          <div class="team-avatar">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.5"/>
+              <path d="M4 20C4 16.6863 6.68629 14 10 14H14C17.3137 14 20 16.6863 20 20" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <h3>Subhajit Roy</h3>
+          <div class="team-role">Team Leader</div>
+        </div>
+        
+        <div class="team-card">
+          <div class="team-avatar">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.5"/>
+              <path d="M4 20C4 16.6863 6.68629 14 10 14H14C17.3137 14 20 16.6863 20 20" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <h3>Ayush Sharma</h3>
+          <div class="team-role">Core Developer</div>
+        </div>
+        
+        <div class="team-card">
+          <div class="team-avatar">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.5"/>
+              <path d="M4 20C4 16.6863 6.68629 14 10 14H14C17.3137 14 20 16.6863 20 20" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <h3>Aditya Mishra</h3>
+          <div class="team-role">Security Engineer</div>
+        </div>
+      </div>
+      
+      <div class="github-cta">
+        <a href="https://github.com/sr-857/AstraGuard" target="_blank" class="btn btn-primary">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.17 6.839 9.49.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.167 22 16.418 22 12c0-5.523-4.477-10-10-10z"/>
+          </svg>
+          <span>View Project on GitHub</span>
+        </a>
+      </div>
+      
+      <div class="mission">
+        <h3>Our Mission</h3>
+        <p>To revolutionize cybersecurity by building intelligent systems that learn from every incident, continuously adapt to new threats, and autonomously protect organizations without requiring constant human intervention.</p>
+      </div>
+      
+      <div class="faq-container" style="margin-top: 4rem;">
+        <div class="section-header" style="margin-bottom: 2rem;">
+          <h2>Frequently Asked Questions</h2>
+        </div>
+        
+        <div class="faq-item">
+          <button class="faq-question" onclick="toggleFAQ(this)">
+            <span>Why choose AstraGuard over traditional security tools?</span>
+            <span class="faq-icon">+</span>
+          </button>
+          <div class="faq-answer">
+            AstraGuard doesn't just detect threats—it learns from them. Every incident becomes experience, and every experience becomes a ready-to-use response. Unlike traditional tools that require constant manual updates and rule configuration, AstraGuard continuously monitors systems in real-time, detects anomalies, remembers past incidents, automatically applies the best response, and improves itself with every attack.
+          </div>
+        </div>
+        
+        <div class="faq-item">
+          <button class="faq-question" onclick="toggleFAQ(this)">
+            <span>How does the adaptive memory system work?</span>
+            <span class="faq-icon">+</span>
+          </button>
+          <div class="faq-answer">
+            Our adaptive memory system uses a sophisticated knowledge graph that connects incidents, patterns, and solutions. When a new threat appears, the system analyzes its characteristics and searches for similar historical incidents. It retrieves proven solutions, ranks them by success rate and contextual relevance, then automatically applies the most effective response.
+          </div>
+        </div>
+        
+        <div class="faq-item">
+          <button class="faq-question" onclick="toggleFAQ(this)">
+            <span>What makes AstraGuard's response time so fast?</span>
+            <span class="faq-icon">+</span>
+          </button>
+          <div class="faq-answer">
+            AstraGuard achieves sub-2-second response times through a combination of stream processing, pre-computed decision trees, and instant memory retrieval. Our system processes security events in real-time using Apache Kafka for streaming, maintains hot caches of common attack patterns in Redis, and uses optimized graph queries to retrieve solutions instantly.
+          </div>
+        </div>
+        
+        <div class="faq-item">
+          <button class="faq-question" onclick="toggleFAQ(this)">
+            <span>Can AstraGuard integrate with existing security tools?</span>
+            <span class="faq-icon">+</span>
+          </button>
+          <div class="faq-answer">
+            Yes! AstraGuard is designed to complement your existing security stack. We provide integrations with popular SIEM platforms, cloud providers (AWS, Azure, GCP), monitoring tools (Datadog, Splunk), and ticketing systems (Jira, PagerDuty). AstraGuard can ingest data from multiple sources and orchestrate responses across your entire security infrastructure.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <script>
+    // TAB SWITCHING
+    function switchTab(tabName) {
+      document.querySelectorAll('section').forEach(section => {
+        section.classList.remove('active');
+      });
+      document.getElementById(tabName).classList.add('active');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      
+      if (tabName === 'memory') {
+        setTimeout(initMemoryGraph, 100);
+      }
+    }
+
+    // TERMINAL MONITORING
+    let monitoringActive = true;
+    let threatCounter = 0;
+    let logInterval;
+
+    const logTypes = [
+      { level: 'info', color: '#60a5fa', messages: [
+        'System health check passed',
+        'Request processed successfully',
+        'Model inference completed',
+        'Backup completed successfully'
+      ]},
+      { level: 'warn', color: '#fb923c', messages: [
+        'Token validation failed for user session',
+        'Unusual API request rate detected',
+        'Certificate expiring in 7 days',
+        'Memory usage above 85% threshold'
+      ]},
+      { level: 'error', color: '#f87171', messages: [
+        'Unauthorized access attempt on db-cluster',
+        'Failed login from suspicious IP 192.168.1.1',
+        'SQL injection attempt detected',
+        'Privilege escalation attempt blocked'
+      ]},
+      { level: 'success', color: '#4ade80', messages: [
+        'Threat automatically mitigated',
+        'Pattern matched - applying solution',
+        'Memory updated with new incident',
+        'Auto-response executed successfully'
+      ]}
+    ];
+
+    function addLogLine() {
+      if (!monitoringActive) return;
+
+      const logType = logTypes[Math.floor(Math.random() * logTypes.length)];
+      const message = logType.messages[Math.floor(Math.random() * logType.messages.length)];
+      
+      const terminal = document.getElementById('terminalBody');
+      const logLine = document.createElement('div');
+      logLine.className = 'log-line';
+      
+      const time = new Date().toLocaleTimeString();
+      logLine.innerHTML = `
+        <span class="log-time">[${time}]</span>
+        <span class="log-level ${logType.level}" style="color: ${logType.color}">[${logType.level.toUpperCase()}]</span>
+        <span>${message}</span>
+      `;
+      
+      terminal.appendChild(logLine);
+      terminal.scrollTop = terminal.scrollHeight;
+      
+      if (logType.level === 'error' || logType.level === 'warn') {
+        threatCounter++;
+        document.getElementById('threatCount').textContent = threatCounter;
+        animateCounter('threatsBlocked', 10247 + threatCounter);
+      }
+      
+      if (terminal.children.length > 50) {
+        terminal.removeChild(terminal.children[2]);
+      }
+    }
+
+    function pauseMonitoring() {
+      monitoringActive = !monitoringActive;
+      const btn = document.getElementById('pauseBtn');
+      btn.textContent = monitoringActive ? 'PAUSE' : 'RESUME';
+    }
+
+    function clearTerminal() {
+      const terminal = document.getElementById('terminalBody');
+      terminal.innerHTML = `
+        <div class="log-line mono">
+          <span style="color: #4ade80;">$ </span>
+          <span>AstraGuard Security Monitor v2.0</span>
+        </div>
+        <div class="log-line mono" style="color: #404040;">
+          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        </div>
+      `;
+      threatCounter = 0;
+      document.getElementById('threatCount').textContent = '0';
+    }
+
+    function animateCounter(id, target) {
+      const element = document.getElementById(id);
+      if (!element) return;
+      
+      const current = parseInt(element.textContent.replace(/[^\d]/g, '')) || 0;
+      const increment = Math.ceil((target - current) / 20);
+      
+      const timer = setInterval(() => {
+        const value = parseInt(element.textContent.replace(/[^\d]/g, '')) || 0;
+        if (value < target) {
+          element.textContent = (value + increment).toLocaleString();
+        } else {
+          element.textContent = target.toLocaleString();
+          clearInterval(timer);
+        }
+      }, 50);
+    }
+
+    // MEMORY GRAPH
+    function initMemoryGraph() {
+      const container = document.getElementById('memoryGraph');
+      if (!container) return;
+      
+      container.innerHTML = '';
+      
+      const width = container.offsetWidth;
+      const height = 500;
+      
+      // Define node positions in a more aesthetic layout
+      const nodes = [
+        { x: width/2, y: height/2, size: 'large', label: '🔒 CORE', delay: 0 },
+        { x: width/4, y: height/4, size: 'medium', label: '🔐 Auth', delay: 0.2 },
+        { x: 3*width/4, y: height/4, size: 'medium', label: '🌐 Net', delay: 0.4 },
+        { x: width/5, y: 3*height/4, size: 'medium', label: '💾 Data', delay: 0.6 },
+        { x: 4*width/5, y: 3*height/4, size: 'medium', label: '⚡ API', delay: 0.8 },
+        { x: width/7, y: height/2, size: 'small', label: 'SQL', delay: 1 },
+        { x: 6*width/7, y: height/2, size: 'small', label: 'DDoS', delay: 1.2 },
+        { x: width/2, y: height/6, size: 'small', label: 'XSS', delay: 1.4 },
+        { x: width/2, y: 5*height/6, size: 'small', label: 'RCE', delay: 1.6 },
+        { x: 2*width/5, y: height/3, size: 'small', label: 'FW', delay: 1.8 },
+        { x: 3*width/5, y: 2*height/3, size: 'small', label: 'IDS', delay: 2 }
+      ];
+      
+      // Define connections with varied patterns
+      const connections = [
+        [0, 1], [0, 2], [0, 3], [0, 4],  // Core to main nodes
+        [1, 5], [2, 6], [1, 7], [3, 8],  // Main to small
+        [2, 4], [1, 3],                   // Cross connections
+        [9, 1], [9, 2],                   // FW connections
+        [10, 3], [10, 4]                  // IDS connections
+      ];
+      
+      // Draw connections first (behind nodes)
+      connections.forEach(([i, j], index) => {
+        const line = document.createElement('div');
+        line.className = 'memory-connection';
+        
+        const x1 = nodes[i].x;
+        const y1 = nodes[i].y;
+        const x2 = nodes[j].x;
+        const y2 = nodes[j].y;
+        
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const length = Math.sqrt(dx * dx + dy * dy);
+        const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+        
+        line.style.width = length + 'px';
+        line.style.left = x1 + 'px';
+        line.style.top = y1 + 'px';
+        line.style.transform = `rotate(${angle}deg)`;
+        line.style.animationDelay = (index * 0.15) + 's';
+        
+        container.appendChild(line);
+      });
+      
+      // Draw nodes on top with staggered animation
+      nodes.forEach((node, index) => {
+        const nodeEl = document.createElement('div');
+        nodeEl.className = `memory-node ${node.size}`;
+        nodeEl.textContent = node.label;
+        nodeEl.style.left = node.x + 'px';
+        nodeEl.style.top = node.y + 'px';
+        nodeEl.style.animationDelay = node.delay + 's';
+        
+        // Add interactive tooltip effect
+        nodeEl.addEventListener('mouseenter', () => {
+          nodeEl.style.fontSize = node.size === 'large' ? '1.1rem' : node.size === 'medium' ? '1rem' : '0.85rem';
+        });
+        
+        nodeEl.addEventListener('mouseleave', () => {
+          nodeEl.style.fontSize = node.size === 'large' ? '1rem' : node.size === 'medium' ? '0.875rem' : '0.75rem';
+        });
+        
+        // Stagger the appearance
+        nodeEl.style.opacity = '0';
+        nodeEl.style.transform = 'translate(-50%, -50%) scale(0)';
+        
+        setTimeout(() => {
+          nodeEl.style.transition = 'all 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)';
+          nodeEl.style.opacity = '1';
+          nodeEl.style.transform = 'translate(-50%, -50%) scale(1)';
+        }, index * 100);
+        
+        container.appendChild(nodeEl);
+      });
+    }
+
+    // FAQ TOGGLE
+    function toggleFAQ(button) {
+      const item = button.parentElement;
+      const allItems = document.querySelectorAll('.faq-item');
+      
+      allItems.forEach(i => {
+        if (i !== item) i.classList.remove('active');
+      });
+      
+      item.classList.toggle('active');
+    }
+
+    // INIT
+    document.addEventListener('DOMContentLoaded', () => {
+      if (logInterval) clearInterval(logInterval);
+      logInterval = setInterval(addLogLine, 1000);
+      
+      setTimeout(initMemoryGraph, 500);
+      
+      let resizeTimer;
+      window.addEventListener('resize', () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+          if (document.getElementById('memory').classList.contains('active')) {
+            initMemoryGraph();
+          }
+        }, 250);
+      });
+      
+      setTimeout(() => {
+        animateCounter('incidentsStored', 10247);
+        animateCounter('patternLinks', 25891);
+        animateCounter('resolvedCases', 8903);
+      }, 1000);
+    });
+  </script>
+  </div>
+</body>
+</html>

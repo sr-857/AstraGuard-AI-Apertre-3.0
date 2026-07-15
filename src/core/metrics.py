@@ -238,9 +238,17 @@ MTTR_SECONDS = Histogram(
 
 def track_circuit_breaker_metrics(circuit_breaker):
     """
-    Update Prometheus metrics from circuit breaker.
-    
-    Should be called periodically or on state changes.
+    Update Prometheus metrics with current circuit breaker state.
+
+    Extracts internal state (failures, successes, open state duration) from
+    a CircuitBreaker instance and updates the corresponding Prometheus gauges
+    and counters.
+
+    Should be called periodically (e.g., via a background task) or triggered
+    by state change events to ensure observability dashboards are accurate.
+
+    Args:
+        circuit_breaker: The CircuitBreaker instance to monitor.
     """
     metrics = circuit_breaker.get_metrics()
     
@@ -269,9 +277,17 @@ def track_circuit_breaker_metrics(circuit_breaker):
 
 def track_latency(metric_name: str, labels: dict = None):
     """
-    Decorator to track latency of async functions.
-    
-    Usage:
+    Decorator to measure and record the execution time of async functions.
+
+    Automatically calculates the duration of the decorated function and observes
+    it using the specified Prometheus Histogram metric.
+
+    Args:
+        metric_name (str): The name of the Prometheus metric to update.
+        labels (dict, optional): A dictionary of labels to apply to the metric.
+                                 Defaults to None.
+
+    Example:
         @track_latency('anomaly_detection_latency_seconds', {'detector_type': 'model'})
         async def detect_anomaly(data):
             ...

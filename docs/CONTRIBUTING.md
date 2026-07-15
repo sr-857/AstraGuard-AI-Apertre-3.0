@@ -62,6 +62,42 @@ AstraGuard now operates with **mission-phase awareness**. Before contributing, u
 4.  **Implement**: Write clean, tested code.
 5.  **Submit PR**: detailed description of your changes.
 
+## 👋 First Time Contributing?
+
+New to AstraGuard or open source? Start with a **Good First Issue**!
+
+### Finding Good First Issues
+
+Look for issues labeled with:
+- `good first issue` - Perfect for newcomers
+- `easy` - Can be completed in 2-4 hours
+- `apertre3.0` - Part of the Winter of Code event
+
+**Browse Good First Issues**: [View all good first issues](https://github.com/sr-857/AstraGuard-AI-Apertre-3.0/labels/good%20first%20issue)
+
+### What Makes a Good First Issue?
+
+Good first issues are:
+- ✅ **Well-defined** with clear acceptance criteria
+- ✅ **Beginner-friendly** requiring minimal context
+- ✅ **Quick wins** completable in 2-4 hours
+- ✅ **Guided** with suggested approach and resources
+
+For detailed criteria and examples, see:
+- 📋 [Good First Issue Criteria](GOOD_FIRST_ISSUE_CRITERIA.md) - Full selection criteria
+- 🛠️ [Good First Issue Maintainer Guide](../.github/GOOD_FIRST_ISSUE_MAINTAINER_GUIDE.md) - For maintainers
+
+### Getting Help
+
+Stuck on your first issue? We're here to help!
+
+- 💬 **Comment on the issue** - Ask questions directly
+- 📖 **Check the docs** - Review relevant documentation
+- 🤝 **Join the discussion** - Connect with other contributors
+- 📧 **Reach out** - Contact maintainers if needed
+
+**Remember**: There are no silly questions! We all started somewhere. 🌱
+
 ## 🧪 Testing Guidelines
 - Run existing tests before submitting.
 - Add new tests for any new logic.
@@ -71,6 +107,31 @@ AstraGuard now operates with **mission-phase awareness**. Before contributing, u
 Be respectful, constructive, and inclusive. We are all here to learn and build something awesome together.
 
 Happy Coding! 🚀
+
+## 🏆 Contributor Recognition
+
+We value and recognize all contributions! Check out our recognition program:
+
+- **[CONTRIBUTORS.md](../CONTRIBUTORS.md)** - See all contributors and their tiers
+- **[Metrics Dashboard](contribution-metrics-dashboard.html)** - View real-time contribution statistics
+- **[Recognition Program](../.github/CONTRIBUTOR_RECOGNITION.md)** - Learn about recognition criteria and benefits
+- **[Badge System](CONTRIBUTOR_BADGES.md)** - Explore available badges and how to earn them
+
+### Recognition Tiers
+- 🌱 **New Contributor** (1 PR): Welcome to the community!
+- ⭐ **Active Contributor** (2-4 PRs): Regular engagement
+- 💎 **Regular Contributor** (5-19 PRs): Consistent quality contributions
+- 🌟 **Core Contributor** (20-49 PRs): Leadership and sustained excellence
+- 👑 **Legend** (50+ PRs): Exceptional long-term commitment
+
+### Get Recognized
+Every merged PR counts toward your tier! Quality contributions can also earn specialty badges like:
+- 🔒 Security Researcher
+- 📚 Documentation Hero
+- 🧪 Testing Champion
+- 🤝 Community Mentor
+
+---
 
 ## Apertre-3.0 2026 Contribution Guidelines
 
@@ -98,6 +159,19 @@ To ensure your contribution is eligible for Apertre-3.0 scoring, your pull reque
 
 - [Apertre-3.0 Official Website](https://code.elitecoders.xyz/)
 - [AstraGuard-AI Issues](https://github.com/sr-857/AstraGuard-AI/issues)
+- [AstraGuard-AI Discussions](https://github.com/sr-857/AstraGuard-AI/discussions)
+- [Community Discussion Guidelines](./COMMUNITY_DISCUSSION_GUIDELINES.md)
+- [Code of Conduct](./CODE_OF_CONDUCT.md)
+- [PR Review Guidelines](./PR_REVIEW_GUIDELINES.md)
 - [Project Documentation](../docs/)
+
+### Questions About Contributing?
+
+**Before you contribute, check out:**
+- 📖 [Community Discussion Guidelines](./COMMUNITY_DISCUSSION_GUIDELINES.md) — How to ask questions and participate in the community
+- 🤝 [Code of Conduct](./CODE_OF_CONDUCT.md) — Our community values
+- ✅ [PR Review Guidelines](./PR_REVIEW_GUIDELINES.md) — What reviewers look for
+
+Not sure where to start? Post your questions in [GitHub Discussions](https://github.com/sr-857/AstraGuard-AI/discussions) in the **Questions** category!
 
 Good luck with your contributions! We're excited to see what you build. 🚀

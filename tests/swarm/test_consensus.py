@@ -28,6 +28,9 @@ from astraguard.swarm.bus import SwarmMessageBus
 from astraguard.swarm.registry import SwarmRegistry
 from astraguard.swarm.types import QoSLevel
 
+# Mark consensus tests as slow due to distributed voting
+pytestmark = [pytest.mark.slow, pytest.mark.timeout(60)]
+
 
 @pytest.fixture
 def mock_config():

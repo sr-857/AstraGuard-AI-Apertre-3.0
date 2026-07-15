@@ -7,9 +7,9 @@
     "app": "node start-app.js",
     "app:start": "node start-app.js",
     "api": "python run_api.py",
-    "frontend": "cd frontend/as_lp && npm run dev",
-    "frontend:build": "cd frontend/as_lp && npm run build",
-    "frontend:install": "cd frontend/as_lp && npm install"
+    "frontend": "cd ui/frontend/as_lp && npm run dev",
+    "frontend:build": "cd ui/frontend/as_lp && npm run build",
+    "frontend:install": "cd ui/frontend/as_lp && npm install"
   },
   "keywords": [
     "satellite",

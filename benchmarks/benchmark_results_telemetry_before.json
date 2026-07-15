@@ -1,0 +1,14 @@
+{
+  "timestamp": "2026-02-10T23:35:57.663804",
+  "num_requests": 100,
+  "concurrent_requests": 10,
+  "total_time_seconds": 23.68,
+  "throughput_requests_per_second": 4.22,
+  "latency_ms": {
+    "average": 2339.55,
+    "median": 2320.82,
+    "min": 2266.95,
+    "max": 2517.09,
+    "p95": 2496.79
+  }
+}

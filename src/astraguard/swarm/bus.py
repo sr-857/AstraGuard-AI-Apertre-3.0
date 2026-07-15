@@ -48,6 +48,7 @@ class SwarmMessageBus:
         serializer: SwarmSerializer,
         isl_bandwidth_kbps: int = 10,
         latency_ms: int = 100,
+        network_client: Optional[Any] = None,  # NetworkClient instance
     ):
         """Initialize message bus.
         
@@ -56,11 +57,13 @@ class SwarmMessageBus:
             serializer: SwarmSerializer for message encoding
             isl_bandwidth_kbps: ISL bandwidth limit (default 10 KB/s)
             latency_ms: ISL latency in milliseconds (default 100ms)
+            network_client: Optional implementation of NetworkClient for remote delivery
         """
         self.config = config
         self.serializer = serializer
         self.isl_bandwidth_kbps = isl_bandwidth_kbps
         self.latency_ms = latency_ms
+        self.network_client = network_client
 
         # Subscription management
         self.subscriptions: Dict[SubscriptionID, Callable] = {}
@@ -136,6 +139,23 @@ class SwarmMessageBus:
                 sequence=self.message_sequence,
                 receiver=receiver,
             )
+
+            # Network Optimization: Use NetworkClient if available and needed
+            if self.network_client and (receiver and receiver.uuid != self.config.agent_id.uuid):
+                # Send explicit message to remote peer
+                # Serialized message structure would be needed here, sending payload + metadata
+                # For now simplify to sending payload
+                success = await self.network_client.send_message(
+                    target_agent_id=str(receiver.uuid),
+                    payload=payload_bytes
+                )
+                if not success:
+                    self.metrics["failed"] += 1
+                    return False
+                
+                self.metrics["published"] += 1
+                self.metrics["delivered"] += 1
+                return True
 
             # Handle QoS level
             if qos == QoSLevel.FIRE_FORGET:

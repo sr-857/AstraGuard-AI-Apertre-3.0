@@ -10,6 +10,9 @@ from core.component_health import get_health_monitor
 from core.metrics import MISSION_PHASE
 # Import input validation
 from core.input_validation import MissionPhaseValidator, ValidationError, TelemetryData
+from core.event_bus import get_event_bus
+from core.events import StateTransitioned
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -208,6 +211,19 @@ class StateMachine:
             logger.info(
                 f"Mission phase transitioned: {previous_phase.value} → {phase.value}"
             )
+            
+            # Publish state transition event
+            try:
+                event = StateTransitioned(
+                    previous_state=previous_phase.value,
+                    new_state=phase.value,
+                    transition_type="phase",
+                    reason="Manual or policy update"
+                )
+                asyncio.create_task(get_event_bus().publish(event))
+            except Exception as e:
+                logger.error(f"Failed to publish phase transition event: {e}")
+
             health_monitor.mark_healthy(
                 "state_machine",
                 {
@@ -295,6 +311,19 @@ class StateMachine:
             elif self.current_state == SystemState.FAULT_DETECTED:
                 self.current_state = SystemState.RECOVERY_IN_PROGRESS
                 self.recovery_steps = 0
+        
+        # Publish state change event if state changed
+        if previous_state != self.current_state.value:
+            try:
+                event = StateTransitioned(
+                    previous_state=previous_state,
+                    new_state=self.current_state.value,
+                    transition_type="system_state",
+                    reason=f"Fault processed: {fault_type}"
+                )
+                asyncio.create_task(get_event_bus().publish(event))
+            except Exception as e:
+                logger.error(f"Failed to publish state transition event: {e}")
 
         return {
             "previous_state": previous_state,

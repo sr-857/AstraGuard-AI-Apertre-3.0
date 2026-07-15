@@ -10,7 +10,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Copy requirements early for caching
-COPY config/requirements.txt .
+# Copy requirements early for caching
+COPY src/config/requirements.txt .
 
 # Install Python dependencies with CPU-only torch
 RUN pip install --no-cache-dir \
@@ -36,8 +37,8 @@ RUN useradd -m -u 1000 appuser
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
-# Copy application code
-COPY --chown=appuser:appuser . .
+# Copy application code from src
+COPY --chown=appuser:appuser src .
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \

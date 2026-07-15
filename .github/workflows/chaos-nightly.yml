@@ -14,6 +14,7 @@ on:
       - 'tests/swarm/chaos/**'
       - '.github/workflows/chaos-nightly.yml'
 
+# Fix #809: Prevent cancellation of chaos tests
 concurrency:
   group: chaos-tests-${{ github.ref }}
   cancel-in-progress: false
@@ -23,6 +24,10 @@ jobs:
     name: Chaos Engineering Test Suite
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    
+    # Fix #809: Unique project name per matrix scenario to prevent network collisions
+    env:
+      COMPOSE_PROJECT_NAME: chaos-${{ github.run_id }}-${{ matrix.scenario }}
     
     strategy:
       matrix:
@@ -78,10 +83,10 @@ jobs:
       
       - name: Start Swarm Constellation
         run: |
-          docker-compose -f infra/docker/docker-compose.swarm.yml up -d
+          docker compose -f infra/docker/docker-compose.swarm.yml up -d --build
           echo "Waiting for services to be healthy..."
           sleep 10
-          docker-compose -f infra/docker/docker-compose.swarm.yml ps
+          docker compose -f infra/docker/docker-compose.swarm.yml ps
       
       - name: Run Chaos Scenario - ${{ matrix.description }}
         run: |
@@ -97,7 +102,7 @@ jobs:
           mkdir -p chaos-artifacts
           
           # Docker logs
-          docker-compose -f infra/docker/docker-compose.swarm.yml logs > chaos-artifacts/docker-${{ matrix.scenario }}.log || true
+          docker compose -f infra/docker/docker-compose.swarm.yml logs > chaos-artifacts/docker-${{ matrix.scenario }}.log || true
           
           # Prometheus metrics snapshot
           curl -s http://localhost:9090/api/v1/query?query=chaos:consensus_rate \
@@ -132,7 +137,7 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker-compose -f infra/docker/docker-compose.swarm.yml down -v || true
+          docker compose -f infra/docker/docker-compose.swarm.yml down -v || true
 
   chaos-summary:
     name: Chaos Test Summary
@@ -181,6 +186,10 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule'
     timeout-minutes: 60
+
+    # Fix #809: Unique project name for stress tests
+    env:
+      COMPOSE_PROJECT_NAME: chaos-stress-${{ github.run_id }}
     
     steps:
       - uses: actions/checkout@v4
@@ -209,13 +218,13 @@ jobs:
             echo ""
             echo "=== Iteration $iteration/5 ==="
             
-            docker-compose -f infra/docker/docker-compose.swarm.yml up -d
+            docker compose -f infra/docker/docker-compose.swarm.yml up -d --build
             sleep 10
             
             python -m pytest tests/swarm/chaos/test_chaos_suite.py \
               --tb=short --timeout=600 -v 2>&1 | tee chaos-iteration-$iteration.log
             
-            docker-compose -f infra/docker/docker-compose.swarm.yml down -v
+            docker compose -f infra/docker/docker-compose.swarm.yml down -v
             sleep 5
           done
       
@@ -245,4 +254,4 @@ jobs:
       
       - name: Cleanup
         if: always()
-        run: docker-compose -f infra/docker/docker-compose.swarm.yml down -v || true
+        run: docker compose -f infra/docker/docker-compose.swarm.yml down -v || true

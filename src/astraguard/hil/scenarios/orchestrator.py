@@ -13,14 +13,19 @@ from astraguard.hil.scenarios.parser import ScenarioExecutor
 class ScenarioOrchestrator:
     """Manages test campaigns, parallel execution, and result aggregation."""
 
-    def __init__(self, scenario_dir: str = "astraguard/hil/scenarios/sample_scenarios"):
+    def __init__(self, scenario_dir: Optional[str] = None):
         """
         Initialize orchestrator with scenario directory.
 
         Args:
-            scenario_dir: Directory containing YAML scenario files
+            scenario_dir: Directory containing YAML scenario files. 
+                         If None, uses 'sample_scenarios' in the same package.
         """
-        self.scenario_dir = Path(scenario_dir)
+        if scenario_dir is None:
+            self.scenario_dir = Path(__file__).parent / "sample_scenarios"
+        else:
+            self.scenario_dir = Path(scenario_dir)
+            
         self.results_dir = Path("astraguard/hil/results")
         self.results_dir.mkdir(parents=True, exist_ok=True)
         self._execution_log: List[Dict[str, Any]] = []

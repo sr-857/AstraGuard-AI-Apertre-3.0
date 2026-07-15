@@ -18,11 +18,14 @@ import yaml
 from datetime import datetime
 from unittest.mock import Mock, AsyncMock, patch
 
+# Mark recovery orchestrator tests as slow
+pytestmark = [pytest.mark.slow, pytest.mark.timeout(45)]
+
 # Add parent directory to path
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from backend.recovery_orchestrator_enhanced import (
+from backend.orchestration.recovery_orchestrator_enhanced import (
     EnhancedRecoveryOrchestrator,
     RecoveryConfig,
     AnomalyEvent,

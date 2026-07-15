@@ -279,7 +279,7 @@ class TestProductionReadiness:
         
         print("✅ All core production dependencies available")
 
-    def test_Apertre-3.0_complete_path(self) -> None:
+    def test_Apertre_3_0_complete_path(self) -> None:
         """Verify complete #50-55 module path."""
         modules = [
             "models.feedback",

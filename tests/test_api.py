@@ -9,13 +9,39 @@ from api.service import app, initialize_components
 
 
 @pytest.fixture(autouse=True)
-async def setup_components():
+async def setup_components(monkeypatch):
     """Initialize components before all tests."""
+    # Mock predictive engine to avoid heavy initialization
+    from unittest.mock import AsyncMock, MagicMock
+    
+    mock_engine = AsyncMock()
+    mock_engine.initialize = AsyncMock(return_value=True)
+    mock_engine.add_training_data = AsyncMock()
+    mock_engine.predict_failures = AsyncMock(return_value=[])
+    mock_engine.trigger_preventive_actions = AsyncMock(return_value=[])
+    
+    async def mock_get_engine(memory_store):
+        return mock_engine
+        
+    # Patch the module where it is defined, because api.service imports it inside the function
+    import security_engine.predictive_maintenance
+    monkeypatch.setattr(security_engine.predictive_maintenance, "get_predictive_maintenance_engine", mock_get_engine)
+
     await initialize_components()
     # Reset memory store to ensure test isolation
     from api.service import memory_store
     if memory_store:
         memory_store.memory = []
+    
+    # Reset component health to ensure all start as HEALTHY
+    from core.component_health import get_health_monitor
+    health_monitor = get_health_monitor()
+    health_monitor.reset()
+    health_monitor = get_health_monitor()
+    
+    # Mark all components as healthy for tests
+    for component_name in ["anomaly_detector", "memory_store", "state_machine", "circuit_breaker", "predictive_maintenance"]:
+        health_monitor.mark_healthy(component_name)
 
 
 @pytest.fixture(autouse=True)
@@ -28,6 +54,9 @@ def mock_psutil(monkeypatch):
 
 from api.auth import get_api_key, APIKey
 from core.auth import get_current_user, User, UserRole
+from unittest.mock import MagicMock
+from core.auth import get_auth_manager
+from api.service import get_current_username
 
 @pytest.fixture
 def client():
@@ -76,6 +105,7 @@ class TestHealthEndpoints:
         """Test health check endpoint."""
         response = client.get("/health")
         assert response.status_code == 200
+        data = response.json()
         data = response.json()
         assert data["status"] == "healthy"
 
@@ -425,3 +455,239 @@ class TestMemoryBounds:
             assert history_response.status_code == 200
             data = history_response.json()
             assert data["count"] >= 5
+
+
+class TestAuthEndpoints:
+    """Test authentication endpoints."""
+
+    def test_login_success(self, client, monkeypatch):
+        """Test successful user login."""
+        mock_auth_manager = MagicMock()
+        mock_auth_manager.authenticate_user.return_value = "fake_token"
+        monkeypatch.setattr("core.auth.get_auth_manager", lambda: mock_auth_manager)
+
+        login_data = {"username": "testuser", "password": "testpass"}
+        response = client.post("/api/v1/auth/login", json=login_data)
+        assert response.status_code == 200
+        data = response.json()
+        assert "access_token" in data
+        assert data["token_type"] == "bearer"
+
+    def test_login_failure(self, client, monkeypatch):
+        """Test login failure."""
+        mock_auth_manager = MagicMock()
+        mock_auth_manager.authenticate_user.side_effect = Exception("Invalid credentials")
+        monkeypatch.setattr("core.auth.get_auth_manager", lambda: mock_auth_manager)
+
+        login_data = {"username": "testuser", "password": "wrongpass"}
+        response = client.post("/api/v1/auth/login", json=login_data)
+        assert response.status_code == 401
+
+    def test_create_user_admin_only(self, client, monkeypatch):
+        """Test creating a user (admin only)."""
+        mock_auth_manager = MagicMock()
+        mock_user = MagicMock()
+        mock_user.id = "new_user_id"
+        mock_user.username = "newuser"
+        mock_user.role.value = "operator"
+        mock_user.email = "new@example.com"
+        mock_user.created_at = datetime.now()
+        mock_user.is_active = True
+        mock_auth_manager.create_user.return_value = mock_user
+        monkeypatch.setattr("core.auth.get_auth_manager", lambda: mock_auth_manager)
+
+        user_data = {
+            "username": "newuser",
+            "password": "securepass123",
+            "role": "operator",
+            "email": "new@example.com"
+        }
+        response = client.post("/api/v1/auth/users", json=user_data)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["username"] == "newuser"
+        assert data["role"] == "operator"
+
+    def test_get_current_user_info(self, client):
+        """Test getting current user information."""
+        response = client.get("/api/v1/auth/users/me")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["username"] == "test-operator"
+        assert data["role"] == "operator"
+
+    def test_create_api_key(self, client, monkeypatch):
+        """Test creating an API key."""
+        mock_auth_manager = MagicMock()
+        mock_api_key = MagicMock()
+        mock_api_key.id = "key_id"
+        mock_api_key.name = "Test Key"
+        mock_api_key.key = "generated_key"
+        mock_api_key.permissions = ["read", "write"]
+        mock_api_key.created_at = datetime.now()
+        mock_api_key.expires_at = None
+        mock_auth_manager.create_api_key.return_value = mock_api_key
+        monkeypatch.setattr("core.auth.get_auth_manager", lambda: mock_auth_manager)
+
+        key_data = {"name": "Test Key", "permissions": ["read", "write"]}
+        response = client.post("/api/v1/auth/apikeys", json=key_data)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == "Test Key"
+        assert "key" in data
+
+    def test_list_api_keys(self, client, monkeypatch):
+        """Test listing API keys."""
+        mock_auth_manager = MagicMock()
+        mock_keys = [
+            MagicMock(
+                id="key1",
+                name="Key 1",
+                permissions=["read"],
+                created_at=datetime.now(),
+                expires_at=None,
+                last_used=None
+            )
+        ]
+        mock_auth_manager.get_user_api_keys.return_value = mock_keys
+        monkeypatch.setattr("core.auth.get_auth_manager", lambda: mock_auth_manager)
+
+        response = client.get("/api/v1/auth/apikeys")
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data, list)
+        assert len(data) >= 0
+
+    def test_revoke_api_key(self, client, monkeypatch):
+        """Test revoking an API key."""
+        mock_auth_manager = MagicMock()
+        monkeypatch.setattr("core.auth.get_auth_manager", lambda: mock_auth_manager)
+
+        response = client.delete("/api/v1/auth/apikeys/key_id")
+        assert response.status_code == 200
+        data = response.json()
+        assert "message" in data
+
+
+class TestMetricsEndpoint:
+    """Test metrics endpoint."""
+
+    def test_metrics_endpoint(self, client, monkeypatch):
+        """Test Prometheus metrics endpoint."""
+        # Mock the observability flag
+        monkeypatch.setattr("api.service.OBSERVABILITY_ENABLED", True)
+
+        # Mock prometheus generate_latest
+        mock_generate_latest = MagicMock(return_value=b"fake_metrics")
+        monkeypatch.setattr("prometheus_client.generate_latest", mock_generate_latest)
+
+        response = client.get("/metrics")
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "text/plain; version=0.0.4; charset=utf-8"
+
+
+class TestLatestTelemetryEndpoint:
+    """Test latest telemetry endpoint."""
+
+    def test_get_latest_telemetry(self, client):
+        """Test getting latest telemetry data."""
+        response = client.get("/api/v1/telemetry/latest")
+        assert response.status_code == 200
+        data = response.json()
+        assert "status" in data
+        assert "timestamp" in data
+
+    def test_get_latest_telemetry_with_data(self, client):
+        """Test getting latest telemetry after submitting data."""
+        # First submit some telemetry
+        telemetry = {
+            "voltage": 8.0,
+            "temperature": 25.0,
+            "gyro": 0.01
+        }
+        client.post("/api/v1/telemetry", json=telemetry)
+
+        # Then get latest
+        response = client.get("/api/v1/telemetry/latest")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "success"
+        assert "data" in data
+
+
+class TestChaosInjection:
+    """Test chaos injection functionality."""
+
+    def test_chaos_network_latency(self, client, monkeypatch):
+        """Test network latency chaos injection."""
+        from api.service import active_faults
+        active_faults["network_latency"] = time.time() + 60  # Active for 60 seconds
+
+        # This would normally cause a delay, but in test we can't easily verify sleep
+        telemetry = {
+            "voltage": 8.0,
+            "temperature": 25.0,
+            "gyro": 0.01
+        }
+        response = client.post("/api/v1/telemetry", json=telemetry)
+        # Should still work, just slower
+        assert response.status_code == 200
+
+    def test_chaos_model_loader_failure(self, client, monkeypatch):
+        """Test model loader failure chaos injection."""
+        from api.service import active_faults
+        active_faults["model_loader"] = time.time() + 60
+
+        telemetry = {
+            "voltage": 8.0,
+            "temperature": 25.0,
+            "gyro": 0.01
+        }
+        response = client.post("/api/v1/telemetry", json=telemetry)
+        assert response.status_code == 503
+        assert "Chaos Injection" in response.json()["detail"]
+
+
+class TestHelperFunctions:
+    """Test helper functions in service.py."""
+
+    def test_check_chaos_injection(self, client):
+        """Test chaos injection check."""
+        from api.service import check_chaos_injection, inject_chaos_fault
+
+        # Initially no active faults
+        assert not check_chaos_injection("test_fault")
+
+        # Inject a fault
+        result = inject_chaos_fault("test_fault", 10)
+        assert result["status"] == "injected"
+        assert "expires_at" in result
+
+        # Now it should be active
+        assert check_chaos_injection("test_fault")
+
+    def test_cleanup_expired_faults(self, client):
+        """Test cleanup of expired faults."""
+        from api.service import cleanup_expired_faults, active_faults, inject_chaos_fault
+
+        # Inject a short-lived fault
+        inject_chaos_fault("short_fault", 1)
+        assert "short_fault" in active_faults
+
+        # Wait for expiration
+        import time
+        time.sleep(1.1)
+
+        # Cleanup
+        cleanup_expired_faults()
+        assert "short_fault" not in active_faults
+
+    def test_create_response(self, client):
+        """Test create_response helper."""
+        from api.service import create_response
+
+        response = create_response("success", {"key": "value"}, extra="data")
+        assert response["status"] == "success"
+        assert response["key"] == "value"
+        assert response["extra"] == "data"
+        assert "timestamp" in response

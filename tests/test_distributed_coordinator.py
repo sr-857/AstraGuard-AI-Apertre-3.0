@@ -20,10 +20,13 @@ from collections import Counter
 
 # Import modules under test
 from backend.redis_client import RedisClient
-from backend.distributed_coordinator import (
+from backend.orchestration.distributed_coordinator import (
     DistributedResilienceCoordinator,
     ConsensusDecision,
 )
+
+# Mark all tests in this module as slow due to distributed nature
+pytestmark = [pytest.mark.slow, pytest.mark.timeout(60)]
 
 
 # ============================================================================

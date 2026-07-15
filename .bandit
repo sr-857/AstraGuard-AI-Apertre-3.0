@@ -1,0 +1,21 @@
+# Bandit Security Configuration
+
+[bandit]
+exclude_dirs = [
+    "/tests",
+    "/venv",
+    "/.venv",
+    "/node_modules"
+]
+
+# Skip certain tests that may have false positives
+skips = [
+    "B101",  # assert_used - we use asserts in tests
+    "B601"   # paramiko_calls - if we use paramiko legitimately
+]
+
+# Confidence level
+confidence_level = "MEDIUM"
+
+# Severity level
+severity_level = "MEDIUM"

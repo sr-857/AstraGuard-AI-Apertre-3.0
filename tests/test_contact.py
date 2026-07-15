@@ -23,6 +23,11 @@ def test_app():
     """Create a test FastAPI app with contact router"""
     app = FastAPI()
     app.include_router(router)
+    
+    # Override admin dependency to bypass auth
+    from api.contact import get_admin_user
+    app.dependency_overrides[get_admin_user] = lambda: {"username": "admin", "roles": ["admin"]}
+    
     return app
 
 

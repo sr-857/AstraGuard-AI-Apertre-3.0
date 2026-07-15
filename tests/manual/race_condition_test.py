@@ -6,6 +6,8 @@ from datetime import datetime
 from core.secrets import init_secrets_manager
 
 # Initialize secrets manager
+import os
+os.environ["SECRETS_MASTER_KEY"] = "dummy_key_for_testing_12345"
 init_secrets_manager()
 
 def test_thread_safety():

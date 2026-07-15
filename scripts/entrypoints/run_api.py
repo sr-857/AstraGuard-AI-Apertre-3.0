@@ -13,10 +13,27 @@ Usage:
 import argparse
 import uvicorn
 import os
+import sys
+
+# Add src to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
+
 from core.secrets import get_secret
+from core.config_validator import validate_configuration
 
 
 def main():
+    # CRITICAL: Validate configuration BEFORE any other initialization
+    # This ensures the service fails fast with clear error messages
+    print("\n" + "=" * 80)
+    print("🔧 AstraGuard AI - Configuration Validation")
+    print("=" * 80)
+    
+    try:
+        validated_config = validate_configuration()
+    except SystemExit as e:
+        # Configuration validation failed - exit immediately
+        sys.exit(e.code)
     parser = argparse.ArgumentParser(
         description="AstraGuard AI REST API Server"
     )
@@ -45,8 +62,8 @@ def main():
 
     args = parser.parse_args()
 
-    # Get log level from environment variable, default to "info"
-    log_level = get_secret("log_level", "info").lower()
+    # Get log level from validated configuration
+    log_level = validated_config.get("LOG_LEVEL", "info").lower()
 
     print(f"""
     ╔═══════════════════════════════════════════════════════════╗

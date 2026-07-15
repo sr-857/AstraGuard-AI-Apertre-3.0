@@ -30,6 +30,12 @@ try:
 except ImportError:
     HAS_LZ4 = False
 
+try:
+    import zstd
+    HAS_ZSTD = True
+except ImportError:
+    HAS_ZSTD = False
+
 
 @dataclass
 class CompressionStats:
@@ -57,13 +63,14 @@ class StateCompressor:
         self.stats = None
 
     def compress_health(
-        self, summary: HealthSummary, use_lz4: bool | None = None
+        self, summary: HealthSummary, use_lz4: bool | None = None, use_zstd: bool | None = None
     ) -> bytes:
         """Compress HealthSummary through 3-stage pipeline.
         
         Args:
             summary: HealthSummary to compress
             use_lz4: Enable LZ4 compression (stage 3). If None, auto-detect based on HAS_LZ4
+            use_zstd: Enable ZSTD compression (stage 3). Preferred over LZ4 if both True.
             
         Returns:
             Compressed bytes with header (version, flags, original_size)
@@ -71,9 +78,11 @@ class StateCompressor:
         Raises:
             ValueError: If compression pipeline fails
         """
-        # Auto-detect LZ4 availability if not specified
+        # Auto-detect availability if not specified
         if use_lz4 is None:
             use_lz4 = HAS_LZ4
+        if use_zstd is None:
+            use_zstd = HAS_ZSTD
         
         try:
             # Stage 1: Delta encoding
@@ -82,15 +91,20 @@ class StateCompressor:
             # Stage 2: Quantization
             quantized_data = self._stage2_quantize(delta_data)
 
-            # Stage 3: LZ4 compression (if available and enabled)
-            if use_lz4 and HAS_LZ4:
+            # Stage 3: Compression (ZSTD > LZ4 > None)
+            flags = 0x00
+            
+            if use_zstd and HAS_ZSTD:
+                compressed_data = self._stage3_zstd_compress(quantized_data)
+                flags |= 0x02  # Bit 1: ZSTD enabled
+            elif use_lz4 and HAS_LZ4:
                 compressed_data = self._stage3_lz4_compress(quantized_data)
+                flags |= 0x01  # Bit 0: LZ4 enabled
             else:
                 compressed_data = quantized_data
 
             # Build output: version (1 byte) + flags (1 byte) + original_size (4 bytes) + data
             version = 1
-            flags = 0x01 if (use_lz4 and HAS_LZ4) else 0x00  # Bit 0: LZ4 enabled
             original_size = self._calculate_original_size(summary)
 
             output = struct.pack(
@@ -131,9 +145,15 @@ class StateCompressor:
             if version != 1:
                 raise ValueError(f"Unsupported compression version: {version}")
 
-            # Stage 3 (reverse): LZ4 decompression
+            # Stage 3 (reverse): Decompression
             lz4_enabled = bool(flags & 0x01)
-            if lz4_enabled:
+            zstd_enabled = bool(flags & 0x02)
+
+            if zstd_enabled:
+                if not HAS_ZSTD:
+                    raise ValueError("ZSTD decompression not available")
+                quantized_data = self._stage3_zstd_decompress(compressed_data)
+            elif lz4_enabled:
                 if not HAS_LZ4:
                     raise ValueError("LZ4 decompression not available")
                 quantized_data = self._stage3_lz4_decompress(compressed_data)
@@ -295,6 +315,21 @@ class StateCompressor:
         return lz4.frame.compress(quantized_data, compression_level=12)
 
     def _stage3_lz4_decompress(self, compressed_data: bytes) -> bytes:
+    def _stage3_zstd_compress(self, quantized_data: bytes) -> bytes:
+        """Stage 3: ZSTD compression for superior reduction."""
+        if not HAS_ZSTD:
+            raise ValueError("ZSTD package not installed")
+        
+        # Level 3 is default, good balance
+        return zstd.compress(quantized_data, 3)
+
+    def _stage3_zstd_decompress(self, compressed_data: bytes) -> bytes:
+        """Stage 3 (reverse): ZSTD decompression."""
+        if not HAS_ZSTD:
+            raise ValueError("ZSTD package not installed")
+
+        return zstd.decompress(compressed_data)
+
         """Stage 3 (reverse): LZ4 decompression."""
         if not HAS_LZ4:
             raise ValueError("LZ4 package not installed")

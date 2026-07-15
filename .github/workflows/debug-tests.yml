@@ -1,0 +1,85 @@
+name: Debug Test Failures
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_path:
+        description: "Path to specific test file (e.g., tests/test_api.py)"
+        required: false
+        default: ""
+      verbose:
+        description: "Enable verbose logging"
+        required: false
+        default: "true"
+      skip_coverage:
+        description: "Skip coverage requirements"
+        required: false
+        default: "true"
+
+jobs:
+  debug-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f "src/config/requirements.txt" ]; then pip install -r src/config/requirements.txt; fi
+          if [ -f "src/config/requirements-test.txt" ]; then pip install -r src/config/requirements-test.txt; fi
+
+      - name: Run Debug Tests
+        env:
+          PYTHONFAULTHANDLER: "1"
+          REDIS_URL: redis://localhost:6379
+        run: |
+          if [ "${{ github.event.inputs.test_path }}" != "" ]; then
+            TARGET="${{ github.event.inputs.test_path }}"
+          else
+            TARGET="tests"
+          fi
+
+          if [ "${{ github.event.inputs.verbose }}" == "true" ]; then
+            VERBOSE="-vv"
+          else
+            VERBOSE=""
+          fi
+
+          ARGS="$VERBOSE --maxfail=1"
+
+          if [ "${{ github.event.inputs.skip_coverage }}" == "true" ]; then
+            pytest $TARGET $ARGS | tee debug-output.log
+          else
+            pytest $TARGET $ARGS --cov=. --cov-report=xml | tee debug-output.log
+          fi
+        continue-on-error: true
+
+      - name: Upload Test Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-test-artifacts
+          path: |
+            .pytest_cache
+            coverage.xml
+            **/*.log
+            debug-output.log
+          if-no-files-found: ignore

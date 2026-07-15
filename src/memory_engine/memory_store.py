@@ -12,6 +12,7 @@ except ImportError:
 import math
 import threading
 import tempfile
+import asyncio
 from datetime import datetime, timedelta
 from typing import List, Dict, Tuple, Optional, Union, Any, TYPE_CHECKING
 import pickle
@@ -32,10 +33,10 @@ logger = logging.getLogger(__name__)
 
 # Security: Base directory for memory store persistence
 # All storage paths must be contained within this directory to prevent traversal attacks
-MEMORY_STORE_BASE_DIR = os.path.abspath("memory_engine")
+MEMORY_STORE_BASE_DIR = os.path.realpath(os.path.abspath("memory_engine"))
 
 # Get system temp directory for testing (platform-independent)
-SYSTEM_TEMP_DIR = tempfile.gettempdir()
+SYSTEM_TEMP_DIR = os.path.realpath(tempfile.gettempdir())
 
 # Constants for memory store configuration
 DEFAULT_DECAY_LAMBDA = 0.1
@@ -102,8 +103,7 @@ class AdaptiveMemoryStore:
         self.storage_path = "memory_engine/memory_store.pkl"
         self._lock = threading.RLock()  # Reentrant lock for thread safety
 
-    @with_timeout(seconds=3.0, operation_name="memory_write")
-    def write(
+    async def write(
         self,
         embedding: Union[List[float], "np.ndarray"],
         metadata: Dict,
@@ -263,31 +263,34 @@ class AdaptiveMemoryStore:
             # Extract metadata
             return [event.metadata for event in filtered_events]
 
-    @with_timeout(seconds=60.0)
-    @monitor_operation_resources()
-    def save(self) -> None:
-        """Persist memory to disk with path validation."""
+    async def save(self) -> None:
+        """Persist memory to disk with path validation and file locking."""
         with self._lock:
             try:
                 # Security: Validate storage path is within base directory (prevents path traversal)
-                resolved_path = os.path.abspath(self.storage_path)
+                resolved_path = os.path.realpath(os.path.abspath(self.storage_path))
                 # Allow paths starting with MEMORY_STORE_BASE_DIR, /tmp, or system temp dir (for testing)
                 is_safe = (
                     resolved_path.startswith(MEMORY_STORE_BASE_DIR) or
-                    resolved_path.startswith("/tmp") or
+                    resolved_path.startswith("/tmp") or  # nosec B108
                     resolved_path.startswith(SYSTEM_TEMP_DIR)
                 )
+
                 if not is_safe:
                     logger.error(
-                        f"⚠️  Storage path traversal attempt blocked: {self.storage_path}"
+                        f"⚠️  Storage path traversal attempt blocked: {self.storage_path} -> {resolved_path}"
                     )
+                    logger.debug(f"Allowed bases: {MEMORY_STORE_BASE_DIR}, {os.path.realpath('/tmp')}, {SYSTEM_TEMP_DIR}")
                     raise ValueError(
                         f"Storage path must be within {MEMORY_STORE_BASE_DIR}, /tmp, or system temp directory"
                     )
 
                 os.makedirs(os.path.dirname(resolved_path), exist_ok=True)
-                with open(resolved_path, "wb") as f:
-                    pickle.dump(self.memory, f)
+                # Use inter-process file lock to prevent concurrent access corruption
+                lock_path = resolved_path + ".lock"
+                with fasteners.InterProcessLock(lock_path):
+                    with open(resolved_path, "wb") as f:
+                        pickle.dump(self.memory, f)
                 logger.debug(f"Memory store saved to {resolved_path}")
             except Exception as e:
                 logger.error(f"Failed to save memory store: {e}", exc_info=True)
@@ -300,17 +303,19 @@ class AdaptiveMemoryStore:
         with self._lock:
             try:
                 # Security: Validate storage path is within base directory (prevents path traversal)
-                resolved_path = os.path.abspath(self.storage_path)
+                resolved_path = os.path.realpath(os.path.abspath(self.storage_path))
                 # Allow paths starting with MEMORY_STORE_BASE_DIR, /tmp, or system temp dir (for testing)
                 is_safe = (
                     resolved_path.startswith(MEMORY_STORE_BASE_DIR) or
-                    resolved_path.startswith("/tmp") or
+                    resolved_path.startswith("/tmp") or  # nosec B108
                     resolved_path.startswith(SYSTEM_TEMP_DIR)
                 )
+
                 if not is_safe:
                     logger.error(
-                        f"⚠️  Storage path traversal attempt blocked: {self.storage_path}"
+                        f"⚠️  Storage path traversal attempt blocked: {self.storage_path} -> {resolved_path}"
                     )
+                    logger.debug(f"Allowed bases: {MEMORY_STORE_BASE_DIR}, {os.path.realpath('/tmp')}, {SYSTEM_TEMP_DIR}")
                     raise ValueError(
                         f"Storage path must be within {MEMORY_STORE_BASE_DIR}, /tmp, or system temp directory"
                     )

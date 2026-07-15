@@ -14,7 +14,7 @@ except ImportError:
     pytest_plugins = ()
 
 # Ensure project modules are importable
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
 
 
 # ============================================================================
@@ -252,55 +252,38 @@ def sample_memory_entries():
 # PYTEST HOOKS AND CONFIGURATION
 # ============================================================================
 
-@pytest.fixture(scope='session', autouse=True)
-def setup_test_environment():
-    """Initialize test environment."""
-    # Suppress debug logs during tests
+@pytest.fixture(autouse=True)
+def configure_logging():
     import logging
-    logging.getLogger('astraguard').setLevel(logging.WARNING)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
     yield
-    # Cleanup after tests - ensure all logging handlers are closed
-    _cleanup_logging_handlers()
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    outcome = yield
+    report = outcome.get_result()
+    if report.when == "call" and report.failed:
+        print("\n========== TEST FAILURE CONTEXT ==========")
+        print(f"Test: {item.name}")
+        print("=========================================\n")
 
 
 @pytest.fixture(autouse=True)
 def reset_singletons():
     """Reset singleton instances between tests."""
-    from core.component_health import SystemHealthMonitor
-    # Save original instances
-    yield
-    # Reset after each test
-    SystemHealthMonitor._instance = None
-
-
-# ============================================================================
-# LOGGING CLEANUP UTILITIES
-# ============================================================================
-
-def _cleanup_logging_handlers():
-    """Clean up all logging handlers to prevent I/O errors during pytest teardown."""
-    import logging
-
-    # Get all loggers
-    root_logger = logging.getLogger()
-    loggers = [root_logger] + [logging.getLogger(name) for name in logging.root.manager.loggerDict]
-
-    for logger in loggers:
-        # Close and remove all handlers
-        for handler in logger.handlers[:]:  # Copy the list to avoid modification during iteration
-            try:
-                # Flush any pending output
-                handler.flush()
-                # Close the handler
-                handler.close()
-                # Remove from logger
-                logger.removeHandler(handler)
-            except (OSError, ValueError):
-                # Handler might already be closed or invalid
-                pass
-
-    # Clear any cached handlers
-    logging.root.handlers.clear()
+    try:
+        from core.component_health import SystemHealthMonitor
+        # Save original instances
+        yield
+        # Reset after each test
+        SystemHealthMonitor._instance = None
+    except (ImportError, ModuleNotFoundError):
+        # Skip if dependencies like redis are not installed
+        yield
 
 
 # ============================================================================
@@ -324,3 +307,83 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "memory: marks tests for memory engine"
     )
+    config.addinivalue_line(
+        "markers", "chaos: marks tests for chaos engineering"
+    )
+    config.addinivalue_line(
+        "markers", "resilience: marks tests for resilience validation"
+    )
+
+
+# ============================================================================
+# CHAOS ENGINEERING FIXTURES
+# ============================================================================
+
+@pytest.fixture
+def chaos_experiment_runner():
+    """Provide chaos experiment runner."""
+    from chaos.experiments.runner import ExperimentRunner
+    return ExperimentRunner(
+        experiments_dir="src/chaos/experiments",
+        base_url="http://localhost:8000",
+    )
+
+
+@pytest.fixture
+def chaos_recovery_validator():
+    """Provide chaos recovery validator."""
+    from chaos.validation.recovery_validator import RecoveryValidator
+    return RecoveryValidator(
+        base_url="http://localhost:8000",
+        max_recovery_time=60,
+    )
+
+
+@pytest.fixture
+def chaos_slo_validator():
+    """Provide chaos SLO validator."""
+    from chaos.validation.slo_validator import SLOValidator
+    return SLOValidator(
+        base_url="http://localhost:8000",
+        max_error_rate=0.01,
+        max_p99_latency=0.5,
+        min_availability=0.999,
+    )
+
+
+@pytest.fixture
+def chaos_incident_reporter():
+    """Provide chaos incident reporter."""
+    from chaos.validation.incident_reporter import IncidentReporter
+    return IncidentReporter(reports_dir="logs/chaos/incidents")
+
+
+@pytest.fixture
+def chaos_base_url():
+    """Provide base URL for chaos testing."""
+    return "http://localhost:8000"
+
+
+@pytest.fixture
+async def chaos_cleanup():
+    """
+    Cleanup fixture for chaos tests.
+    
+    Ensures all chaos actions are stopped after tests.
+    """
+    yield
+    
+    # Cleanup after test
+    try:
+        from chaos.actions.failure_injection import stop_failure_injection
+        from chaos.actions.network_chaos import remove_latency
+        from chaos.actions.resource_chaos import release_resources
+        from chaos.actions.service_chaos import start_service
+        
+        await stop_failure_injection()
+        await remove_latency()
+        await release_resources()
+        await start_service("redis")
+        
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"Chaos cleanup error: {e}")

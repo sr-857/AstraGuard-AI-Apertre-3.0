@@ -1,0 +1,59 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'tests/test_integration/**'
+      - 'tests/swarm/integration/**'
+      - '.github/workflows/integration-tests.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'tests/test_integration/**'
+      - 'tests/swarm/integration/**'
+      - '.github/workflows/integration-tests.yml'
+  schedule:
+    - cron: '0 2 * * *' # Daily at 2 AM
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r src/config/requirements.txt
+          pip install -r src/config/requirements-test.txt
+
+      - name: Run Integration Tests
+        env:
+          REDIS_URL: redis://localhost:6379
+        run: |
+          pytest tests/test_integration tests/swarm/integration \
+            -v \
+            --tb=short

@@ -1,0 +1,35 @@
+{
+    "swarm_mode": true,
+    "leader_election": {
+        "enabled": true,
+        "timeout_ms": 5000,
+        "heartbeat_interval_ms": 1000
+    },
+    "network": {
+        "latency_ms": 120,
+        "jitter_ms": 20,
+        "packet_loss_percent": 5
+    },
+    "agents": [
+        {
+            "id": "SAT-001-A",
+            "role": "PRIMARY"
+        },
+        {
+            "id": "SAT-002-A",
+            "role": "SECONDARY"
+        },
+        {
+            "id": "SAT-003-A",
+            "role": "SECONDARY"
+        },
+        {
+            "id": "SAT-004-A",
+            "role": "SECONDARY"
+        },
+        {
+            "id": "SAT-005-A",
+            "role": "SECONDARY"
+        }
+    ]
+}

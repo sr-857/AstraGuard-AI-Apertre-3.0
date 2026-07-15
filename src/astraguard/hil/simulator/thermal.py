@@ -164,7 +164,7 @@ class ThermalSimulator:
         self.eps_temp = np.clip(self.eps_temp, -40, 85)
         self.payload_temp = np.clip(self.payload_temp, -40, 75)
     
-    def inject_runaway_fault(self, contagion_rate: float = 0.2):
+    def inject_runaway_fault(self, contagion_rate: float = 0.2, severity: float = 1.0):
         """Inject thermal runaway fault with cascade contagion model.
         
         Primary infection: Creates radiator failure that spreads to nearby satellites
@@ -172,15 +172,7 @@ class ThermalSimulator:
         
         Args:
             contagion_rate: Base infection probability (0.05-0.8)
-                - 0.2 (default): ~40% infection at 1km, ~20% at 3km
-                - 0.4: ~80% at 1km (aggressive cascade)
-                - 0.05: ~10% at 1km (slow cascade)
-        
-        Physics impact:
-            - Radiator capacity drops to 10% (catastrophic failure)
-            - Infected neighbors add 2W+ heat input per update
-            - Patient zero reaches critical (~60°C) in 60-120 seconds
-            - Nearby satellites (1-3km) infected within 20-40 seconds
+            severity: Fault severity 0.0-1.0 (1.0 = catastrophic 90% loss)
         """
         from .faults.thermal_runaway import ThermalRunawayFault
         
@@ -195,8 +187,11 @@ class ThermalSimulator:
         self._thermal_fault.inject()
         self._fault_active = True
         
-        # Degrade radiator to 10% capacity (catastrophic)
-        self.radiator_capacity_wk *= 0.1
+        # Degrade radiator capacity based on severity
+        # severity 1.0 -> 0.1 multiplier (90% loss)
+        # severity 0.0 -> 1.0 multiplier (0% loss)
+        degradation_factor = 1.0 - (0.9 * severity)
+        self.radiator_capacity_wk *= degradation_factor
     
     def recover_from_fault(self):
         """Recover from thermal fault (e.g., heater restart, radiator repairs).
