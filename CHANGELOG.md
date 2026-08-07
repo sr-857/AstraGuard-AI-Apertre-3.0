@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.0.2 (2026-08-07)
+
+### Bug Fixes
+
+- Resolve remaining test collection errors (exit code 2)
+  ([`4f2bb7a`](https://github.com/codebyvimal/AstraGuard-AI-Apertre-3.0/commit/4f2bb7ae0d0c6660710d3e2782164a776ee1d529))
+
+
 ## v1.0.1 (2026-08-07)
 
 ### Bug Fixes
