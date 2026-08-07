@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.0.3 (2026-08-07)
+
+### Bug Fixes
+
+- Resolve security module ImportErrors and missing dependencies
+  ([`3ba76b6`](https://github.com/codebyvimal/AstraGuard-AI-Apertre-3.0/commit/3ba76b678d7cffa5a6cbaaf548fbf76a03ab5125))
+
+
 ## v1.0.2 (2026-08-07)
 
 ### Bug Fixes
