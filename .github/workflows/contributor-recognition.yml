@@ -68,7 +68,7 @@ jobs:
           git push
       
       - name: Upload report artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: contributor-report
           path: contributor_report.json

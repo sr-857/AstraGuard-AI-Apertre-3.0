@@ -87,29 +87,22 @@ jobs:
           python -c "
           import asyncio
           import httpx
-          import time
           import subprocess
           import os
-          
+
+          env = {'COMPOSE_PROJECT_NAME': f'swarm-{os.environ.get(\"GITHUB_RUN_ID\", \"local\")}'}
+
           async def wait_agents():
-              # Environment variable is now automatically available
-              result = subprocess.run(['docker', 'compose', '-f', 'infra/docker/docker-compose.swarm.yml', 'ps', '--format', 'json'],
-
-                                      capture_output=True, text=True, env={**os.environ, **env})
+              result = subprocess.run(
+                  ['docker', 'compose', '-f', 'infra/docker/docker-compose.swarm.yml', 'ps', '--format', 'json'],
+                  capture_output=True, text=True, env={**os.environ, **env})
               print('Container status:', result.stdout)
-              
-              # Check if port is actually mapped
-              result = subprocess.run(['docker', 'compose', '-f', 'infra/docker/docker-compose.swarm.yml', 'port', 'agent-1', '8000'],
-                                      capture_output=True, text=True, env={**os.environ, **env})
 
-                                    capture_output=True, text=True)
-              print('Container status:', result.stdout)
-              
-              result = subprocess.run(['docker', 'compose', '-f', 'infra/docker/docker-compose.swarm.yml', 'port', 'agent-1', '8000'],
-                                    capture_output=True, text=True)
+              result = subprocess.run(
+                  ['docker', 'compose', '-f', 'infra/docker/docker-compose.swarm.yml', 'port', 'agent-1', '8000'],
+                  capture_output=True, text=True, env={**os.environ, **env})
+              print('Port mapping:', result.stdout)
 
-         print('Port mapping:', result.stdout)
-              
               for i in range(60):
                   try:
                       async with httpx.AsyncClient() as client:
@@ -122,18 +115,14 @@ jobs:
                           print(f'Attempt {i}: {str(e)}')
                   await asyncio.sleep(1)
               return False
-          
+
           if asyncio.run(wait_agents()):
               print('Agents ready')
           else:
               print('Timeout waiting for agents')
-
-              # Show container logs before failing
-              env = {'COMPOSE_PROJECT_NAME': f'swarm-{os.environ.get("GITHUB_RUN_ID", "local")}'}
-              subprocess.run(['docker', 'compose', '-f', 'infra/docker/docker-compose.swarm.yml', 'logs', '--tail=50'], env={**os.environ, **env})
-
-              subprocess.run(['docker', 'compose', '-f', 'infra/docker/docker-compose.swarm.yml', 'logs', '--tail=50'])
-
+              subprocess.run(
+                  ['docker', 'compose', '-f', 'infra/docker/docker-compose.swarm.yml', 'logs', '--tail=50'],
+                  env={**os.environ, **env})
               exit(1)
           "
       
@@ -171,7 +160,7 @@ jobs:
             -v 2>&1 | tee coverage-output.txt || true
       
       - name: Upload Coverage
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v5
         with:
           file: ./coverage.xml
           fail_ci_if_error: false

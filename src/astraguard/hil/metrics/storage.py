@@ -16,12 +16,9 @@ import logging
 from pathlib import Path
 from typing import Dict, Any, Optional, List, cast
 from datetime import datetime
-<<<<<<< HEAD
-=======
 import heapq
 from concurrent.futures import ThreadPoolExecutor
 
->>>>>>> f7e4e8a (Added performance optimizations and benchmarking for storage.py)
 from astraguard.hil.metrics.latency import LatencyCollector
 
 
@@ -133,26 +130,20 @@ class MetricsStorage:
 
         # Optimization: EAFP approach (Easier to Ask for Forgiveness than Permission)
         try:
-<<<<<<< HEAD
             content = summary_path.read_text()
-            data = json.loads(content)
-            if not isinstance(data, dict):
+            metrics = json.loads(content)
+            if not isinstance(metrics, dict):
                 logging.error(
                     f"Metrics file {summary_path} does not contain a JSON object at the root; "
-                    f"got {type(data).__name__} instead."
+                    f"got {type(metrics).__name__} instead."
                 )
                 return None
-            return cast(Dict[str, Any], data)
-
-=======
-            metrics = json.loads(summary_path.read_text())
             # Cache the result
             if use_cache:
                 self._cached_metrics = metrics
             return cast(Dict[str, Any], metrics)
         except FileNotFoundError:
             return None
->>>>>>> f7e4e8a (Added performance optimizations and benchmarking for storage.py)
         except (OSError, PermissionError, IsADirectoryError) as e:
             logging.error(f"Failed to read metrics file {summary_path}: {e}")
             return None
@@ -176,7 +167,7 @@ class MetricsStorage:
         Returns:
             Dict[str, Any]: A comparison report containing run IDs and per-metric diffs.
         """
-        other_storage = MetricsStorage(other_run_id)
+        other_storage = MetricsStorage(other_run_id, results_dir=str(self.metrics_dir.parent))
         other_metrics = other_storage.get_run_metrics(use_cache=True)
 
         if other_metrics is None:

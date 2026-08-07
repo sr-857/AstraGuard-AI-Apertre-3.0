@@ -349,7 +349,7 @@ pandas>=2.0.0
         captured = capsys.readouterr()
         assert "DEPENDENCY CONFLICT ANALYSIS REPORT" in captured.out
         assert "Total Packages:" in captured.out
-" assert "Total Conflicts:" in captured.out
+        assert "Total Conflicts:" in captured.out
     
     def test_print_report_no_conflicts(self, temp_project_dir, capsys):
         """Test printing report when no conflicts exist."""

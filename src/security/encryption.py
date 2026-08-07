@@ -179,3 +179,80 @@ def decrypt_field(value: str) -> str:
     """Decrypt a single field value."""
     enc = get_data_encryption()
     return enc.decrypt(value)
+
+
+# ---------------------------------------------------------------------------
+# Backward-compatible aliases expected by src/security/__init__.py
+# ---------------------------------------------------------------------------
+
+# EncryptionEngine is the canonical public name; DataEncryption is the impl.
+EncryptionEngine = DataEncryption
+
+
+class EncryptedData:
+    """Lightweight container for encrypted payload + metadata."""
+    __slots__ = ("ciphertext", "algorithm", "key_id")
+
+    def __init__(self, ciphertext: str, algorithm: str = "AES-256-GCM", key_id: str = ""):
+        self.ciphertext = ciphertext
+        self.algorithm = algorithm
+        self.key_id = key_id
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"EncryptedData(algorithm={self.algorithm!r}, key_id={self.key_id!r})"
+
+
+class DataEncryptionKey:
+    """Represents a Data Encryption Key (DEK)."""
+    __slots__ = ("key_id", "key_material", "algorithm")
+
+    def __init__(self, key_id: str = "", key_material: bytes = b"", algorithm: str = "AES-256-GCM"):
+        self.key_id = key_id
+        self.key_material = key_material
+        self.algorithm = algorithm
+
+
+class KeyEncryptionKey:
+    """Represents a Key Encryption Key (KEK) used to wrap DEKs."""
+    __slots__ = ("key_id", "provider")
+
+    def __init__(self, key_id: str = "", provider: str = "local"):
+        self.key_id = key_id
+        self.provider = provider
+
+
+class EncryptionAlgorithm:
+    """Supported encryption algorithm identifiers."""
+    AES_256_GCM = "AES-256-GCM"
+    AES_256_CBC = "AES-256-CBC"
+    CHACHA20_POLY1305 = "ChaCha20-Poly1305"
+
+
+# Module-level encryption engine singleton (mirrors get_data_encryption API)
+_encryption_engine: Optional[DataEncryption] = None
+
+
+def init_encryption_engine(master_key: Optional[str] = None, **kwargs) -> DataEncryption:
+    """Initialize and return the singleton EncryptionEngine."""
+    global _encryption_engine
+    _encryption_engine = DataEncryption(master_key)
+    return _encryption_engine
+
+
+def get_encryption_engine() -> Optional[DataEncryption]:
+    """Return the current singleton EncryptionEngine (or None if not initialised)."""
+    return _encryption_engine
+
+
+def encrypt_data(plaintext: Union[str, bytes], master_key: Optional[str] = None) -> tuple:
+    """Encrypt *plaintext* and return *(EncryptedData, DataEncryptionKey)*."""
+    engine = get_data_encryption(master_key)
+    ciphertext = engine.encrypt(plaintext)
+    dek = DataEncryptionKey(key_material=engine.key)
+    return EncryptedData(ciphertext), dek
+
+
+def decrypt_data(encrypted: "EncryptedData", dek: "DataEncryptionKey", master_key: Optional[str] = None) -> str:
+    """Decrypt an *EncryptedData* object and return the plaintext string."""
+    engine = get_data_encryption(master_key)
+    return engine.decrypt(encrypted.ciphertext)

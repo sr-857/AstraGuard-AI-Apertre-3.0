@@ -78,7 +78,7 @@ jobs:
           git push
       
       - name: Upload metrics artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: contribution-metrics
           path: docs/contributor_metrics.json
