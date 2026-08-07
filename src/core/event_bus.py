@@ -9,7 +9,7 @@ Features:
 
 import asyncio
 import logging
-from typing import List, Dict, Callable, Type, Awaitable, Any
+from typing import List, Dict, Callable, Type, Awaitable, Any, Optional
 from datetime import datetime
 from collections import defaultdict
 import uuid
